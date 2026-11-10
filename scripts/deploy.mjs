@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,6 +18,7 @@ if (!config.cloudflare.accountId || !settings.databaseId) {
 function run(args, capture = false) {
   const result = spawnSync('pnpm', args, {
     cwd: root,
+    env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: config.cloudflare.accountId },
     encoding: 'utf8',
     stdio: capture ? ['ignore', 'pipe', 'inherit'] : 'inherit',
   })
@@ -39,6 +40,8 @@ try {
   const server = JSON.parse(readFileSync(join(root, 'apps/server/wrangler.jsonc'), 'utf8'))
   server.account_id = account.id
   server.name = settings.worker
+  server.workers_dev = false
+  server.preview_urls = false
   server.main = resolve(root, 'apps/server/src/index.ts')
   server.d1_databases = [
     {
@@ -50,12 +53,12 @@ try {
   ]
   const serverPath = join(directory, 'server.json')
   writeFileSync(serverPath, JSON.stringify(server))
-  const webPath = join(directory, 'web.json')
+  const webPath = join(directory, 'wrangler.jsonc')
+  cpSync(join(root, 'apps/web/functions'), join(directory, 'functions'), { recursive: true })
   writeFileSync(
     webPath,
     JSON.stringify({
       name: settings.pagesProject,
-      account_id: account.id,
       compatibility_date: server.compatibility_date,
       pages_build_output_dir: resolve(root, 'apps/web/dist'),
       services: [{ binding: 'API', service: settings.worker }],
@@ -81,6 +84,8 @@ try {
     '@atoms-demo/web',
     'exec',
     'wrangler',
+    '--cwd',
+    directory,
     'pages',
     'deploy',
     resolve(root, 'apps/web/dist'),
@@ -88,8 +93,6 @@ try {
     settings.pagesProject,
     '--branch',
     settings.branch,
-    '--config',
-    webPath,
   ])
 } finally {
   rmSync(directory, { recursive: true })

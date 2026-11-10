@@ -1,12 +1,10 @@
 # Deployment
 
-## Current release blocker
+## Current production status
 
-The only authorized target is **Maqiqian0316@gmail.com's Account**. Its account ID is **unverified**. The observed browser dashboard exposes company accounts, not the required Gmail account; a user account switch/access grant is required before release can proceed.
+The authorized target **Maqiqian0316@gmail.com's Account** is verified as `252fba810f75c0370e5aa7200abc8f80`. The live site is https://formlane-9dp.pages.dev. Pages `formlane` calls Worker `formlane-api` through service binding `API`; the Worker reuses project D1 `atoms-demo`. The additive run-fence migration was applied without deleting data.
 
-Previous `chanyan.workers.dev` deployments were made in the wrong account without authorization. They are not the accepted Atoms deliverable, not a verified production target, and not a source from which to copy account IDs, D1 IDs, secrets, or routes. A working URL does not satisfy account ownership.
-
-**Do not perform cloud writes while this blocker remains.** This includes creating D1 databases, remote migrations, uploading secrets, deploying Workers/assets, and changing routes. Read-only account inspection must not become an implicit deployment authorization.
+The remaining functional blocker is the model credential: production reports `hasKey: false` and `mock: false`. Configure the provider secret on `formlane-api`, then verify a real generation. Previous company-account deployments are not this release.
 
 ## Release gate
 
@@ -21,7 +19,7 @@ Previous `chanyan.workers.dev` deployments were made in the wrong account withou
 
 ## Configuration boundaries
 
-`pnpm deploy <test|production>` runs guarded verification by default; `--apply` requests actual deployment and still requires the authorization/account gates above. `deploy/environments.json` currently keeps account/database IDs null until verified. `scripts/deploy.mjs` checks Wrangler's account identity before writing, then derives temporary absolute configurations for the API Worker and web Worker/service binding. Neither the default command nor a dry-run is a published release.
+`pnpm deploy <test|production>` verifies account ownership; `--apply` deploys. Verified production IDs live in `deploy/environments.json`; test IDs remain unset. The script passes the account through the environment for Pages, uses a temporary discoverable `wrangler.jsonc`, and copies Functions beside it. The API Worker has no public workers.dev route because Pages accesses it through its service binding.
 
 - Root package scripts orchestrate release; inspect their current implementations rather than bypassing them with a direct Wrangler deploy.
 - `apps/server/wrangler.jsonc` owns Worker configuration and D1 binding names; the deployment guard/configuration owns verified target identity.
