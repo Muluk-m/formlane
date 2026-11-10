@@ -43,6 +43,11 @@ try {
   server.workers_dev = false
   server.preview_urls = false
   server.main = resolve(root, 'apps/server/src/index.ts')
+  if (server.workflows)
+    server.workflows = server.workflows.map((workflow) => ({
+      ...workflow,
+      name: `${settings.worker}-generation`,
+    }))
   server.d1_databases = [
     {
       binding: 'DB',
@@ -55,6 +60,11 @@ try {
   writeFileSync(serverPath, JSON.stringify(server))
   const webPath = join(directory, 'wrangler.jsonc')
   cpSync(join(root, 'apps/web/functions'), join(directory, 'functions'), { recursive: true })
+  const functionsConfig = JSON.parse(
+    readFileSync(join(directory, 'functions/tsconfig.json'), 'utf8'),
+  )
+  functionsConfig.extends = resolve(root, 'tsconfig.base.json')
+  writeFileSync(join(directory, 'functions/tsconfig.json'), JSON.stringify(functionsConfig))
   writeFileSync(
     webPath,
     JSON.stringify({

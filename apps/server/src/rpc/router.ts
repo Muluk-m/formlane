@@ -1,17 +1,18 @@
 import { contract } from '@atoms-demo/contracts'
 import { OpenAPIHandler } from '@orpc/openapi/fetch'
 import { implement } from '@orpc/server'
-import { type Env, mockEnabled, modelName } from '../env'
+import { modelName } from '../env'
 import { type ProjectContext, projectsService } from '../modules/projects/projects.service'
 
-export type RpcContext = ProjectContext & { env: Env }
+export type RpcContext = ProjectContext
 const os = implement(contract).$context<RpcContext>()
 const router = os.router({
   health: os.health.handler(({ context }) => ({
     ok: true,
-    mock: mockEnabled(context.env),
+    mock: false,
     model: modelName(context.env),
     hasKey: Boolean(context.env.OPENAI_API_KEY?.trim()),
+    executorConfigured: Boolean(context.env.EXECUTOR_TOKEN?.trim()),
   })),
   me: os.me.handler(({ context }) => ({ ownerId: context.ownerId })),
   projects: {

@@ -10,8 +10,8 @@ The migration must genuinely consume a shared contract, not just install oRPC wh
 
 `@atoms-demo/contracts` exports the oRPC contract and Zod boundary schemas. The server implements that contract. The browser uses `createORPCClient` with `OpenAPILink` and `createTanstackQueryUtils` for CRUD/query integration. Do not infer frontend API types from an application server import.
 
-Preserve `/api/projects/:id/generate` and `/api/projects/:id/chat` SSE transport, authenticated downloads, and public `/p/:slug` documents. These explicit transports serve different response semantics; they are not an excuse to duplicate ordinary CRUD routing or schemas.
+Keep explicit run-start, run-event SSE, cancellation, authenticated download and public `/p/:slug` endpoints where their semantics differ from ordinary CRUD. [ADR-0012](0012-durable-agent-harness.md) supersedes the original request-owned generation/chat streams: generation starts a durable run and SSE observes its persisted events. These transports are not an excuse to duplicate CRUD routing or schemas.
 
 ## Consequences
 
-API changes update the contract and both consumers together, including error-to-catalog mapping and query invalidation. Private operations remain owner-authorized on the server. SSE retains its abort/error behavior and only complete HTML reaches the saved-version boundary.
+API changes update the contract and both consumers together, including error-to-catalog mapping and query invalidation. Private operations remain owner-authorized. SSE disconnect closes observation, not execution; explicit cancel fences writes. Only browser-validated, independently accepted current artifacts reach the saved-version boundary.

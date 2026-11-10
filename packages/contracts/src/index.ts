@@ -33,6 +33,33 @@ export const versionSchema = z.object({
 export const ideaSchema = z.string().trim().min(1).max(4000)
 export const createProjectSchema = z.object({ idea: ideaSchema })
 export const followupSchema = z.object({ content: ideaSchema })
+export const generateSchema = z.object({ content: ideaSchema.optional() })
+export const runStatusSchema = z.enum(['queued', 'running', 'completed', 'failed', 'cancelled'])
+export const runErrorCodeSchema = z.enum(['timeout', 'provider', 'validation', 'internal'])
+export const runSchema = z.object({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  status: runStatusSchema,
+  request: z.string(),
+  createdAt: z.number(),
+  startedAt: z.number().nullable(),
+  finishedAt: z.number().nullable(),
+  errorCode: runErrorCodeSchema.nullable(),
+  error: z.string().nullable(),
+  versionId: z.uuid().nullable(),
+  cursor: z.number().int().nonnegative(),
+})
+export const runEventSchema = z.object({
+  runId: z.uuid(),
+  sequence: z.number().int().positive(),
+  type: z.string(),
+  data: z.record(z.string(), z.unknown()),
+  createdAt: z.number(),
+})
+export const runReceiptSchema = z.object({ run: runSchema })
+export type Run = z.infer<typeof runSchema>
+export type RunEvent = z.infer<typeof runEventSchema>
+export type RunErrorCode = z.infer<typeof runErrorCodeSchema>
 export const apiErrors = {
   BAD_REQUEST: { status: 400, message: 'Invalid request.' },
   NOT_FOUND: { status: 404, message: 'Project or version not found.' },
@@ -46,12 +73,19 @@ const versionId = id.extend({ versionId: z.uuid() })
 const ok = z.object({ ok: z.literal(true) })
 const project = z.object({ project: projectSchema })
 
-/** JSON operations share this contract; generation remains a streaming HTTP transport. */
+/** JSON project operations use oRPC; durable run receipts and replay use the HTTP transport. */
 export const contract = {
   health: api
     .route({ method: 'GET', path: '/health' })
     .input(empty)
-    .output(ok.extend({ mock: z.boolean(), model: z.string(), hasKey: z.boolean() })),
+    .output(
+      ok.extend({
+        mock: z.boolean(),
+        model: z.string(),
+        hasKey: z.boolean(),
+        executorConfigured: z.boolean(),
+      }),
+    ),
   me: api
     .route({ method: 'GET', path: '/me' })
     .input(empty)

@@ -16,11 +16,11 @@ Routes parse, authorize, invoke a domain operation, and map errors. Ownership ch
 
 Use Drizzle for ordinary D1 access. Parameterize any necessary SQL; never interpolate untrusted strings. Let constraints and conditional writes enforce uniqueness/current-run ownership where relevant. D1 transaction semantics differ from PostgreSQL: use supported operations/batches and recheck predicates rather than assuming row locks exist.
 
-Provider I/O stays outside database write batches. Partial streams cannot be saved as complete versions, and stale/cancelled work cannot overwrite newer state. Migrations are explicit and reviewed with the schema; requests do not perform schema bootstrap. Preserve rollback compatibility where a release can overlap versions.
+Provider/browser execution belongs in `apps/executor`, outside the API Worker and database write batches. Draft artifacts require current-hash validation and independent review before commit. Stale, cancelled, lease-lost or deadline-expired work cannot overwrite state. SSE disconnect closes observation only; cancellation fences writes before the executor observes heartbeat rejection. Follow [ADR-0012](../adr/0012-durable-agent-harness.md) for immutable checkpoint and role-scoped tool boundaries. Migrations are explicit; requests do not bootstrap schema. Preserve rollback compatibility where releases overlap.
 
 ## Browser
 
-TanStack Router owns routes; TanStack Query/oRPC helpers own CRUD server state. Centralize query options and invalidation rather than calling a hand-written REST client from every component. Streaming remains a dedicated SSE concern.
+TanStack Router owns routes; TanStack Query/oRPC helpers own CRUD server state. Centralize query options and invalidation rather than calling a hand-written REST client from every component. SSE observes persisted run events and resumes by sequence cursor; it does not own producer execution.
 
 Use shared Base UI primitives/composites and variants, not native replacement controls or local appearance overrides. Use Skyline tokens and Hugeicons at 1.5 stroke width. All visible text and accessible names come from the single catalog. Forms use React Hook Form/Zod with server errors retained and understandable.
 

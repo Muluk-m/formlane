@@ -8,9 +8,13 @@ A project belongs to an anonymous browser owner. All private operations resolve 
 
 ## Conversation and generation
 
-Messages preserve user requests, agent output, and system feedback. Streamed text can exist before a complete generated version does. An active run is associated with project state; stale or cancelled work must not publish a result over a newer run. The generation request owns provider execution rather than a durable queue.
+Messages preserve user requests, agent output and system feedback. D1 `runs` stores status, active-run fencing, the persisted 15-minute deadline and executor lease fields. `run_events` stores sequence-addressed observations with idempotent event identities. The Node executor owns model/browser execution; SSE reads events. Reconnect requests events after the last cursor without starting a new run.
 
-The server's `modules/projects` repository/service boundary uses `db/schema.ts`. The original `0001_init.sql` is retained; `0002_run_fence.sql` adds nullable run identity so writes can be associated with the active generation. Migration history, not request-time schema creation, establishes these fields.
+The bearer-authenticated executor API grants a 60-second lease refreshed every 10 seconds. Lease tokens condition checkpoint/event/completion writes; an expired lease can be reclaimed. `run_checkpoints` stores immutable named step results, persisted before advancing and reused after restart. A checkpoint is not a provider token-stream snapshot, and an interrupted step can repeat provider calls.
+
+Cancellation fences writes immediately; the executor aborts when heartbeat authority is lost. Conditional writes reject stale, cancelled and expired producers, including late tool results. Timeout, provider failure and validation failure differ from explicit cancellation. Draft artifacts are not successful versions; completion requires current-artifact browser evidence and independent review.
+
+The server repository/service boundary uses `db/schema.ts`. Preserve migration history and apply `0004_executor_leases.sql` after the earlier run/event migrations. Requests do not create schema. See [ADR-0012](../adr/0012-durable-agent-harness.md).
 
 ## Three version selections
 
@@ -18,7 +22,7 @@ The server's `modules/projects` repository/service boundary uses `db/schema.ts`.
 - **Viewed:** local UI selection when inspecting history; viewing alone does not change persisted current state.
 - **Published:** `publishedVersionId`, the explicit saved result exposed by the public slug.
 
-A complete generation creates an immutable HTML version and updates current. A failed generation leaves the previous complete current version intact. Restore selects a saved version as current; it does not rewrite that version or change the published pointer. Republish deliberately updates the public pointer. Unpublish clears public access without deleting private history.
+A validated and independently accepted generation creates an immutable HTML version and updates current. A failed generation leaves the previous complete current version intact. Restore selects a saved version as current; it does not rewrite that version or change the published pointer. Republish deliberately updates the public pointer. Unpublish clears public access without deleting private history.
 
 Remix creates independent project/message/version identities. It must not share mutable pointers with the source or accidentally inherit public ownership. Download chooses the requested authorized saved version, including a historical one when that is what the UI is showing.
 

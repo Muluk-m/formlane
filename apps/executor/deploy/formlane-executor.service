@@ -1,0 +1,34 @@
+[Unit]
+Description=Formlane durable generation executor
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=formlane
+Group=formlane
+WorkingDirectory=/opt/formlane/executor
+Environment=NODE_ENV=production
+Environment=HOME=/var/lib/formlane
+Environment=CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+EnvironmentFile=/etc/formlane/executor.env
+ExecStart=/usr/local/bin/node /opt/formlane/executor/dist/index.js
+Restart=always
+RestartSec=5s
+TimeoutStopSec=25s
+KillMode=control-group
+UMask=0077
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/formlane
+# Chromium requires its non-root user-namespace or setuid sandbox. Do not add
+# RestrictNamespaces, NoNewPrivileges, or --no-sandbox to work around failures.
+TasksMax=256
+MemoryMax=3G
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

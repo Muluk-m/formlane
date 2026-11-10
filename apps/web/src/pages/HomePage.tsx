@@ -1,4 +1,4 @@
-import { AGENT_ORDER, type Project } from '@atoms-demo/core/types'
+import type { Project } from '@atoms-demo/core/types'
 import { useI18n } from '@atoms-demo/i18n/react'
 import {
   AlertDialog,
@@ -22,7 +22,6 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
-import { AgentAvatar } from '../components/AgentAvatar'
 import { createProjectMutation, deleteProjectMutation } from '../features/projects/mutations'
 import { projectsQuery } from '../features/projects/queries'
 import { healthQuery } from '../features/session/queries'
@@ -138,21 +137,6 @@ export function HomePage() {
                 {t(`atoms.examplesList.${key}.prompt`)}
               </span>
             </Button>
-          ))}
-        </div>
-      </section>
-      <section className="mt-10">
-        <h2 className="text-xl font-semibold">{t('atoms.team')}</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          {AGENT_ORDER.map((id) => (
-            <Card key={id}>
-              <CardContent>
-                <AgentAvatar id={id} />
-                <h3 className="mt-3 font-semibold">{t(`agents.${id}.name`)}</h3>
-                <p className="text-sm text-link">{t(`agents.${id}.role`)}</p>
-                <p className="mt-2 text-sm text-muted-foreground">{t(`agents.${id}.blurb`)}</p>
-              </CardContent>
-            </Card>
           ))}
         </div>
       </section>

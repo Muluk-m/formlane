@@ -1,4 +1,11 @@
-import { contract } from '@atoms-demo/contracts'
+import {
+  contract,
+  type Run,
+  type RunEvent,
+  runEventSchema,
+  runReceiptSchema,
+  runSchema,
+} from '@atoms-demo/contracts'
 import { readLocale, translate } from '@atoms-demo/i18n'
 import { createORPCClient } from '@orpc/client'
 import type { ContractRouterClient } from '@orpc/contract'
@@ -77,46 +84,78 @@ export async function downloadProject(
   URL.revokeObjectURL(url)
 }
 
-export async function streamEvents(
-  path: string,
-  body: unknown,
-  signal: AbortSignal,
-  onEvent: (event: string, data: Record<string, unknown>) => void,
-): Promise<void> {
-  const ownerId = await ensureOwner()
-  const response = await fetch(path, {
+export class RunConnectionError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+  }
+}
+
+export async function latestRun(id: string, signal?: AbortSignal): Promise<Run | null> {
+  const response = await request(`/api/projects/${id}/runs/latest`, { signal })
+  if (!response.ok) throw new RunConnectionError(await readError(response), response.status)
+  const result = (await response.json()) as { run: unknown }
+  return runSchema.nullable().parse(result.run)
+}
+
+export async function startRun(id: string, initial: boolean, content?: string): Promise<Run> {
+  const response = await request(`/api/projects/${id}/${initial ? 'generate' : 'chat'}`, {
     method: 'POST',
-    credentials: 'include',
-    signal,
-    headers: {
-      'content-type': 'application/json',
-      'x-owner-id': ownerId,
-    },
-    body: body == null ? '{}' : JSON.stringify(body),
+    body: JSON.stringify({ content }),
   })
-  const type = response.headers.get('content-type') ?? ''
-  if (!response.ok || !type.includes('text/event-stream') || !response.body) {
-    throw new Error(await readError(response))
+  if (!response.ok) throw new RunConnectionError(await readError(response), response.status)
+  const result = runReceiptSchema.parse(await response.json())
+  return result.run
+}
+
+export async function cancelRun(id: string, runId: string): Promise<void> {
+  const response = await request(`/api/projects/${id}/runs/${runId}/cancel`, { method: 'POST' })
+  if (!response.ok) throw new RunConnectionError(await readError(response), response.status)
+}
+
+export async function streamRunEvents(
+  id: string,
+  runId: string,
+  after: number,
+  signal: AbortSignal,
+  onEvent: (event: RunEvent) => void,
+): Promise<void> {
+  const response = await request(`/api/projects/${id}/runs/${runId}/events?after=${after}`, {
+    signal,
+    headers: { accept: 'text/event-stream', 'Last-Event-ID': String(after) },
+  })
+  if (!response.ok) throw new RunConnectionError(await readError(response), response.status)
+  if (!response.headers.get('content-type')?.includes('text/event-stream') || !response.body) {
+    throw new Error(requestError())
   }
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const parts = buffer.split('\n\n')
-    buffer = parts.pop() ?? ''
-    for (const part of parts) {
-      if (!part.trim() || part.trimStart().startsWith(':')) continue
-      let event = 'message'
-      const dataLines: string[] = []
-      for (const line of part.split('\n')) {
-        if (line.startsWith('event:')) event = line.slice(6).trim()
-        else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      buffer += done ? decoder.decode() : decoder.decode(value, { stream: true })
+      const parts = buffer.split(/\r?\n\r?\n/)
+      buffer = parts.pop() ?? ''
+      for (const part of parts) {
+        const lines = part.split(/\r?\n/)
+        const eventType = lines
+          .find((line) => line.startsWith('event:'))
+          ?.slice(6)
+          .trim()
+        if (eventType === 'heartbeat') continue
+        const data = lines
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trimStart())
+          .join('\n')
+        if (data) onEvent(runEventSchema.parse(JSON.parse(data)))
       }
-      if (!dataLines.length) continue
-      onEvent(event, JSON.parse(dataLines.join('\n')) as Record<string, unknown>)
+      if (done) break
     }
+  } finally {
+    await reader.cancel().catch(() => undefined)
+    reader.releaseLock()
   }
 }

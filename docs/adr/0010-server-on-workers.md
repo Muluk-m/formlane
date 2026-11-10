@@ -10,7 +10,7 @@ The reference repository runs a Cloudflare Worker backed by PostgreSQL. Atoms al
 
 Retain Cloudflare Workers and **D1**, accessed through **Drizzle's D1/SQLite driver and schema**. Keep explicit checked-in SQL migrations with the server. Do not introduce PostgreSQL, connection pooling, or external relational-database infrastructure merely to mirror the reference runtime.
 
-Ownership, current-version selection, generation exclusion, and publication are enforced with D1-supported constraints, conditional writes, and atomic batches where necessary. Provider streaming runs outside database write batches. The request handler does not bootstrap schema with CREATE statements.
+Ownership, current-version selection, run/lease exclusion and publication use D1 constraints, conditional writes and atomic batches. The API Worker remains the control plane; provider/browser execution runs on the GCP executor under [ADR-0012](0012-durable-agent-harness.md), with checkpoints and leases persisted in D1 through the API. Request handlers do not bootstrap schema.
 
 ## Why D1
 
@@ -21,10 +21,10 @@ Ownership, current-version selection, generation exclusion, and publication are 
 
 ## Trade-offs
 
-D1 is SQLite, not a drop-in PostgreSQL adapter. Do not assume advisory locks, row locks, arbitrary long transactions, or driver-specific APIs. Design multi-write state transitions around the actual D1 API, and test migrations/constraints against local D1. Request-bound model execution is not made durable by the database choice.
+D1 is SQLite, not a drop-in PostgreSQL adapter. Do not assume advisory locks, row locks, arbitrary long transactions or driver-specific APIs. Design transitions around the actual D1 API and test migrations/constraints against local D1. Durability requires the explicit lease/checkpoint protocol; the database choice alone does not provide it.
 
 If future requirements need capabilities D1 cannot meet, write a new decision with workload evidence and a data migration plan; do not silently add a second persistence backend.
 
 ## Release constraint
 
-Local D1 is available without a remote deployment. Creating or migrating a remote database remains blocked until **Maqiqian0316@gmail.com's Account** is accessible, its ID verified, and the user authorizes writes. Reference or historical wrong-account database IDs must not be reused.
+Local D1 is available without remote deployment. Creating or migrating a remote database requires the verified **Maqiqian0316@gmail.com's Account** and authorization for the specific writes. Reference or historical wrong-account database IDs must not be reused. GCP executor authorization is separate and does not authorize moving D1 to another account.
