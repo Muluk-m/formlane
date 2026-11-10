@@ -79,13 +79,13 @@ Set `MOCK_LLM=true` and `ENVIRONMENT=local` in `apps/server/.dev.vars` for local
 
 Use focused tests and package typechecks while developing; one integration owner coordinates full checks. See [development](docs/operations/development.md), [testing](docs/internals/testing.md), and [debugging](docs/operations/debugging.md).
 
-Migration verification: remote Biome checks, six package typechecks, 24 tests, Vite production build, and Worker dry-run passed. Local browser checks exercised generation, preview Save/Add, follow-up revisions, reload persistence, version restore, publication/unpublication, HTML download, code/mobile views, and remix in explicit mock mode. Real-provider generation and an authorized public release remain unverified.
+Migration verification: remote Biome checks, six package typechecks, 24 tests, Vite production build, and Worker dry-run passed. Local browser checks exercised generation, preview Save/Add, follow-up revisions, reload persistence, version restore, publication/unpublication, HTML download, code/mobile views, and remix in explicit mock mode. Production real-model generation and generated-app interaction were subsequently verified online.
 
 ## Deployment status
 
 Live site: **https://formlane-9dp.pages.dev**. Deployed to the verified **Maqiqian0316@gmail.com's Account** (`252fba810f75c0370e5aa7200abc8f80`) using Pages `formlane`, service-bound Worker `formlane-api`, and the existing project D1 database. The Formlane logo, homepage, same-origin API, and database-backed project listing were verified online.
 
-**Real generation is not ready:** the production model API key is not configured (`hasKey: false`, `mock: false`). Set `OPENAI_API_KEY` on `formlane-api` before treating this as a fully usable generation demo. No email registration or verification is required. See [deployment](docs/operations/deployment.md).
+Production uses `gpt-6.1-sol` at `https://sub2api.qiliangjia.org/v1`, with its key stored only as a Cloudflare Secret. Health reports `hasKey: true`, `mock: false`. A real counter app was generated, its plus button changed 0 to 1, and its saved code survived a page reload. No email registration or verification is required. See [deployment](docs/operations/deployment.md).
 
 ## Limits and behavior worth knowing
 
