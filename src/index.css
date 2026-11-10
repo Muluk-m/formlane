@@ -1,0 +1,187 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", "Avenir Next", "Segoe UI", sans-serif;
+  --font-serif: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --color-paper: #efeae2;
+  --color-paper-deep: #e4ddd2;
+  --color-ink: #1c1915;
+  --color-muted: #6f675e;
+  --color-line: #e3d9cc;
+  --color-card: #fffcf8;
+  --color-accent: #2046f0;
+  --color-accent-soft: #e7ecff;
+  --color-good: #0e7c66;
+  --color-bad: #9f2d20;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+button,
+textarea,
+input {
+  font: inherit;
+}
+
+::selection {
+  background: #d5defc;
+}
+
+.landing-bg {
+  background:
+    radial-gradient(900px 420px at 8% -10%, rgba(32, 70, 240, 0.14), transparent 60%),
+    radial-gradient(680px 320px at 100% 0%, rgba(212, 101, 47, 0.14), transparent 55%),
+    var(--color-paper);
+}
+
+.caret {
+  display: inline-block;
+  width: 0.45rem;
+  height: 1em;
+  margin-left: 1px;
+  transform: translateY(2px);
+  background: currentColor;
+  animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+.rich .li {
+  display: block;
+  padding-left: 0.9rem;
+  position: relative;
+}
+
+.rich .li::before {
+  content: "";
+  width: 0.28rem;
+  height: 0.28rem;
+  border-radius: 99px;
+  background: currentColor;
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  opacity: 0.7;
+}
+
+.rich code {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.86em;
+  background: rgba(28, 25, 21, 0.06);
+  padding: 0.05em 0.3em;
+  border-radius: 0.3em;
+}
+
+.code-sheet {
+  margin: 0;
+  padding: 0.9rem 0 1.4rem;
+  overflow: auto;
+  height: 100%;
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #f4efe6;
+  background: #1c1915;
+  counter-reset: line;
+}
+
+.code-line {
+  display: block;
+  padding: 0 1rem 0 3.2rem;
+  min-height: 1.55em;
+  position: relative;
+  white-space: pre;
+}
+
+.code-line::before {
+  counter-increment: line;
+  content: counter(line);
+  position: absolute;
+  left: 0;
+  width: 2.6rem;
+  text-align: right;
+  color: #8a8175;
+}
+
+.tok-c { color: #a89880; font-style: italic; }
+.tok-tag { color: #f0a36b; }
+.tok-attr { color: #9dccb0; }
+.tok-str { color: #f0d7a0; }
+
+.device {
+  background: white;
+  border: 1px solid rgba(28, 25, 21, 0.12);
+  box-shadow: 0 24px 70px rgba(48, 32, 16, 0.12);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-width: 100%;
+}
+
+.device.desktop {
+  width: 100%;
+  height: 100%;
+  border-radius: 18px;
+}
+
+.device.mobile {
+  width: 390px;
+  height: min(100%, 760px);
+  border-radius: 32px;
+}
+
+.device iframe {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: white;
+}
+
+.splitter {
+  width: 8px;
+  cursor: col-resize;
+  background: linear-gradient(90deg, transparent, rgba(28, 25, 21, 0.08), transparent);
+  flex: none;
+}
+
+.splitter:hover,
+.splitter:focus-visible {
+  background: rgba(32, 70, 240, 0.35);
+}
+
+@media (max-width: 860px) {
+  .splitter { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caret { animation: none; }
+}
+
+dialog {
+  margin: auto;
+  border: 0;
+  padding: 1.5rem;
+  width: min(32rem, calc(100% - 2rem));
+  border-radius: 1.5rem;
+  background: #fffcf8;
+  color: #1c1915;
+  box-shadow: 0 24px 80px rgba(28, 25, 21, 0.28);
+}
+
+dialog::backdrop {
+  background: rgba(28, 25, 21, 0.46);
+}
