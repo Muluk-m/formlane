@@ -1,0 +1,91 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.6/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/.output",
+      "!**/.wrangler",
+      "!**/public",
+      "!**/routeTree.gen.ts",
+      "!apps/server/drizzle/meta",
+      "!apps/server/worker-configuration.d.ts",
+      "!apps/web/playwright-report",
+      "!apps/web/test-results",
+      "!docs/product",
+      "!design"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "asNeeded",
+      "trailingCommas": "all"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "suspicious": {
+        "noAlert": "error",
+        "noConsole": {
+          "level": "error",
+          "options": {
+            "allow": ["info", "warn", "error"]
+          }
+        }
+      },
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error"
+      },
+      "style": {
+        "noNonNullAssertion": "error"
+      }
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "plugins": [
+    {
+      "path": "./biome-plugins/no-native-elements.grit",
+      "includes": ["apps/web/src/**", "packages/ui/src/composites/**"]
+    }
+  ],
+  "overrides": [
+    {
+      "includes": ["DESIGN.md"],
+      "formatter": {
+        "enabled": false
+      }
+    },
+    {
+      "includes": ["packages/ui/src/components/**", "packages/ui/src/hooks/**"],
+      "linter": {
+        "enabled": false
+      }
+    }
+  ]
+}

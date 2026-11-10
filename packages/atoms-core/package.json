@@ -1,0 +1,25 @@
+{
+  "name": "@atoms-demo/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types.ts",
+    "./html": "./src/html.ts",
+    "./text": "./src/text.ts",
+    "./alex-stream": "./src/alex-stream.ts",
+    "./mock": "./src/mock.ts",
+    "./prompts": "./src/prompts.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node ../../scripts/vitest-guard.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.0",
+    "happy-dom": "^21.0.4"
+  }
+}

@@ -1,0 +1,11 @@
+# Fast staged-file checks only; tests run outside hooks.
+pre-commit:
+  commands:
+    biome:
+      glob: "*.{js,mjs,ts,tsx,json,jsonc,css,md}"
+      run: pnpm exec biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+      stage_fixed: true
+commit-msg:
+  commands:
+    english-message:
+      run: node scripts/check-commit.mjs {1}

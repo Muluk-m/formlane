@@ -1,0 +1,20 @@
+{
+  "cloudflare": {
+    "accountName": "Maqiqian0316@gmail.com's Account",
+    "accountId": null
+  },
+  "test": {
+    "branch": "test",
+    "pagesProject": "atoms-demo-web-test",
+    "worker": "atoms-demo-server-test",
+    "databaseName": "atoms-demo-test",
+    "databaseId": null
+  },
+  "production": {
+    "branch": "main",
+    "pagesProject": "atoms-demo-web",
+    "worker": "atoms-demo-server",
+    "databaseName": "atoms-demo",
+    "databaseId": null
+  }
+}

@@ -1,0 +1,11 @@
+// Product UI renders through shadcn components (packages/ui). Native controls are
+// allowed only inside packages/ui/src/components, which is where the primitives live.
+language js
+
+or {
+  JsxOpeningElement(name=$tag),
+  JsxSelfClosingElement(name=$tag)
+} where {
+  $tag <: r"^(?:button|input|select|option|optgroup|textarea|label|table|thead|tbody|tfoot|tr|th|td|caption|dialog|details|summary|progress|meter|a|hr|fieldset|legend|datalist|output)$",
+  register_diagnostic(span=$tag, message="Use @atoms-demo/ui components instead of native controls. See DESIGN.md.")
+}

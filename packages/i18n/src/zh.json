@@ -1,0 +1,174 @@
+{
+  "brand": {
+    "name": "Atoms Demo"
+  },
+  "common": {
+    "language": "语言",
+    "localeName": {
+      "zh": "中文",
+      "en": "English"
+    },
+    "cancel": "取消",
+    "confirm": "确认"
+  },
+  "ui": {
+    "sidebar": { "title": "导航", "description": "项目导航与工作区设置。", "toggle": "切换导航" },
+    "spinner": {
+      "loading": "加载中"
+    },
+    "table": {
+      "empty": "暂无数据"
+    },
+    "combobox": {
+      "empty": "没有匹配项"
+    },
+    "currency": {
+      "placeholder": "搜索币种，如 USD"
+    },
+    "timeZone": {
+      "placeholder": "搜索时区，如 Asia/Shanghai"
+    },
+    "dateRange": {
+      "placeholder": "选择日期范围",
+      "maxDays": "含首尾最多 {maxDays} 天",
+      "confirm": "确定"
+    }
+  },
+  "status": {
+    "updated": "已更新",
+    "running": "进行中",
+    "failedKeepOld": "失败，保留旧数据",
+    "failed": "失败",
+    "noData": "暂无成功数据",
+    "offline": "离线",
+    "ready": "可取数",
+    "pending": "待接受"
+  },
+  "atoms": {
+    "previewError": "预览遇到了错误，请让团队修复。隔离预览中无法使用浏览器持久存储。",
+    "kicker": "智能体工作台",
+    "hero": "一组 AI 同事，把想法做成能用的应用。",
+    "sub": "用一句话描述产品。Mike 排计划，Emma 收需求，Bob 定结构，Alex 写出右侧可以直接点的页面。",
+    "placeholder": "周末市集地图、工作室预约板、邻里工具图书馆……",
+    "hint": "Enter 开始 · Shift+Enter 换行",
+    "build": "开始做",
+    "building": "正在开始…",
+    "examples": "用一个例子",
+    "team": "这一版里的团队",
+    "projects": "你的项目",
+    "empty": "这个浏览器里还没有项目。发出的第一个想法会出现在这里。",
+    "noAccount": "不用注册。项目只跟这台浏览器走。发布出去的链接是公开的。",
+    "versions": "个版本",
+    "version": "个版本",
+    "published": "已发布",
+    "delete": "删除",
+    "preview": "预览",
+    "code": "代码",
+    "history": "历史",
+    "remix": "复制",
+    "download": "下载",
+    "publish": "发布",
+    "updateLive": "更新线上",
+    "desktop": "桌面",
+    "mobile": "手机",
+    "back": "全部项目",
+    "followPlaceholder": "让团队改这个应用…",
+    "send": "发送",
+    "stop": "停止",
+    "files": "文件",
+    "emptyPreview": "等 Alex 写出页面，预览会出现在这里。",
+    "emptyCode": "还没有文件。",
+    "restore": "恢复",
+    "current": "当前",
+    "viewing": "正在看旧版本",
+    "backToCurrent": "回到当前",
+    "copyLink": "复制链接",
+    "copied": "已复制",
+    "unpublish": "取消发布",
+    "close": "关闭",
+    "liveNote": "拿到链接的人都能全屏打开这个应用。",
+    "retry": "让团队再跑一次",
+    "interrupted": "上一次生成好像中断了。",
+    "takeOver": "重新接手",
+    "notFound": "这个浏览器里没有这个项目。",
+    "home": "回首页",
+    "mockPill": "模拟团队",
+    "livePill": "真实模型",
+    "noKey": "这台服务没有模型密钥。可以使用模拟团队，或配置模型 secret。",
+    "examplesList": {
+      "one": {
+        "title": "农夫市集地图",
+        "prompt": "一个海滨小镇的周末农夫市集地图。访客可以按当季品类筛选摊位，收藏想去的摊，并看到哪些摊位能刷卡。"
+      },
+      "two": {
+        "title": "陶艺工作室预约",
+        "prompt": "陶艺工作室的预约板。成员可以预约拉坯机、查看釉料库存，并报名周末的窑烧。"
+      },
+      "three": {
+        "title": "邻里工具图书馆",
+        "prompt": "邻里工具图书馆。邻居可以挂出电钻和梯子、申请借用，并查看哪些工具会在周日之前还回来。"
+      },
+      "four": {
+        "title": "浓缩品鉴日记",
+        "prompt": "浓缩品鉴日记。记录豆子，给甜感和尾韵打分，并把最近五杯并排比较。"
+      }
+    },
+    "loading": "正在加载项目…",
+    "loadError": "无法加载此项目。",
+    "requestError": "请求未能完成。",
+    "streamError": "团队遇到了错误。",
+    "sessionError": "无法创建浏览器会话。",
+    "deleteTitle": "删除项目？",
+    "deleteConfirm": "确定删除「{title}」？此操作无法撤销。",
+    "chat": "团队对话",
+    "savedVersion": "版本 {number} 已保存",
+    "previewTitle": "应用预览",
+    "previewAddress": "实时预览",
+    "resize": "调整对话面板宽度",
+    "ideaRequired": "请描述你想构建的应用。",
+    "ideaLength": "最多输入 4,000 个字符。",
+    "messageRequired": "请输入给团队的消息。",
+    "messageLength": "最多输入 4,000 个字符。",
+    "newProject": "新建项目",
+    "workspace": "工作空间",
+    "historyNote": "预览保存的版本，或将其恢复为当前应用。",
+    "errorTitle": "出现了问题",
+    "versionLabel": "版本 {number}",
+    "versionCount": "{count} 个版本",
+    "justNow": "刚刚",
+    "bytes": "{count} B",
+    "kilobytes": "{count} KB"
+  },
+  "agents": {
+    "mike": {
+      "name": "Mike",
+      "role": "团队负责人",
+      "blurb": "排好顺序，让每个角色做自己那一段。",
+      "status": "Mike 正在排计划…"
+    },
+    "emma": {
+      "name": "Emma",
+      "role": "产品经理",
+      "blurb": "把想法收成 Alex 能直接做的小规格。",
+      "status": "Emma 正在写需求…"
+    },
+    "bob": {
+      "name": "Bob",
+      "role": "架构师",
+      "blurb": "选定一个单页就能跑起来的结构。",
+      "status": "Bob 正在定结构…"
+    },
+    "alex": {
+      "name": "Alex",
+      "role": "工程师",
+      "blurb": "把页面写出来，让右侧预览可以直接点。",
+      "status": "Alex 正在写代码…"
+    },
+    "david": {
+      "name": "David",
+      "role": "数据分析",
+      "blurb": "告诉你如果拿去给人用，该看哪些数。",
+      "status": "David 正在看结果…"
+    }
+  }
+}

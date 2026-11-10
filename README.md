@@ -1,166 +1,99 @@
 # Atoms Demo
 
-Atoms Demo is a small AI product team you can run in the browser. You describe an app in a sentence. Mike (team lead), Emma (product manager), Bob (architect), and Alex (engineer) work through it in chat, and a live preview appears on the right. David (data analyst) closes the first build with what to measure. A follow-up message edits the same app and saves a new version.
+Describe an app in a sentence and watch a small AI product team build it. Mike leads, Emma writes the product brief, Bob chooses the structure, Alex generates a single HTML app, and David suggests what to measure. A follow-up asks Mike and Alex to revise the current app and save another version.
 
-It is a take-home recreation of the core loop on [atoms.dev](https://atoms.dev/): a multi-agent build, a preview beside the chat, and a one-click published URL. There is no account. Projects belong to an anonymous id stored in this browser.
+This is a recreation of the core [atoms.dev](https://atoms.dev/) loop: team conversation, interactive preview, and a published link. There is no registered account system. Projects belong to an anonymous browser identity.
 
-![Landing](docs/screenshots/02-landing-example.png)
+![Skyline home](docs/screenshots/skyline-home.webp)
+![Skyline workspace](docs/screenshots/skyline-workspace.webp)
 
-![Workspace](docs/screenshots/03-workspace-preview.png)
-
-## Architecture
-
-```mermaid
-flowchart LR
-  subgraph browser [Browser]
-    SPA["React SPA"]
-    Frame["Sandboxed iframe"]
-  end
-  subgraph worker [Cloudflare Worker]
-    Hono["Hono API"]
-    Team["Agent pipeline"]
-  end
-  D1[(D1)]
-  OpenAI["OpenAI chat completions"]
-
-  SPA -->|"JSON + SSE"| Hono
-  Hono --> D1
-  Hono --> Team
-  Team -->|"stream tokens"| OpenAI
-  Team -->|"MOCK_LLM"| Team
-  SPA --> Frame
-  Hono -->|"/p/:slug HTML"| Public["Public visitors"]
-```
-
-The Worker serves the API and published pages. Static assets (the Vite build) serve the SPA, including client routes like `/project/:id`, via `not_found_handling: single-page-application`. `run_worker_first` sends `/api/*` and `/p/*` to the Worker before assets.
-
-```mermaid
-sequenceDiagram
-  participant You
-  participant Mike
-  participant Emma
-  participant Bob
-  participant Alex
-  participant David
-  participant Preview
-
-  You->>Mike: idea
-  Mike->>Emma: plan
-  Emma->>Bob: short spec
-  Bob->>Alex: single-file structure
-  Alex->>Preview: index.html
-  Alex->>David: version saved
-  David->>You: what to measure
-  You->>Mike: change request
-  Mike->>Alex: current HTML + request
-  Alex->>Preview: version N+1
-```
-
-Follow-ups skip Emma, Bob, and David. Mike restates the change, then Alex rewrites the full `index.html` with the current source in the prompt. Every successful Alex pass is a new row in `versions`.
-
-## What the model actually does
-
-Each persona is a streamed chat completion (`stream: true`) against `POST {OPENAI_BASE_URL}/chat/completions`. The default model is `gpt-4.1` (`OPENAI_MODEL`). Tokens are forwarded to the browser as Server-Sent Events and appended to that agent's message.
-
-Alex is asked to reply with a one-line `NOTE:` and then a single `html` fence. The Worker splits that stream: the note stays in chat, the document streams into the Code tab, and the iframe updates once a complete document is present. The stored version is the extracted document only.
-
-If `MOCK_LLM=true` (or `1` / `yes` / `on`), the same SSE events fire, but the lines come from a local generator instead of OpenAI. The UI, database, versions, and publish path are unchanged. Use this when you do not have a key. There is no silent fallback: with the flag off and no key, the run stops with an error in the chat.
+Captured from the migrated local workspace in explicit mock mode.
 
 ## Features
 
-- Landing page with example prompts, English / 中文 copy, and this browser's project list
-- Streaming multi-agent build and a resizable chat / preview split
-- Sandboxed iframe preview (`allow-scripts`, no same origin) and a Code tab with syntax highlighting for `index.html`
-- Desktop / mobile preview frame
-- Follow-up edits create a new version, with the previous HTML sent as context
-- Version history: open an older build, or restore it as current
-- Publish to `/p/:slug` (public, full screen). Publish again to point the same link at the latest version. Unpublish clears it.
-- Remix (duplicate chat, versions, and current preview into a new project)
-- Download the current or viewed `index.html`
-- Anonymous owner via an `atoms_uid` cookie, with `localStorage` as a backup header
-- Stop button aborts the model request
+- English/Chinese interface, example prompts, and this browser's project list.
+- Streaming agent conversation beside a resizable preview/code workspace.
+- Sandboxed interactive preview, syntax-highlighted HTML, desktop/mobile preview sizes.
+- Follow-up revisions with the current HTML in context.
+- Version history, historical preview, and restoring a saved result as current.
+- Publish a saved result at `/p/:slug`, republish the same link, or unpublish it.
+- Remix a project with its conversation and versions; download generated `index.html`.
+- Stop an active generation request without replacing the last complete result.
 
-## Local development
+## Source architecture
 
-Requirements: Node 22+, npm.
+The repository adopts the engineering and Skyline design baseline of the read-only reference at `/Users/qiqian/Projects/Qlj/adcounter`, while retaining the Atoms product and D1 persistence. The working project is `/Users/qiqian/Projects/Self/atoms-demo`.
 
-```bash
-npm install
-cp .dev.vars.example .dev.vars
+| Workspace                                  | Responsibility                                                                                                    |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `apps/web`                                 | React/Vite, TanStack Router and Query, React Hook Form/Zod, project and generation UI                             |
+| `apps/server`                              | Hono Worker, oRPC contract implementation, SSE orchestration, Drizzle D1 persistence, publication/download routes |
+| `packages/contracts`                       | Shared oRPC/Zod contract consumed by the server and typed web client                                              |
+| `packages/atoms-core` (`@atoms-demo/core`) | Runtime-independent types, HTML/text parsing, prompts, mock generator                                             |
+| `packages/ui`                              | Shared shadcn base-nova / Base UI primitives and composites, Hugeicons, Skyline tokens                            |
+| `packages/i18n`                            | The single English/Chinese message catalog and locale helpers                                                     |
+
+```mermaid
+flowchart LR
+  Web[React / TanStack workspace] -->|oRPC CRUD| API[Hono / oRPC Worker]
+  Web -->|SSE generation and chat| API
+  API -->|Drizzle| D1[(D1)]
+  API --> Pipeline[Agent pipeline]
+  Pipeline -->|Real mode| Provider[OpenAI-compatible provider]
+  Pipeline -->|Explicit mock mode| Mock[Core mock generator]
+  Web --> Preview[Sandboxed generated HTML]
+  API -->|Published version at /p/:slug| Public[Public visitor]
 ```
 
-Edit `.dev.vars`:
+The contract is imported from `@atoms-demo/contracts`, not inferred by importing server code. CRUD uses the typed oRPC client with OpenAPILink and TanStack Query helpers; generation remains SSE so streaming/cancellation semantics stay intact. Shared packages do not depend on applications. See [architecture](docs/internals/architecture.md) and [D1 decision](docs/adr/0010-server-on-workers.md).
 
-- Real model: set `OPENAI_API_KEY` and leave `MOCK_LLM=false`
-- No key: set `MOCK_LLM=true`
+## Real model versus mock mode
 
-Then:
+**Real mode** calls `POST {OPENAI_BASE_URL}/chat/completions` with streaming enabled. `OPENAI_MODEL` selects the model. Alex emits a short `NOTE:` and an HTML document; the parser separates conversation from code, and only a complete document becomes a saved version.
 
-```bash
-npm run dev
+**Mock mode** is explicit and local-only: `MOCK_LLM=true` with `ENVIRONMENT=local` uses the local generator instead of a provider. It exercises the same conversation stream, database, version, preview, and publication path. The generator supports bounded template/theme/revision behavior; it is not an open-ended coding model. A successful mock run does not verify provider credentials or live generation quality. Non-local environments reject mock mode.
+
+With mock mode off, a missing `OPENAI_API_KEY` is an error. There is no silent provider-to-mock fallback. Stop aborts the active request; generation is request-bound rather than a durable background workflow.
+
+## Development
+
+Use the Node and pnpm versions pinned in the root manifest; this is a **pnpm + Turbo monorepo**, not an npm single-package application. Setup and all secrets are local until an authorized deployment is explicitly requested.
+
+```sh
+pnpm install
+cp apps/server/.dev.vars.example apps/server/.dev.vars
+pnpm db:migrate
+pnpm dev
 ```
 
-That typechecks, builds the SPA, applies D1 migrations to the local database, and starts `wrangler dev` on port 8787. Local D1 lives in `.wrangler/state`. Open http://127.0.0.1:8787.
+Set `MOCK_LLM=true` and `ENVIRONMENT=local` in `apps/server/.dev.vars` for local work without a provider key. For real mode, set `OPENAI_API_KEY` and leave `MOCK_LLM=false`. Wrangler reads local variables from the server workspace. The Vite UI uses the local Worker API; `pnpm dev:web` and `pnpm dev:server` can run them separately. Consult the manifests for current ports and command implementations.
 
-`npm run dev:mock` forces the mock team even if `.dev.vars` is missing.
+| Variable          | Meaning                                                  |
+| ----------------- | -------------------------------------------------------- |
+| `OPENAI_API_KEY`  | Secret required for real mode                            |
+| `OPENAI_BASE_URL` | OpenAI-compatible API root, not the full completions URL |
+| `OPENAI_MODEL`    | Provider model name                                      |
+| `MOCK_LLM`        | Explicitly choose the local-only generator               |
+| `ENVIRONMENT`     | Must be `local` when mock mode is enabled                |
+| `MOCK_DELAY_MS`   | Delay between mock chunks; zero makes them immediate     |
 
-Other scripts:
+Use focused tests and package typechecks while developing; one integration owner coordinates full checks. See [development](docs/operations/development.md), [testing](docs/internals/testing.md), and [debugging](docs/operations/debugging.md).
 
-```bash
-npm test          # parser, HTML extraction, mock app
-npm run build     # typecheck + vite build
-npm run preview   # wrangler dev without rebuilding
-```
+Migration verification: remote Biome checks, six package typechecks, 24 tests, Vite production build, and Worker dry-run passed. Local browser checks exercised generation, preview Save/Add, follow-up revisions, reload persistence, version restore, publication/unpublication, HTML download, code/mobile views, and remix in explicit mock mode. Real-provider generation and an authorized public release remain unverified.
 
-## Deploy
+## Deployment status
 
-The production Worker and D1 database are already configured in `wrangler.jsonc` for the Cloudflare account used by this project. The public deployment is:
+**Public deployment is blocked on access to the designated Cloudflare account: Maqiqian0316@gmail.com's Account.** Its account ID is unverified. The observed dashboard session exposes company accounts, not that Gmail account. Prior `chanyan.workers.dev` deployments used an unauthorized wrong account and are **not a valid deliverable or a verified production URL**.
 
-```text
-https://atoms-demo.chanyan.workers.dev
-```
+Do not reuse those account/database IDs or deploy through a fallback identity. Once the correct account is accessible, verify its ID and bound D1 resource, then obtain authorization for remote migration, secret writes, and deployment. The deployment guard must fail closed on an account name/ID mismatch. See the [deployment procedure](docs/operations/deployment.md). No public URL is claimed here.
 
-To deploy changes:
+## Limits and behavior worth knowing
 
-```bash
-npm run build
-npx wrangler d1 migrations apply atoms-demo --remote
-npx wrangler deploy
-```
+- Generated apps are self-contained frontend HTML, not provisioned backends, authentication systems, or databases.
+- Projects, chat, generated code, and saved versions persist in D1. Interactive state inside a generated app is different: the mock app keeps it in memory for the current preview session only. The opaque-origin preview sandbox does not provide browser-storage persistence, and saving HTML does not persist that app's runtime state.
+- A request holds a generation run. Closing/disconnecting the browser can interrupt it; this is not a resumable background agent service.
+- Historical preview, current version, and published version are distinct. Restoring changes the current result, not the public link; publish again to update that link.
+- Anonymous identity is a demo ownership boundary, not a substitute for production authentication.
+- No GitHub export, visual editor, or multi-model race is claimed.
 
-The public demo runs with `MOCK_LLM=true`, so it is usable without a provider secret. For a live model, set `OPENAI_API_KEY` as a Worker secret and switch `MOCK_LLM` to `false`.
-
-Optional secrets / vars (vars already have defaults in `wrangler.jsonc`):
-
-| Name | Role |
-| --- | --- |
-| `OPENAI_API_KEY` | Secret. Required unless `MOCK_LLM=true`. |
-| `OPENAI_MODEL` | Default `gpt-4.1`. |
-| `OPENAI_BASE_URL` | Default `https://api.openai.com/v1`. An OpenAI-compatible root, not the full `/chat/completions` path. |
-| `MOCK_LLM` | `true` to skip the provider. Do not enable this on a public deployment unless you mean to. |
-| `MOCK_DELAY_MS` | Pause between mock chunks. `0` is instant. |
-
-`npx wrangler deploy` uploads the Worker and the `dist/` assets from the last `npm run build`. Run the build first (or `npm run deploy`, which does both).
-
-## Data model
-
-`migrations/0001_init.sql`
-
-- `projects` — owner, idea, status, current version, published slug
-- `messages` — user, agent, and system lines
-- `versions` — every generated `index.html`, numbered per project
-
-The Worker also applies that SQL on startup (`CREATE IF NOT EXISTS`), so a local `wrangler dev` still boots if you skipped the migrate command. Remote databases should still get `wrangler d1 migrations apply --remote` so the migrations table stays honest.
-
-## How this was built
-
-This repo was implemented with Cursor's coding agent (Grok) as a pair: product shape from atoms.dev and the public agent docs, then the Worker, D1 schema, streaming pipeline, and UI in this workspace. The agent pipeline prompts, the mock team, and the browser pass over the running app were part of that session. Generated apps in the preview are model output (or the mock generator), not hand-written pages checked in as the product.
-
-## Known gaps
-
-- Generated apps are one self-contained frontend file. They do not get a backend, auth, or a database of their own.
-- A run lives on the request. Closing the tab stops it. Another tab sees "already working" until the lock goes stale (about three minutes) or you take over.
-- Publishing serves the version you published. Restoring an older version locally does not change the public URL until you publish again.
-- No GitHub export, visual editor, or multi-model race.
-- The mock team follows the idea and can apply a dark theme, a color, and a revision panel. It is not a general code model. Use a real `OPENAI_API_KEY` for open-ended edits.
-- `npm run dev` rebuilds the SPA before starting Wrangler, so the first start is a full build rather than Vite HMR.
+[Documentation index](docs/README.md) · [Product terminology](CONTEXT.md) · [Full design system](DESIGN.md) · [Agent entry point](AGENTS.md)

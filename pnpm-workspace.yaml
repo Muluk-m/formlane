@@ -1,0 +1,11 @@
+packages:
+  - apps/*
+  - packages/*
+
+allowBuilds:
+  "@sentry/cli": true
+  esbuild: true
+  lefthook: true
+  workerd: true
+
+minimumReleaseAgeStrict: true

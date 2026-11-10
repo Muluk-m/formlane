@@ -8,3 +8,10 @@ playwright-report
 test-results
 .vite
 *.tsbuildinfo
+.turbo
+.env
+.env.*
+!.env.example
+.dev.vars.*
+!.dev.vars.example
+coverage

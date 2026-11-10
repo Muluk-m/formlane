@@ -1,0 +1,142 @@
+@import "@atoms-demo/ui/globals.css";
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  min-width: 320px;
+}
+
+button,
+textarea,
+input {
+  font: inherit;
+}
+
+::selection {
+  background: var(--sky-wash);
+}
+
+.landing-bg {
+  background: linear-gradient(to bottom, var(--sky-wash), transparent 260px), var(--background);
+}
+
+.caret {
+  display: inline-block;
+  width: 0.4rem;
+  height: 1em;
+  background: currentColor;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.rich .li {
+  display: block;
+  padding-left: 1rem;
+  position: relative;
+}
+.rich .li::before {
+  content: "•";
+  position: absolute;
+  left: 0.2rem;
+  color: var(--link);
+}
+.rich code {
+  border-radius: 0.25rem;
+  background: var(--surface-sunken);
+  padding: 0.1rem 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+
+.code-sheet {
+  overflow: auto;
+  background: var(--surface-sunken);
+  padding: 1rem;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+.code-line {
+  display: block;
+  min-height: 1.5em;
+}
+.code-line::before {
+  content: attr(data-line);
+  display: inline-block;
+  width: 2rem;
+  margin-right: 1rem;
+  color: var(--muted-foreground);
+  text-align: right;
+  user-select: none;
+}
+.tok-c {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+.tok-tag {
+  color: var(--chart-1);
+}
+.tok-attr {
+  color: var(--chart-2);
+}
+.tok-str {
+  color: var(--chart-4);
+}
+
+.device {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--background);
+  box-shadow: var(--shadow-card);
+}
+.device.desktop {
+  width: 100%;
+  height: 100%;
+}
+.device.mobile {
+  width: 390px;
+  height: min(100%, 760px);
+  border-radius: var(--radius-xl);
+}
+.device iframe {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  background: var(--background);
+}
+.splitter {
+  width: 0.5rem;
+  cursor: col-resize;
+  background: transparent;
+  flex: none;
+}
+.splitter:hover,
+.splitter:focus-visible {
+  background: color-mix(in oklch, var(--ring), transparent 60%);
+}
+@media (max-width: 860px) {
+  .splitter {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .caret {
+    animation: none;
+  }
+}
