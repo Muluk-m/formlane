@@ -1,6 +1,3 @@
-export * from './alex-stream'
 export * from './html'
-export * from './mock'
-export * from './prompts'
 export * from './text'
 export * from './types'

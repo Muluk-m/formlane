@@ -8,26 +8,28 @@ Full verification belongs in the agreed CI/remote workflow or an explicitly auth
 
 ## Behavior worth testing
 
-| Boundary             | Cases                                                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------------------------ |
-| Core stream parsing  | Split fences, incomplete HTML, note/code separation, replacement deltas, complete-document extraction  |
-| Explicit modes       | Mock protocol/persistence path, missing real key errors, no silent fallback                            |
-| Ownership            | Another anonymous identity cannot read or mutate private project/chat/version/download data            |
-| Generation lifecycle | Initial sequence, follow-up context, abort/failure, previous-version preservation, stale-run exclusion |
-| Versions             | Monotonic project-local numbering, historical inspection, restore, source-independent remix            |
-| Publication          | Explicit version pin, republish same link, restore without republish, unpublish, missing/invalid slug  |
-| Database             | Migration from empty local D1, constraints, conditional/batched operations, schema consistency         |
-| UI integration       | Query invalidation, field errors/input retention, navigation reload, accessible names, both locales    |
-| Runtime              | Actual workerd behavior for streaming, bindings, provider aborts, generated HTML headers/sandbox       |
+| Boundary             | Cases                                                                                                                                               |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core stream parsing  | Split fences, incomplete HTML, note/code separation, replacement deltas, complete-document extraction                                               |
+| Provider boundary    | Missing-key errors, real SDK tool delegation, visible provider failure, no mock fallback                                                            |
+| Ownership            | Another anonymous identity cannot read or mutate private project/chat/version/download data                                                         |
+| Generation lifecycle | Manager decisions, role-scoped tools, follow-up context, repair/review gate, persisted deadline, cancellation fences, previous-version preservation |
+| Versions             | Monotonic project-local numbering, historical inspection, restore, source-independent remix                                                         |
+| Publication          | Explicit version pin, republish same link, restore without republish, unpublish, missing/invalid slug                                               |
+| Database             | Migration from empty local D1, constraints, conditional/batched operations, schema consistency                                                      |
+| UI integration       | Query invalidation, field errors/input retention, navigation reload, accessible names, both locales                                                 |
+| Runtime              | workerd control-plane/D1 behavior; Node 24 provider aborts, non-root systemd, native Chromium sandbox and credential isolation                      |
+| Durable replay       | Cursor replay; lease expiry/reclaim; immutable checkpoint reuse after restart; stale-lease write rejection; bounded transient provider retry        |
+| Browser validation   | Real state-changing checks, current artifact hash, independent acceptance, isolated context/network denial, failed checks returning repair evidence |
 
 Test at the lowest boundary where a regression would fail. Extend an existing case/table when possible. Avoid assertions that only prove a mock function was invoked, duplicate type-system guarantees, or freeze incidental copy. Use real local D1 for database semantics rather than a mocked repository that cannot reproduce them.
 
-Inject time where possible; avoid sleeps and polling as a substitute for deterministic state. Provider HTTP can be intercepted at the network boundary, but an intercepted response is not a real-provider acceptance run. Runtime-sensitive behavior needs local Wrangler/workerd evidence when verification is requested.
+Inject time where possible; avoid sleeps and polling as substitutes for deterministic state. Intercepted provider HTTP is not real-provider acceptance. Runtime-sensitive verification must target the relevant runtime: Wrangler/workerd for the API/D1 control plane, Node 24 and native Chromium for executor behavior.
 
 ## Visual and end-to-end evidence
 
 Visual changes need before/after browser screenshots, not markup-only tests. Inspect Base UI orientation, dialogs/focus, loading/status icons, narrow layouts, and the white/sky/black token treatment. Generated output may intentionally use a different theme.
 
-An end-to-end pass exercises idea → streamed conversation/code → saved preview → follow-up → history/restore → remix/download → publish/republish/unpublish → reload. Run the path in explicit mock mode for reproducibility and, when credentials and authorization are available, in real mode for provider integration. Record which mode was exercised.
+An end-to-end pass exercises idea → manager delegation → browser-validated saved preview → follow-up → history/restore → remix/download → publish/republish/unpublish → reload. Use the real configured provider; there is no product mock mode. Separately exercise disconnect/reconnect, explicit cancellation, persisted deadline enforcement and a validation failure repaired before independent acceptance. Record deployed build, run identity and actual evidence; provider test interception is not deployed acceptance.
 
-Public deployment acceptance is blocked until the designated Cloudflare account is accessible and verified; see [deployment](../operations/deployment.md). A local pass or a wrong-account public URL is not an authorized release.
+Public acceptance requires the designated verified Cloudflare account, the separately approved GCP executor target and authorization; see [deployment](../operations/deployment.md). A local pass, historical screenshot or wrong-account URL is not current release evidence.

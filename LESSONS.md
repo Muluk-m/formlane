@@ -5,11 +5,13 @@ Read before changing a related area. Entries distinguish observed migration mist
 ## This migration
 
 - **2026-11-10 — A `/p` Vite proxy also matched `/project` and broke direct reloads.** Match `/p/` and `/api/` explicitly; verify SPA route reloads separately from client-side navigation.
-- **2026-11-10 — The mock document used browser storage inside an opaque iframe and never installed its event handlers.** Keep the sandbox isolated, use explicit session state for generated fixtures, and exercise actual Save/Add interactions instead of inferring success from dispatched clicks.
+- **2026-11-10 — Historical scaffold storage failure:** an earlier mock document used browser storage inside an opaque iframe and never installed its event handlers. That generator is obsolete; retain the lesson, not a mock execution path. Keep generated apps isolated and exercise real state-changing interactions rather than inferring success from dispatched clicks.
 
 - **2026-11-10 — A prior deployment used the wrong Cloudflare account.** Select **Maqiqian0316@gmail.com's Account**, verify its ID and every bound resource, and obtain authorization before any remote mutation. A working historical hostname is not proof of the correct account.
 - **2026-11-10 — Copying the repository skeleton left an incomplete baseline migration.** A workspace manifest is not enough: consumers must really use contract-first oRPC, shared Base UI components, the single catalog, and Drizzle D1. Remove obsolete code paths instead of retaining parallel implementations.
 - **2026-11-10 — Copied context described the wrong product.** Transfer design tokens, progressive disclosure, and relevant engineering invariants; rewrite product terminology and remove unrelated business procedures. Preserve Atoms features rather than turning the reference's domain into new scope.
+- **2026-11-10 — Request-bound generation was not durable execution.** The predecessor's fixed persona sequence and 120-second abort conflated disconnect, timeout and cancellation. [ADR-0012](docs/adr/0012-durable-agent-harness.md) replaces it with SDK delegation, D1 checkpoints/events and leases, a persisted 15-minute deadline and fenced cancellation. HTML parsing alone is not acceptance: require actual browser evidence for the current artifact and independent review.
+- **2026-11-10 — Cloudflare Free CPU killed validator execution.** Moving a long-running tool loop into Workflows did not remove the observed 10 ms Worker CPU constraint. The user approved GCP Node/native-Playwright compute while preserving the personal-account Cloudflare API/D1/Pages control plane. Keep per-cloud identity, trial-cost approval and runtime evidence separate; do not silently upgrade billing or disable Chromium's sandbox.
 
 ## Inherited engineering lessons
 

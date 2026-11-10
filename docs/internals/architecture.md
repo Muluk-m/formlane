@@ -2,7 +2,7 @@
 
 ## System shape
 
-Atoms Demo is a pnpm/Turbo monorepo with a React browser application and a Hono Cloudflare Worker. D1 stores project ownership, conversation, and HTML versions through Drizzle. There is no separate queue, extension, marketing application, or provisioned backend for generated apps.
+Atoms Demo is a pnpm/Turbo monorepo with a React browser application, Hono Cloudflare control-plane Worker and Node 24 GCP executor. D1 stores ownership, conversation, versions, runs, events, leases and checkpoints through Drizzle. `apps/executor` runs OpenAI Agents SDK and native Playwright as a non-root systemd service. Generated apps have no provisioned backend. The earlier Workflows/browser-binding execution was superseded after the Free Worker CPU limit killed validation.
 
 ```text
 apps/web ──────────► packages/ui ─────► packages/i18n
@@ -10,28 +10,31 @@ apps/web ──────────► packages/ui ─────► packag
    ├──────────────► packages/contracts ◄──────── apps/server
    └──────────────► packages/atoms-core ◄─────── apps/server
                                                   │
-                                         Drizzle / D1
-                                                  │
-                                    OpenAI-compatible provider
+                                             Drizzle / D1
+                                                  ▲
+apps/executor ── authenticated control-plane API ───┘
+   ├──────────────► OpenAI Agents SDK / provider
+   └──────────────► Native Playwright / Chromium
 ```
 
-Packages never depend on applications. The web client imports contract types from contracts, not the server's inferred Hono app type. UI has no application persistence dependency. Core contains runtime-independent types/parsers/prompts/mock generation; provider transport and orchestration stay in the server.
+Packages never depend on applications. The web imports contract types from contracts, not inferred server types. UI has no persistence dependency. Core contains runtime-independent helpers; `apps/executor` owns provider transport, SDK agents, tools and checkpoint orchestration. `apps/server` owns D1 persistence and authenticated lease/control-plane operations.
 
 ## API and query boundary
 
 CRUD is contract-first oRPC: Zod schemas and procedure metadata are shared; the server implements that contract and the web uses `createORPCClient`, `OpenAPILink`, and `createTanstackQueryUtils`. TanStack Query owns request caching/invalidation and Router owns navigation. React Hook Form/Zod owns editable form state and client validation, without duplicating server authority.
 
-Generation and follow-up chat deliberately retain `/api/projects/:id/generate` and `/api/projects/:id/chat` SSE transport. Downloads and `/p/:slug` remain HTTP document endpoints. These are distinct transport needs, not a second generic CRUD client. Preserve abort handling and streamed errors while changing ordinary API plumbing.
+Generation and follow-up requests start durable runs and return run identity. The browser observes a separate owned run-event SSE endpoint, replaying from `after` or `Last-Event-ID`. Disconnect aborts only observation. Downloads and `/p/:slug` remain HTTP document endpoints, not a second generic CRUD client.
 
 ## Initial build and follow-up
 
-1. An owned project starts a generation request; ownership and active-run conditions are checked on the server.
-2. Mike plans, Emma specifies, Bob designs, Alex generates HTML, and David suggests measurements. Follow-ups use Mike and Alex with the current HTML as context.
-3. Each agent's text streams to the browser. Alex's note and document are separated by the core incremental parser.
-4. Complete HTML is saved as a version and selected as current. Incomplete output or a failed run cannot replace a previous complete result.
-5. The browser refreshes query-backed project/version state and presents the saved result. Publishing explicitly selects a saved version for a public slug.
+1. An owned project queues a D1 run with an active-run fence and persisted 15-minute deadline. The VM polls `/internal/executor`, claims a 60-second lease and heartbeats every 10 seconds; no public VM application port is required.
+2. Mike selects a specialist through schema-validated SDK decision tools. Manager decisions and specialist turns have separate durable checkpoints. Emma defines scope, Bob architecture, Alex implementation/repair, and David independent review; this is not a fixed persona-completion pipeline.
+3. Specialists use role-scoped tools. Planning roles read the workspace; Alex reads/writes/validates; David reads/validates/records acceptance. Actual specialist results inform the next manager decision.
+4. Native Playwright validates each check in a fresh context and opaque iframe. Sandboxed Chromium receives no provider/control-plane credentials; restrictive CSP, HTTP/WebSocket blocking and disabled service workers/downloads isolate candidates. Restricted click/fill and exact text/value/count checks produce repair evidence, not arbitrary privileged executor JavaScript.
+5. Only passing validation for the current artifact hash plus explicit David acceptance permits a version commit. Failure, cancellation or deadline expiry preserves the last complete version.
+6. D1 events carry sequence cursors for browser replay. Cancellation fences writes and the executor aborts on loss of heartbeat authority. Expired leases can be reclaimed; immutable named checkpoint results resume completed steps, while interrupted calls may repeat. The UI refreshes saved state on completion. Publication remains explicit.
 
-Real and mock generation share this product path. Mock mode replaces the provider source, not persistence or publication, and is allowed only with `ENVIRONMENT=local`; deployed environments require a real provider. Runs are request-bound: this is not a durable background agent workflow, and reconnecting does not claim to resume a provider stream.
+Execution is real-provider only, with visible errors for missing credentials. Checkpoints can replay in-flight specialist calls; event identities are idempotent, but provider billing is not exactly-once. [ADR-0012](../adr/0012-durable-agent-harness.md) defines the durable harness decision and its evidence limits.
 
 ## Persistence and public boundary
 
@@ -39,12 +42,12 @@ Read [data-model.md](data-model.md) for pointer and ownership invariants. Local 
 
 Preview HTML is untrusted and sandboxed. Public HTML is served only through publication. Current, viewed, and published versions are separate concepts; browser state must not accidentally collapse them.
 
-Project/chat/code/version persistence in D1 does not persist the generated application's interactive runtime state. The opaque-origin preview cannot rely on browser storage; the mock app keeps state only in memory for the current preview session.
+Project/chat/code/version persistence in D1 does not persist the generated application's interactive runtime state. The opaque-origin preview cannot rely on browser storage; generated apps use in-memory state for the preview session.
 
 ## Inheritance scope
 
 Preserved: workspace/package boundaries, strict shared TypeScript, targeted tooling, contract-first API, TanStack query/router conventions, form validation, complete base-nova primitives, reusable composites, Hugeicons, full Skyline token frontmatter, catalog-backed copy, and progressive documentation.
 
-Adapted: Atoms-specific ownership, streaming agents, version history, publishing, core parsers, mock behavior, and D1 rather than PostgreSQL. Not inherited: unrelated business models, external account integrations, billing, or their deployment infrastructure. The source repository remains read-only.
+Adapted: Atoms-specific ownership, streaming observation, version history, publishing, core parsers, and D1 rather than PostgreSQL. The original fixed pipeline and local mock scaffold are historical origins only. Not inherited: unrelated business models, external account integrations, billing, or their deployment infrastructure. The source repository remains read-only.
 
 Release topology and account verification belong to [deployment](../operations/deployment.md). No existing hostname is implied to be a verified deployment of this architecture.

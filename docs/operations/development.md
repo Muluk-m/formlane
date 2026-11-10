@@ -6,22 +6,22 @@ Work in `/Users/qiqian/Projects/Self/atoms-demo`. Read Node `engines` and `packa
 
 ```sh
 pnpm install
-cp .dev.vars.example apps/server/.dev.vars
+cp apps/server/.dev.vars.example apps/server/.dev.vars
 pnpm db:migrate
 pnpm dev
 ```
 
-The server workspace is Wrangler's working directory, so its local secrets file is `apps/server/.dev.vars`. For provider-free work set both `MOCK_LLM=true` and `ENVIRONMENT=local`; non-local environments reject mock mode. Otherwise configure a real key and keep mock mode off. Never commit that file or include its values in logs. `pnpm db:migrate` applies local D1 migrations; local development does not require a verified remote account. A local migration must not be changed to `--remote` as a shortcut.
+The server workspace is Wrangler's working directory; its local configuration lives in `apps/server/.dev.vars`. Configure the control-plane `EXECUTOR_TOKEN` there, not model execution credentials. `pnpm db:migrate` applies local D1 migrations; never change it to `--remote` as a shortcut. Model execution runs separately in `apps/executor` on Node 24 with native Chromium and environment variables `OPENAI_API_KEY`, `ENDPOINT`, `MODEL`, `EXECUTOR_TOKEN` and `CONTROL_PLANE_URL`. The URL must use HTTPS and the token must match the target API. Never commit or log secrets. No Workflow/browser bindings or mock generation are required or supported by this execution path. Local UI startup alone does not establish generation acceptance.
 
 `pnpm dev` uses Turbo to coordinate the web and Worker tasks. Start only one instance of each service; `dev:web` / `dev:server` are separate entry points when needed. The web development proxy sends API/public requests to the Worker, preserving the browser's same-origin ownership behavior. Read the Vite and Wrangler configurations for ports and routes instead of duplicating configuration here.
 
 ## Dependencies and shared code
 
 - Read the installed package declaration for new API usage. Base UI, TanStack Table, oRPC, and Zod must follow the selected major versions.
-- Changes to API shapes begin in contracts, then update both server and web. Runtime-independent parsers/prompts/mock logic belong in core.
+- Changes to API shapes begin in contracts, then update server and web. Runtime-independent helpers belong in core; SDK agents, scoped tools, native browser validation and checkpoint orchestration belong in `apps/executor`. D1 persistence and lease authorization belong in `apps/server`.
 - All visible copy uses the single i18n catalog. All product controls use UI. Feature-specific composition stays in the web application.
 - Drizzle schema and SQL migrations move together. Local D1 and deployment bindings are distinct configurations.
-- The baseline migration preserves `0001_init.sql` and adds `0002_run_fence.sql` for run identity. Apply both before starting the server. Generate Worker binding types with the server's `cf:typegen` script when bindings change.
+- Preserve initialization and run-fence migration history and apply additive run/event migrations through `0004_executor_leases.sql` before using the executor. Generate Worker binding types with the server's `cf:typegen` script when bindings change. Read [ADR-0012](../adr/0012-durable-agent-harness.md) before changing durable execution.
 
 ## Checks and resource use
 

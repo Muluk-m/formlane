@@ -1,19 +1,13 @@
-import type { AppVersion, ChatMessage, Project, ProjectStatus } from '@atoms-demo/core/types'
+import type { AppVersion, ChatMessage, Project } from '@atoms-demo/core/types'
 import { isAgentId } from '@atoms-demo/core/types'
-import { and, count, desc, eq, getTableColumns, lt, max, ne, or, sql } from 'drizzle-orm'
+import { and, desc, eq, getTableColumns, sql } from 'drizzle-orm'
 import type { Db } from '../../db/client'
-import { messages, projects, versions } from '../../db/schema'
+import { messages, projects, runCheckpoints, runEvents, runs, versions } from '../../db/schema'
+import { stateEvent } from './runs.repo'
 
 export type ProjectRow = typeof projects.$inferSelect & { version_count?: number }
-export type Run = { projectId: string; runId: string }
 const owned = (id: string, ownerId: string) =>
   and(eq(projects.id, id), eq(projects.owner_id, ownerId))
-const active = (run: Run) =>
-  and(
-    eq(projects.id, run.projectId),
-    eq(projects.run_id, run.runId),
-    eq(projects.status, 'generating'),
-  )
 
 export function toProject(row: ProjectRow): Project {
   return {
@@ -88,44 +82,6 @@ export async function listMessages(db: Db, projectId: string): Promise<ChatMessa
     createdAt: row.created_at,
   }))
 }
-export async function insertMessage(
-  db: Db,
-  message: {
-    id: string
-    projectId: string
-    role: ChatMessage['role']
-    agent: string | null
-    content: string
-    createdAt: number
-  },
-  run?: Run,
-) {
-  const values = {
-    id: message.id,
-    project_id: message.projectId,
-    role: message.role,
-    agent: message.agent,
-    content: message.content,
-    created_at: message.createdAt,
-  }
-  if (!run) {
-    await db.insert(messages).values(values)
-    return
-  }
-  await db.insert(messages).select(
-    db
-      .select({
-        id: sql<string>`${values.id}`.as('id'),
-        project_id: sql<string>`${values.project_id}`.as('project_id'),
-        role: sql<ChatMessage['role']>`${values.role}`.as('role'),
-        agent: sql<string | null>`${values.agent}`.as('agent'),
-        content: sql<string>`${values.content}`.as('content'),
-        created_at: sql<number>`${values.created_at}`.as('created_at'),
-      })
-      .from(projects)
-      .where(active(run)),
-  )
-}
 const versionFields = {
   id: versions.id,
   number: versions.number,
@@ -160,138 +116,6 @@ export async function currentHtml(db: Db, versionId: string | null) {
     )?.html ?? null
   )
 }
-export async function loadCurrentHtml(db: Db, projectId: string) {
-  const row = await db
-    .select({ current: projects.current_version_id })
-    .from(projects)
-    .where(eq(projects.id, projectId))
-    .get()
-  return currentHtml(db, row?.current ?? null)
-}
-export async function versionCount(db: Db, projectId: string) {
-  return (
-    (await db.select({ n: count() }).from(versions).where(eq(versions.project_id, projectId)).get())
-      ?.n ?? 0
-  )
-}
-export async function nextVersionNumber(db: Db, projectId: string) {
-  return (
-    ((
-      await db
-        .select({ n: max(versions.number) })
-        .from(versions)
-        .where(eq(versions.project_id, projectId))
-        .get()
-    )?.n ?? 0) + 1
-  )
-}
-export async function acquireLock(
-  db: Db,
-  projectId: string,
-  ownerId: string,
-  now: number,
-  runId: string,
-) {
-  const rows = await db
-    .update(projects)
-    .set({ status: 'generating', error: null, updated_at: now, run_id: runId })
-    .where(
-      and(
-        owned(projectId, ownerId),
-        or(ne(projects.status, 'generating'), lt(projects.updated_at, now - 180_000)),
-      ),
-    )
-    .returning({ id: projects.id })
-  return rows.length > 0
-}
-export async function isRunActive(db: Db, run: Run) {
-  return Boolean(await db.select({ id: projects.id }).from(projects).where(active(run)).get())
-}
-export async function setStatus(
-  db: Db,
-  run: Run,
-  status: ProjectStatus,
-  error: string | null,
-  now: number,
-) {
-  await db.update(projects).set({ status, error, updated_at: now, run_id: null }).where(active(run))
-}
-export async function cancelRun(db: Db, projectId: string, ownerId: string) {
-  const now = Date.now()
-  const generating = and(owned(projectId, ownerId), eq(projects.status, 'generating'))
-  await db.batch([
-    db.insert(messages).select(
-      db
-        .select({
-          id: sql<string>`${crypto.randomUUID()}`.as('id'),
-          project_id: sql<string>`${projectId}`.as('project_id'),
-          role: sql<'system'>`'system'`.as('role'),
-          agent: sql<null>`null`.as('agent'),
-          content: sql<string>`'Generation stopped.'`.as('content'),
-          created_at: sql<number>`${now}`.as('created_at'),
-        })
-        .from(projects)
-        .where(generating),
-    ),
-    db
-      .update(projects)
-      .set({ status: 'idle', error: null, run_id: null, updated_at: now })
-      .where(generating),
-  ])
-}
-export async function touchProject(db: Db, run: Run, now: number) {
-  await db.update(projects).set({ updated_at: now }).where(active(run))
-}
-export async function renameProject(db: Db, run: Run, title: string, now: number) {
-  await db.update(projects).set({ title, updated_at: now }).where(active(run))
-}
-export async function saveVersion(
-  db: Db,
-  run: Run,
-  input: {
-    id: string
-    projectId: string
-    number: number
-    html: string
-    prompt: string
-    createdAt: number
-    systemMessageId: string
-    systemCreatedAt: number
-  },
-) {
-  await db.batch([
-    db.insert(versions).select(
-      db
-        .select({
-          id: sql<string>`${input.id}`.as('id'),
-          project_id: sql<string>`${input.projectId}`.as('project_id'),
-          number: sql<number>`${input.number}`.as('number'),
-          html: sql<string>`${input.html}`.as('html'),
-          prompt: sql<string>`${input.prompt}`.as('prompt'),
-          created_at: sql<number>`${input.createdAt}`.as('created_at'),
-        })
-        .from(projects)
-        .where(active(run)),
-    ),
-    db
-      .update(projects)
-      .set({ current_version_id: input.id, updated_at: input.createdAt })
-      .where(active(run)),
-    db.insert(messages).select(
-      db
-        .select({
-          id: sql<string>`${input.systemMessageId}`.as('id'),
-          project_id: sql<string>`${input.projectId}`.as('project_id'),
-          role: sql<'system'>`'system'`.as('role'),
-          agent: sql<null>`null`.as('agent'),
-          content: sql<string>`${`Saved version ${input.number}.`}`.as('content'),
-          created_at: sql<number>`${input.systemCreatedAt}`.as('created_at'),
-        })
-        .from(projects)
-        .where(active(run)),
-    ),
-  ])
-}
 export async function restoreVersion(
   db: Db,
   input: { projectId: string; ownerId: string; versionId: string; messageId: string; now: number },
@@ -301,6 +125,18 @@ export async function restoreVersion(
   const version = await getVersion(db, input.projectId, input.versionId)
   if (!version) return null
   await db.batch([
+    db
+      .update(runs)
+      .set({ status: 'cancelled', finished_at: input.now, lease_expires_at: null })
+      .where(
+        and(eq(runs.project_id, input.projectId), sql`${runs.status} in ('queued', 'running')`),
+      ),
+    stateEvent(
+      db,
+      sql`(select run_id from projects where id = ${input.projectId})`,
+      'cancelled',
+      input.now,
+    ),
     db
       .update(projects)
       .set({
@@ -324,6 +160,15 @@ export async function restoreVersion(
 export async function deleteProject(db: Db, projectId: string, ownerId: string) {
   if (!(await getProject(db, projectId, ownerId))) return false
   await db.batch([
+    db
+      .delete(runEvents)
+      .where(sql`${runEvents.run_id} in (select id from runs where project_id = ${projectId})`),
+    db
+      .delete(runCheckpoints)
+      .where(
+        sql`${runCheckpoints.run_id} in (select id from runs where project_id = ${projectId})`,
+      ),
+    db.delete(runs).where(eq(runs.project_id, projectId)),
     db.delete(messages).where(eq(messages.project_id, projectId)),
     db.delete(versions).where(eq(versions.project_id, projectId)),
     db.delete(projects).where(owned(projectId, ownerId)),

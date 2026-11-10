@@ -8,10 +8,9 @@
   "observability": { "enabled": true, "head_sampling_rate": 1 },
   "vars": {
     "OPENAI_MODEL": "gpt-6.1-sol",
-    "OPENAI_BASE_URL": "https://sub2api.qiliangjia.org/v1",
-    "ENVIRONMENT": "production",
-    "MOCK_LLM": "false"
+    "OPENAI_BASE_URL": "https://sub2api.qiliangjia.org/v1"
   },
+  "triggers": { "crons": ["* * * * *"] },
   "d1_databases": [
     {
       "binding": "DB",

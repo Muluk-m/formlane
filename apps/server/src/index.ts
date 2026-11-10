@@ -1,24 +1,18 @@
-import { followupSchema } from '@atoms-demo/contracts'
+import { followupSchema, generateSchema } from '@atoms-demo/contracts'
 import { isUuid, slugify } from '@atoms-demo/core/html'
 import { type Context, Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { streamSSE } from 'hono/streaming'
 import { type Db, openDb } from './db/client'
 import type { Env } from './env'
-import { mockEnabled } from './env'
+import { executorRoutes } from './executor/routes'
+import { getProject, getPublished, getVersion } from './modules/projects/projects.repo'
+import * as runs from './modules/projects/runs.repo'
 import {
-  acquireLock,
-  currentHtml,
-  getProject,
-  getPublished,
-  getVersion,
-  insertMessage,
-  isRunActive,
-  setStatus,
-  versionCount,
-} from './modules/projects/projects.repo'
-import { publicGenerationError } from './openai'
-import { runPipeline } from './pipeline'
+  cancelGeneration,
+  expireGeneration,
+  maintainGenerations,
+} from './modules/projects/runs.service'
 import { rpcHandler } from './rpc/router'
 
 type AppEnv = { Bindings: Env; Variables: { ownerId: string; db: Db } }
@@ -31,6 +25,7 @@ app.use('*', async (c, next) => {
   c.set('db', openDb(c.env.DB))
   await next()
 })
+app.route('/internal/executor', executorRoutes)
 app.get('/p/:slug', async (c) => {
   const published = await getPublished(c.get('db'), c.req.param('slug'))
   if (!published)
@@ -56,6 +51,7 @@ app.use('/api/*', async (c, next) => {
     maxAge: 60 * 60 * 24 * 365,
     secure: new URL(c.req.url).protocol === 'https:',
   })
+  c.header('cache-control', 'no-store')
   await next()
 })
 app.get('/api/projects/:id/download', async (c) => {
@@ -71,8 +67,73 @@ app.get('/api/projects/:id/download', async (c) => {
     'content-disposition': `attachment; filename="${slugify(row.title)}-v${version.number}.html"`,
   })
 })
-app.post('/api/projects/:id/generate', (c) => beginStream(c, 'initial'))
-app.post('/api/projects/:id/chat', (c) => beginStream(c, 'followup'))
+app.post('/api/projects/:id/generate', (c) => beginRun(c, 'initial'))
+app.post('/api/projects/:id/chat', (c) => beginRun(c, 'followup'))
+app.get('/api/projects/:id/runs/latest', async (c) => {
+  const db = c.get('db')
+  if (!(await getProject(db, c.req.param('id'), c.get('ownerId'))))
+    return c.json({ error: 'Project not found.' }, 404)
+  const row = await runs.latestOwnedRun(db, c.req.param('id'), c.get('ownerId'))
+  if (!row) return c.json({ run: null })
+  return c.json({ run: await runs.runReceipt(db, await expireGeneration(db, row)) })
+})
+app.get('/api/projects/:id/runs/:runId', async (c) => {
+  const db = c.get('db')
+  const row = await runs.getOwnedRun(db, c.req.param('id'), c.req.param('runId'), c.get('ownerId'))
+  if (!row) return c.json({ error: 'Run not found.' }, 404)
+  return c.json({ run: await runs.runReceipt(db, await expireGeneration(db, row)) })
+})
+app.post('/api/projects/:id/runs/:runId/cancel', async (c) => {
+  const db = c.get('db')
+  const row = await runs.getOwnedRun(db, c.req.param('id'), c.req.param('runId'), c.get('ownerId'))
+  if (!row) return c.json({ error: 'Run not found.' }, 404)
+  await cancelGeneration(db, row)
+  return c.json({ ok: true })
+})
+app.get('/api/projects/:id/runs/:runId/events', async (c) => {
+  const db = c.get('db')
+  const row = await runs.getOwnedRun(db, c.req.param('id'), c.req.param('runId'), c.get('ownerId'))
+  if (!row) return c.json({ error: 'Run not found.' }, 404)
+  const requested = c.req.query('after') ?? c.req.header('last-event-id') ?? '0'
+  if (!/^\d+$/.test(requested) || !Number.isSafeInteger(Number(requested)))
+    return c.json({ error: 'Invalid event cursor.' }, 400)
+  let cursor = Number(requested)
+  await expireGeneration(db, row)
+  // This connection only observes D1. Its abort never reaches the executor or model request.
+  return streamSSE(c, async (stream) => {
+    let idle = 0
+    while (!stream.aborted && !c.req.raw.signal.aborted) {
+      const events = await runs.listRunEvents(db, row.id, cursor)
+      for (const event of events) {
+        await stream.writeSSE({
+          id: String(event.sequence),
+          event: event.type,
+          data: JSON.stringify(event),
+        })
+        cursor = event.sequence
+      }
+      if (events.length === 100) continue
+      const latest = await runs.getOwnedRun(db, row.project_id, row.id, c.get('ownerId'))
+      if (!latest) break
+      const current = await expireGeneration(db, latest)
+      if (runs.isTerminal(current.status)) {
+        const remaining = await runs.listRunEvents(db, row.id, cursor)
+        for (const event of remaining) {
+          await stream.writeSSE({
+            id: String(event.sequence),
+            event: event.type,
+            data: JSON.stringify(event),
+          })
+          cursor = event.sequence
+        }
+        if (remaining.length < 100) break
+        continue
+      }
+      if (++idle % 15 === 0) await stream.writeSSE({ event: 'heartbeat', data: '{}' })
+      await stream.sleep(1000)
+    }
+  })
+})
 app.all('/api/*', async (c) => {
   const origin = new URL(c.req.url)
   // Pages overwrites these headers before forwarding through its service binding.
@@ -93,115 +154,44 @@ app.all('/api/*', async (c) => {
     : c.json({ error: 'Not found.' }, 404)
 })
 app.notFound((c) => c.json({ error: 'Not found.' }, 404))
-export default app
 
-async function beginStream(c: Context<AppEnv>, mode: 'initial' | 'followup') {
+export default {
+  fetch: app.fetch,
+  async scheduled(_event: ScheduledController, env: Env) {
+    await maintainGenerations(openDb(env.DB))
+  },
+} satisfies ExportedHandler<Env>
+
+async function beginRun(c: Context<AppEnv>, mode: 'initial' | 'followup') {
   const db = c.get('db'),
     ownerId = c.get('ownerId')
   const row = await getProject(db, c.req.param('id') ?? '', ownerId)
   if (!row) return c.json({ error: 'Project not found.' }, 404)
-  if (!mockEnabled(c.env) && !c.env.OPENAI_API_KEY?.trim())
-    return c.json({ error: 'Generation is unavailable: OPENAI_API_KEY is not configured.' }, 503)
-  const count = await versionCount(db, row.id)
-  if (mode === 'initial' && count > 0)
+  if (!c.env.EXECUTOR_TOKEN?.trim())
+    return c.json({ error: 'Generation is unavailable: the executor is not configured.' }, 503)
+  if (mode === 'initial' && row.current_version_id)
     return c.json({ error: 'This project already has a build. Send a follow-up instead.' }, 400)
-  if (mode === 'followup' && count === 0)
-    return c.json({ error: 'Build the first version before asking for changes.' }, 400)
-  let requestText = row.idea
-  if (mode === 'followup') {
-    const parsed = followupSchema.safeParse(await c.req.json().catch(() => null))
-    if (!parsed.success)
-      return c.json({ error: 'Describe the change in 1 to 4000 characters.' }, 400)
-    requestText = parsed.data.content
+  const body = await c.req.text()
+  let input: unknown
+  try {
+    input = body ? JSON.parse(body) : {}
+  } catch {
+    return c.json({ error: 'Invalid JSON request.' }, 400)
   }
-  const run = { projectId: row.id, runId: crypto.randomUUID() }
-  if (!(await acquireLock(db, row.id, ownerId, Date.now(), run.runId)))
-    return c.json({ error: 'The team is already working on this project.' }, 409)
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 120_000)
-  const onClientAbort = () => controller.abort()
-  c.req.raw.signal.addEventListener('abort', onClientAbort)
-  if (c.req.raw.signal.aborted) controller.abort()
-  return streamSSE(c, async (stream) => {
-    stream.onAbort(onClientAbort)
-    const emit = async (event: string, data: unknown) => {
-      await stream.writeSSE({ event, data: JSON.stringify(data) })
-    }
-    // A database fence handles cancellation across isolates; abort the upstream fetch promptly.
-    let checking = false
-    const cancellation = setInterval(() => {
-      if (checking) return
-      checking = true
-      void isRunActive(db, run)
-        .then((active) => {
-          if (!active) controller.abort()
-        })
-        .catch(() => controller.abort())
-        .finally(() => {
-          checking = false
-        })
-    }, 1000)
-    try {
-      if (mode === 'followup')
-        await insertMessage(
-          db,
-          {
-            id: crypto.randomUUID(),
-            projectId: row.id,
-            role: 'user',
-            agent: null,
-            content: requestText,
-            createdAt: Date.now(),
-          },
-          run,
-        )
-      await runPipeline({
-        env: c.env,
-        db,
-        run,
-        projectId: row.id,
-        idea: row.idea,
-        mode,
-        requestText,
-        signal: controller.signal,
-        emit,
-      })
-    } catch (error) {
-      const active = await isRunActive(db, run)
-      const aborted =
-        controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')
-      const message = aborted ? 'Generation stopped.' : publicGenerationError(error)
-      if (active) {
-        await insertMessage(
-          db,
-          {
-            id: crypto.randomUUID(),
-            projectId: row.id,
-            role: 'system',
-            agent: null,
-            content: message,
-            createdAt: Date.now(),
-          },
-          run,
-        )
-        await setStatus(db, run, aborted ? 'idle' : 'error', aborted ? null : message, Date.now())
-      }
-      if (!aborted)
-        console.error(JSON.stringify({ event: 'pipeline_error', projectId: row.id, message }))
-      // The previous version remains available after failed or cancelled generation.
-      try {
-        const latest = await getProject(db, row.id, ownerId)
-        const html = await currentHtml(db, latest?.current_version_id ?? null)
-        if (html) await emit('preview', { html })
-        if (!aborted) await emit('error', { message })
-        await emit('done', { status: aborted ? 'idle' : 'error' })
-      } catch {
-        /* The client may already have disconnected. */
-      }
-    } finally {
-      clearInterval(cancellation)
-      clearTimeout(timer)
-      c.req.raw.signal.removeEventListener('abort', onClientAbort)
-    }
+  const parsed = (mode === 'initial' ? generateSchema : followupSchema).safeParse(input)
+  if (!parsed.success) return c.json({ error: 'Describe the change in 1 to 4000 characters.' }, 400)
+  if (row.run_id) {
+    const previous = await runs.getOwnedRun(db, row.id, row.run_id, ownerId)
+    if (previous) await expireGeneration(db, previous)
+  }
+  const created = await runs.createRun(db, {
+    id: crypto.randomUUID(),
+    projectId: row.id,
+    ownerId,
+    request: parsed.data.content ?? row.idea,
+    addMessage: Boolean(parsed.data.content),
+    now: Date.now(),
   })
+  if (!created) return c.json({ error: 'A generation is already running for this project.' }, 409)
+  return c.json({ run: await runs.runReceipt(db, created) }, 202)
 }

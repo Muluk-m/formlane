@@ -1,5 +1,10 @@
+import {
+  type RunEvent as HarnessEvent,
+  type Run as HarnessRun,
+  runSchema,
+} from '@atoms-demo/contracts'
 import { slugify } from '@atoms-demo/core/html'
-import type { AgentId, AppVersion, ChatMessage, Project } from '@atoms-demo/core/types'
+import type { AppVersion, ChatMessage, Project } from '@atoms-demo/core/types'
 import { useI18n } from '@atoms-demo/i18n/react'
 import { Button } from '@atoms-demo/ui/components/button'
 import {
@@ -19,13 +24,13 @@ import {
   type PointerEvent as ReactPointerEvent,
   useEffect,
   useEffectEvent,
+  useMemo,
   useRef,
   useState,
 } from 'react'
 import { ChatPane } from '../components/ChatPane'
 import { Stage } from '../components/Stage'
 import {
-  cancelProjectMutation,
   publishProjectMutation,
   remixProjectMutation,
   restoreVersionMutation,
@@ -33,10 +38,21 @@ import {
 } from '../features/projects/mutations'
 import { projectQuery, projectsQuery, versionQuery } from '../features/projects/queries'
 import { healthQuery as healthQueryOptions } from '../features/session/queries'
-import { downloadProject, streamEvents } from '../lib/api'
+import {
+  cancelRun,
+  downloadProject,
+  latestRun,
+  RunConnectionError,
+  startRun,
+  streamRunEvents,
+} from '../lib/api'
 import { relativeTime } from '../lib/format'
 
-type UiMessage = ChatMessage & { pending?: boolean }
+export type UiMessage = Omit<ChatMessage, 'agent'> & { agent: string | null; pending?: boolean }
+
+function isActiveRun(run: HarnessRun | null) {
+  return run?.status === 'queued' || run?.status === 'running'
+}
 
 export function ProjectPage() {
   const { id } = useParams({ from: '/project/$id' })
@@ -46,7 +62,6 @@ export function ProjectPage() {
   const client = useQueryClient()
   const detailQuery = useQuery(projectQuery(id))
   const healthQuery = useQuery(healthQueryOptions)
-  const cancelMutation = useMutation(cancelProjectMutation)
   const restoreMutation = useMutation(restoreVersionMutation)
   const publishMutation = useMutation(publishProjectMutation)
   const unpublishMutation = useMutation(unpublishProjectMutation)
@@ -57,10 +72,16 @@ export function ProjectPage() {
   const [html, setHtml] = useState('')
   const [code, setCode] = useState('')
   const [banner, setBanner] = useState<string | null>(null)
-  const [running, setRunning] = useState(false)
-  const [active, setActive] = useState<AgentId | null>(null)
-  const [pipeline, setPipeline] = useState<AgentId[]>([])
-  const [done, setDone] = useState<AgentId[]>([])
+  const [run, setRun] = useState<HarnessRun | null>(null)
+  const [starting, setStarting] = useState(false)
+  const [loadingRun, setLoadingRun] = useState(true)
+  const [stopping, setStopping] = useState(false)
+  const [reconciling, setReconciling] = useState(false)
+  const [connection, setConnection] = useState<'connected' | 'reconnecting' | 'error'>('connected')
+  const [reconnect, setReconnect] = useState(0)
+  const [activity, setActivity] = useState<HarnessEvent[]>([])
+  const [activeAgents, setActiveAgents] = useState<Record<string, string>>({})
+  const running = isActiveRun(run)
   const [tab, setTab] = useState<'preview' | 'code'>('preview')
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -70,29 +91,41 @@ export function ProjectPage() {
   const health = healthQuery.data
   const [split, setSplit] = useState(() => Number(localStorage.getItem('atoms-split')) || 420)
   const [wide, setWide] = useState(() => window.matchMedia('(min-width: 860px)').matches)
-  const abortRef = useRef<AbortController | null>(null)
-  const startedRef = useRef(false)
+  const startPending = useRef(false)
+  const cursorRef = useRef({ runId: '', sequence: 0 })
+  const mounted = useRef(true)
+  const retryRequest = useRef<string | undefined>(undefined)
+  const reconciliationPending = useRef(false)
+  const subscription = useRef<AbortController | null>(null)
 
-  async function refresh() {
+  async function refresh(fence?: { runId: string; signal: AbortSignal }) {
     const detail = await client.fetchQuery({ ...projectQuery(id), staleTime: 0 })
+    if (
+      !mounted.current ||
+      (fence &&
+        (fence.signal.aborted ||
+          subscription.current?.signal !== fence.signal ||
+          cursorRef.current.runId !== fence.runId))
+    )
+      return false
     setProject(detail.project)
     setMessages(detail.messages)
     setVersions(detail.versions)
     setHtml(detail.html ?? '')
     setCode(detail.html ?? '')
     await client.invalidateQueries({ queryKey: projectsQuery.queryKey })
-    return detail
+    return true
   }
 
   useEffect(() => {
     const detail = detailQuery.data
-    if (!detail || running) return
+    if (!detail || running || starting || reconciling || reconciliationPending.current) return
     setProject(detail.project)
     setMessages(detail.messages)
     setVersions(detail.versions)
     setHtml(detail.html ?? '')
     setCode(detail.html ?? '')
-  }, [detailQuery.data, running])
+  }, [detailQuery.data, running, starting, reconciling])
 
   useEffect(() => {
     const media = window.matchMedia('(min-width: 860px)')
@@ -102,138 +135,273 @@ export function ProjectPage() {
   }, [])
 
   useEffect(() => {
-    return () => abortRef.current?.abort()
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
   }, [])
 
-  async function run(path: string, body?: unknown) {
-    const controller = new AbortController()
-    abortRef.current = controller
-    setRunning(true)
+  async function begin(content?: string) {
+    if (startPending.current || running || reconciliationPending.current) return
+    startPending.current = true
+    retryRequest.current = content
+    setStarting(true)
     setBanner(null)
-    setActive(null)
-    setDone([])
     setViewing(null)
-    const agentsByMessage = new Map<string, AgentId | null>()
     try {
-      await streamEvents(path, body ?? {}, controller.signal, (event, data) => {
-        if (event === 'pipeline') {
-          setPipeline((data.agents as AgentId[]) ?? [])
-          setDone([])
-        } else if (event === 'status' && typeof data.agent === 'string') {
-          setActive(data.agent as AgentId)
-        } else if (event === 'message_start') {
-          const messageId = String(data.id)
-          const agent = (data.agent as AgentId | null) ?? null
-          agentsByMessage.set(messageId, agent)
-          setMessages((current) => [
-            ...current,
-            {
-              id: messageId,
-              role: data.role === 'system' ? 'system' : 'agent',
-              agent,
-              content: '',
-              createdAt: Date.now(),
-              pending: true,
-            },
-          ])
-        } else if (event === 'token') {
-          const messageId = String(data.id)
-          const text = String(data.text ?? '')
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === messageId ? { ...message, content: message.content + text } : message,
-            ),
-          )
-        } else if (event === 'message_replace' || event === 'message_done') {
-          const messageId = String(data.id)
-          const content = String(data.content ?? '')
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === messageId
-                ? {
-                    ...message,
-                    content,
-                    pending: event === 'message_done' ? false : message.pending,
-                  }
-                : message,
-            ),
-          )
-          if (event === 'message_done') {
-            const agent = agentsByMessage.get(messageId)
-            if (agent) setDone((agents) => (agents.includes(agent) ? agents : [...agents, agent]))
-          }
-        } else if (event === 'code_start') {
-          setCode('')
-        } else if (event === 'code_reset') {
-          setCode(String(data.text ?? ''))
-        } else if (event === 'code') {
-          setCode((current) => current + String(data.text ?? ''))
-        } else if (event === 'preview' && typeof data.html === 'string') {
-          setViewing(null)
-          setHtml(data.html)
-        } else if (event === 'version') {
-          const version: AppVersion & { html?: string } = {
-            id: String(data.id),
-            number: Number(data.number),
-            prompt: String(data.prompt ?? ''),
-            createdAt: Number(data.createdAt),
-            html: typeof data.html === 'string' ? data.html : undefined,
-          }
-          if (version.html) {
-            setHtml(version.html)
-            setCode(version.html)
-          }
-          setVersions((current) =>
-            current.some((item) => item.id === version.id) ? current : [...current, version],
-          )
-          setProject((current) =>
-            current
-              ? { ...current, currentVersionId: version.id, status: 'idle', error: null }
-              : current,
-          )
-          setViewing(null)
-        } else if (event === 'title' && typeof data.title === 'string') {
-          setProject((current) => (current ? { ...current, title: data.title as string } : current))
-          document.title = `${data.title} · ${t('brand.name')}`
-        } else if (event === 'error') {
-          setBanner(String(data.message ?? t('atoms.streamError')))
-        }
-      })
-      await refresh()
-    } catch (reason) {
-      const aborted = reason instanceof DOMException && reason.name === 'AbortError'
-      if (aborted) {
-        await cancelMutation.mutateAsync({ id }).catch(() => undefined)
-        await refresh().catch(() => undefined)
-      } else {
-        setBanner(reason instanceof Error ? reason.message : t('atoms.streamError'))
-        await refresh().catch(() => undefined)
+      const receipt = await startRun(id, !project?.currentVersionId, content)
+      if (!mounted.current) return
+      setActivity([])
+      setActiveAgents({})
+      setRun(receipt)
+      if (content)
+        setMessages((current) => [
+          ...current,
+          {
+            id: `request-${receipt.id}`,
+            role: 'user',
+            agent: null,
+            content,
+            createdAt: receipt.createdAt,
+          },
+        ])
+      setConnection('connected')
+    } catch (error) {
+      if (!mounted.current) return
+      setBanner(error instanceof Error ? error.message : t('atoms.requestError'))
+      // A lost start receipt must attach to the accepted run, not submit it again.
+      try {
+        const accepted = await latestRun(id)
+        if (mounted.current && accepted && (isActiveRun(accepted) || accepted.id !== run?.id))
+          setRun(accepted)
+      } catch {
+        /* Keep the actionable request error. */
       }
     } finally {
-      if (abortRef.current === controller) abortRef.current = null
-      setRunning(false)
-      setActive(null)
+      startPending.current = false
+      if (mounted.current) setStarting(false)
     }
   }
 
-  function runGenerate() {
-    return run(`/api/projects/${id}/generate`)
-  }
-
-  const startAutomatically = useEffectEvent(() => {
-    void navigate({ to: '/project/$id', params: { id }, search: {}, replace: true })
-    void runGenerate()
+  const initialize = useEffectEvent(async (signal: AbortSignal) => {
+    try {
+      const existing = await latestRun(id, signal)
+      if (signal.aborted) return
+      setRun(existing)
+      setLoadingRun(false)
+      if (autostart) {
+        void navigate({ to: '/project/$id', params: { id }, search: {}, replace: true })
+        if (!existing && !detailQuery.data?.project.currentVersionId) await begin()
+      }
+    } catch (error) {
+      if (signal.aborted) return
+      setLoadingRun(false)
+      setConnection('error')
+      setBanner(error instanceof Error ? error.message : t('atoms.requestError'))
+    }
   })
 
+  const detailReady = Boolean(detailQuery.data)
   useEffect(() => {
-    if (!project || startedRef.current) return
-    if (!autostart) return
-    const key = `atoms-autostart-${id}`
-    if (sessionStorage.getItem(key)) return
-    sessionStorage.setItem(key, '1')
-    startedRef.current = true
-    startAutomatically()
-  }, [project, id, autostart])
+    if (!detailReady) return
+    const controller = new AbortController()
+    void initialize(controller.signal)
+    return () => controller.abort()
+  }, [detailReady])
+
+  const receive = useEffectEvent((event: HarnessEvent, signal: AbortSignal) => {
+    const data = event.data
+    if (event.type === 'run_state') {
+      const state = runSchema.parse(data)
+      setRun((current) =>
+        current?.id === state.id && !isActiveRun(current) && isActiveRun(state) ? current : state,
+      )
+      if (!isActiveRun(state)) {
+        reconciliationPending.current = true
+        setReconciling(true)
+        setActiveAgents({})
+        setStopping(false)
+        void refresh({ runId: state.id, signal })
+          .then((applied) => {
+            if (!applied || signal.aborted || subscription.current?.signal !== signal) return
+            reconciliationPending.current = false
+            setReconciling(false)
+          })
+          .catch((error: unknown) => {
+            if (!mounted.current || signal.aborted || subscription.current?.signal !== signal)
+              return
+            setConnection('error')
+            setBanner(error instanceof Error ? error.message : t('atoms.loadError'))
+          })
+      }
+    } else if (event.type === 'agent_start') {
+      setActiveAgents((current) => ({ ...current, [String(data.id)]: String(data.name) }))
+    } else if (event.type === 'agent_end') {
+      setActiveAgents((current) => {
+        const next = { ...current }
+        delete next[String(data.id)]
+        return next
+      })
+    } else if (event.type === 'message_start') {
+      const message: UiMessage = {
+        id: String(data.id),
+        role: data.role === 'system' ? 'system' : data.role === 'user' ? 'user' : 'agent',
+        agent: typeof data.agent === 'string' ? data.agent : null,
+        content: typeof data.content === 'string' ? data.content : '',
+        createdAt: event.createdAt,
+        pending: true,
+      }
+      setMessages((current) => [...current.filter((item) => item.id !== message.id), message])
+    } else if (event.type === 'token') {
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === data.id
+            ? { ...message, content: message.content + String(data.text ?? '') }
+            : message,
+        ),
+      )
+    } else if (event.type === 'message_replace' || event.type === 'message_done') {
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === data.id
+            ? {
+                ...message,
+                content: String(data.content ?? ''),
+                pending: event.type !== 'message_done',
+              }
+            : message,
+        ),
+      )
+    } else if (event.type === 'code_start') {
+      setCode('')
+    } else if (event.type === 'code_reset') {
+      setCode(String(data.text ?? ''))
+    } else if (event.type === 'code') {
+      setCode((current) => current + String(data.text ?? ''))
+    } else if (event.type === 'version') {
+      const version: AppVersion = {
+        id: String(data.id),
+        number: Number(data.number),
+        prompt: String(data.prompt ?? ''),
+        createdAt: Number(data.createdAt),
+      }
+      setVersions((current) =>
+        current.some((item) => item.id === version.id) ? current : [...current, version],
+      )
+      if (typeof data.html === 'string') {
+        setHtml(data.html)
+        setCode(data.html)
+      }
+      setViewing(null)
+    } else if (event.type === 'title' && typeof data.title === 'string') {
+      const title = data.title
+      setProject((current) => (current ? { ...current, title } : current))
+      document.title = `${title} · ${t('brand.name')}`
+    } else if (event.type === 'error') {
+      setBanner(String(data.message ?? t('atoms.streamError')))
+    }
+    if (
+      ['tool_start', 'tool_end', 'validation', 'repair', 'agent_start', 'agent_end'].includes(
+        event.type,
+      )
+    ) {
+      setActivity((current) => [...current, event])
+    }
+  })
+
+  const observation = useMemo(() => ({ runId: run?.id, reconnect }), [run?.id, reconnect])
+  const hasReplayedTerminal = useEffectEvent(
+    () => !isActiveRun(run) && cursorRef.current.sequence >= (run?.cursor ?? 0),
+  )
+
+  useEffect(() => {
+    const { runId } = observation
+    if (!runId) return
+    const controller = new AbortController()
+    subscription.current = controller
+    if (cursorRef.current.runId !== runId) cursorRef.current = { runId, sequence: 0 }
+    let terminal = hasReplayedTerminal()
+    let delay = 500
+    const observe = async () => {
+      while (!controller.signal.aborted && !terminal) {
+        try {
+          await streamRunEvents(
+            id,
+            runId,
+            cursorRef.current.sequence,
+            controller.signal,
+            (event) => {
+              if (
+                controller.signal.aborted ||
+                subscription.current !== controller ||
+                event.runId !== runId ||
+                event.sequence <= cursorRef.current.sequence
+              )
+                return
+              setConnection('connected')
+              receive(event, controller.signal)
+              cursorRef.current.sequence = event.sequence
+              if (event.type === 'run_state') terminal = !isActiveRun(runSchema.parse(event.data))
+              delay = 500
+            },
+          )
+        } catch (error) {
+          if (controller.signal.aborted) return
+          if (error instanceof RunConnectionError && [401, 403, 404].includes(error.status)) {
+            setConnection('error')
+            setBanner(error.message)
+            return
+          }
+        }
+        if (terminal || controller.signal.aborted) return
+        setConnection('reconnecting')
+        const { promise, resolve } = Promise.withResolvers<void>()
+        const finish = () => {
+          window.clearTimeout(timer)
+          controller.signal.removeEventListener('abort', finish)
+          resolve()
+        }
+        const timer = window.setTimeout(finish, delay)
+        controller.signal.addEventListener('abort', finish, { once: true })
+        await promise
+        delay = Math.min(delay * 2, 10_000)
+      }
+    }
+    void observe()
+    // Disconnect only the observer; durable execution belongs to the server.
+    return () => controller.abort()
+  }, [id, observation])
+
+  async function stop() {
+    if (!run || stopping) return
+    setStopping(true)
+    try {
+      await cancelRun(id, run.id)
+    } catch (error) {
+      setBanner(error instanceof Error ? error.message : t('atoms.requestError'))
+      setStopping(false)
+    }
+  }
+
+  async function reconnectRun() {
+    setBanner(null)
+    subscription.current?.abort()
+    reconciliationPending.current = true
+    setReconciling(true)
+    try {
+      const current = await latestRun(id)
+      if (!mounted.current) return
+      await refresh()
+      if (!mounted.current) return
+      setRun(current)
+      reconciliationPending.current = false
+      setReconciling(false)
+      setConnection('connected')
+      setReconnect((value) => value + 1)
+    } catch (error) {
+      setBanner(error instanceof Error ? error.message : t('atoms.requestError'))
+    }
+  }
 
   function onDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     if (!wide) return
@@ -254,18 +422,6 @@ export function ProjectPage() {
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
-  }
-
-  async function send(text: string) {
-    const optimistic: UiMessage = {
-      id: `tmp-${crypto.randomUUID()}`,
-      role: 'user',
-      agent: null,
-      content: text,
-      createdAt: Date.now(),
-    }
-    setMessages((current) => [...current, optimistic])
-    await run(`/api/projects/${id}/chat`, { content: text })
   }
 
   async function openVersion(versionId: string) {
@@ -350,8 +506,10 @@ export function ProjectPage() {
     : publishedCurrent
       ? t('atoms.published')
       : t('atoms.updateLive')
-  const interrupted = project.status === 'generating' && !running
   const busy =
+    starting ||
+    loadingRun ||
+    reconciling ||
     restoreMutation.isPending ||
     publishMutation.isPending ||
     unpublishMutation.isPending ||
@@ -370,7 +528,7 @@ export function ProjectPage() {
                 : ''}
           </p>
         </div>
-        {(busy || cancelMutation.isPending) && <Spinner />}
+        {(busy || starting || stopping) && <Spinner />}
         <div className="flex flex-wrap gap-1.5">
           <Button
             variant="outline"
@@ -412,45 +570,66 @@ export function ProjectPage() {
           </Button>
         </div>
       </header>
-      {(banner || project.error || interrupted) && !running && (
+      {(banner ||
+        project.error ||
+        run?.status === 'failed' ||
+        run?.status === 'cancelled' ||
+        connection !== 'connected') && (
         <div
           role="alert"
-          className="flex items-center justify-between gap-3 border-b bg-danger-bg px-4 py-2 text-sm"
+          className="flex flex-wrap items-center justify-between gap-3 border-b bg-danger-bg px-4 py-2 text-sm"
         >
-          <p>{banner || project.error || t('atoms.interrupted')}</p>
-          {!html && (
-            <Button variant="outline" onClick={() => void runGenerate()} data-testid="retry-button">
-              {interrupted ? t('atoms.takeOver') : t('atoms.retry')}
+          <div>
+            <p>
+              {connection === 'reconnecting'
+                ? t('atoms.reconnecting')
+                : run?.status === 'failed'
+                  ? t(`atoms.runError.${run.errorCode ?? 'internal'}`)
+                  : run?.status === 'cancelled'
+                    ? t('atoms.runCancelled')
+                    : banner || project.error}
+            </p>
+            {run?.status === 'failed' && (run.error || banner) && (
+              <p className="break-words text-xs">{run.error || banner}</p>
+            )}
+            {!running && html && run?.status === 'failed' && (
+              <p className="text-xs">{t('atoms.previousVersionKept')}</p>
+            )}
+          </div>
+          {connection === 'error' ? (
+            <Button variant="outline" onClick={() => void reconnectRun()}>
+              {t('atoms.reconnect')}
             </Button>
-          )}
-          {interrupted && html && (
-            <Button
-              variant="outline"
-              onClick={() =>
-                void act(async () => {
-                  await cancelMutation.mutateAsync({ id })
-                  await refresh()
-                })
-              }
-            >
-              {t('atoms.takeOver')}
-            </Button>
+          ) : (
+            !running &&
+            !loadingRun && (
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => void begin(retryRequest.current ?? run?.request)}
+                data-testid="retry-button"
+              >
+                {t('atoms.retry')}
+              </Button>
+            )
           )}
         </div>
       )}
       <div className="flex min-h-0 flex-1" style={{ flexDirection: wide ? 'row' : 'column' }}>
         <div
-          className="min-h-0 shrink-0"
+          className="min-h-0 min-w-0 shrink-0"
           style={wide ? { width: split, maxWidth: '60%' } : { height: '48%' }}
         >
           <ChatPane
             messages={messages}
             running={running}
-            active={active}
-            pipeline={pipeline}
-            done={done}
-            onSend={(text) => void send(text)}
-            onStop={() => abortRef.current?.abort()}
+            disabled={busy || connection === 'error'}
+            stopping={stopping}
+            runStatus={run?.status ?? null}
+            activeAgents={activeAgents}
+            activity={activity}
+            onSend={(text) => void begin(text)}
+            onStop={() => void stop()}
           />
         </div>
         {wide && (

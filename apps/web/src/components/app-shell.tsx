@@ -16,7 +16,7 @@ import {
   SidebarTrigger,
 } from '@atoms-demo/ui/components/sidebar'
 import { LocaleSwitcher } from '@atoms-demo/ui/composites/locale-switcher'
-import { Logo } from '@atoms-demo/ui/composites/logo'
+import { Logo, LogoMark } from '@atoms-demo/ui/composites/logo'
 import { Add01Icon, Folder01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useQuery } from '@tanstack/react-query'
@@ -31,8 +31,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider>
       <Sidebar collapsible="icon">
-        <SidebarHeader className="p-4">
-          <Logo />
+        <SidebarHeader className="p-4 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-0">
+          <Logo className="group-data-[collapsible=icon]:hidden" />
+          <div
+            className="hidden group-data-[collapsible=icon]:block"
+            role="img"
+            aria-label={t('brand.name')}
+          >
+            <LogoMark />
+          </div>
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
@@ -71,7 +78,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
-        <SidebarFooter>
+        <SidebarFooter className="group-data-[collapsible=icon]:hidden">
           <LocaleSwitcher />
         </SidebarFooter>
         <SidebarRail />

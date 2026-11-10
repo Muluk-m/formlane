@@ -2,9 +2,12 @@ import { makeSlug } from '@atoms-demo/core/html'
 import { titleFromIdea } from '@atoms-demo/core/text'
 import { ORPCError } from '@orpc/server'
 import type { Db } from '../../db/client'
+import type { Env } from '../../env'
 import * as repo from './projects.repo'
+import { getRun } from './runs.repo'
+import { cancelGeneration } from './runs.service'
 
-export type ProjectContext = { db: Db; ownerId: string; origin: string }
+export type ProjectContext = { db: Db; ownerId: string; origin: string; env: Env }
 
 export async function requireProject({ db, ownerId }: ProjectContext, id: string) {
   const row = await repo.getProject(db, id, ownerId)
@@ -38,6 +41,7 @@ export const projectsService = {
     return { project: repo.toProject(row), messages, versions, html }
   },
   async delete(context: ProjectContext, id: string) {
+    await projectsService.cancel(context, id)
     if (!(await repo.deleteProject(context.db, id, context.ownerId)))
       throw new ORPCError('NOT_FOUND')
     return { ok: true as const }
@@ -81,6 +85,7 @@ export const projectsService = {
     return { project }
   },
   async restore(context: ProjectContext, id: string, versionId: string) {
+    await requireProject(context, id)
     const restored = await repo.restoreVersion(context.db, {
       projectId: id,
       ownerId: context.ownerId,
@@ -92,8 +97,9 @@ export const projectsService = {
     return { ...restored, project: repo.toProject(await requireProject(context, id)) }
   },
   async cancel(context: ProjectContext, id: string) {
-    await requireProject(context, id)
-    await repo.cancelRun(context.db, id, context.ownerId)
+    const row = await requireProject(context, id)
+    const run = row.run_id ? await getRun(context.db, row.run_id) : null
+    if (run) await cancelGeneration(context.db, run)
     return { ok: true as const }
   },
 }

@@ -50,3 +50,57 @@ export const versions = sqliteTable(
   },
   (table) => [uniqueIndex('idx_versions_number').on(table.project_id, table.number)],
 )
+
+export const runs = sqliteTable(
+  'runs',
+  {
+    id: text('id').primaryKey(),
+    project_id: text('project_id').notNull(),
+    status: text('status', { enum: ['queued', 'running', 'completed', 'failed', 'cancelled'] })
+      .notNull()
+      .default('queued'),
+    request: text('request').notNull(),
+    previous_version_id: text('previous_version_id'),
+    created_at: integer('created_at').notNull(),
+    started_at: integer('started_at'),
+    finished_at: integer('finished_at'),
+    deadline_at: integer('deadline_at').notNull(),
+    error_code: text('error_code', { enum: ['timeout', 'provider', 'validation', 'internal'] }),
+    error: text('error'),
+    version_id: text('version_id'),
+    lease_token: text('lease_token'),
+    lease_owner: text('lease_owner'),
+    lease_expires_at: integer('lease_expires_at'),
+  },
+  (table) => [
+    index('idx_runs_project').on(table.project_id, sql`${table.created_at} desc`),
+    index('idx_runs_queue').on(table.status, table.lease_expires_at, table.created_at),
+  ],
+)
+
+export const runEvents = sqliteTable(
+  'run_events',
+  {
+    sequence: integer('sequence').primaryKey({ autoIncrement: true }),
+    run_id: text('run_id').notNull(),
+    event_key: text('event_key').notNull(),
+    type: text('type').notNull(),
+    data: text('data', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+    created_at: integer('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_run_events_cursor').on(table.run_id, table.sequence),
+    uniqueIndex('idx_run_events_key').on(table.run_id, table.event_key),
+  ],
+)
+
+export const runCheckpoints = sqliteTable(
+  'run_checkpoints',
+  {
+    run_id: text('run_id').notNull(),
+    name: text('name').notNull(),
+    result: text('result', { mode: 'json' }).$type<unknown>().notNull(),
+    created_at: integer('created_at').notNull(),
+  },
+  (table) => [uniqueIndex('idx_run_checkpoints_key').on(table.run_id, table.name)],
+)

@@ -14,6 +14,6 @@ The browser uses React/Vite, TanStack Router/Query, and React Hook Form/Zod. The
 
 ## Consequences
 
-Shared packages never import applications. API types do not originate from server implementation imports. Pure parsing/prompts/mock behavior can be consumed by both runtimes without React or database dependencies. The original idea/generation/version/publication loop remains the acceptance boundary; a monorepo skeleton alone does not complete the migration.
+Shared packages never import applications. API types do not originate from server implementation imports. Pure parsing and prompt helpers can be consumed by both runtimes without React or database dependencies. The original idea/generation/version/publication loop remains the acceptance boundary; a monorepo skeleton alone does not complete the migration. The historical mock scaffold is superseded by the real-only [durable harness](0012-durable-agent-harness.md).
 
 Related: [UI](0002-shadcn-only-ui.md), [oRPC](0009-orpc-contract-first.md), [D1](0010-server-on-workers.md), [i18n](0011-i18n-catalog.md).

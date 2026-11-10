@@ -1,4 +1,3 @@
-export type ChatTurn = { role: 'system' | 'user' | 'assistant'; content: string }
 export type AgentId = 'mike' | 'emma' | 'bob' | 'alex' | 'david'
 export type ProjectStatus = 'idle' | 'generating' | 'error'
 
