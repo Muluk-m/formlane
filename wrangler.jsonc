@@ -23,7 +23,7 @@
   "vars": {
     "OPENAI_MODEL": "gpt-4.1",
     "OPENAI_BASE_URL": "https://api.openai.com/v1",
-    "MOCK_LLM": "false",
+    "MOCK_LLM": "true",
     "MOCK_DELAY_MS": "12"
   },
   "rules": [
@@ -37,7 +37,7 @@
     {
       "binding": "DB",
       "database_name": "atoms-demo",
-      "database_id": "ffd1afdb-33f4-4063-ae97-4a624c034cd7",
+      "database_id": "486c7fe1-a583-495e-99dd-71d5a1d6b7eb",
       "migrations_dir": "migrations"
     }
   ]
