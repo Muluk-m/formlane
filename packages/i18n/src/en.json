@@ -1,0 +1,178 @@
+{
+  "brand": {
+    "name": "Atoms Demo"
+  },
+  "common": {
+    "language": "Language",
+    "localeName": {
+      "zh": "中文",
+      "en": "English"
+    },
+    "cancel": "Cancel",
+    "confirm": "Confirm"
+  },
+  "ui": {
+    "sidebar": {
+      "title": "Navigation",
+      "description": "Project navigation and workspace settings.",
+      "toggle": "Toggle navigation"
+    },
+    "spinner": {
+      "loading": "Loading"
+    },
+    "table": {
+      "empty": "No data"
+    },
+    "combobox": {
+      "empty": "No matches"
+    },
+    "currency": {
+      "placeholder": "Search currencies, e.g. USD"
+    },
+    "timeZone": {
+      "placeholder": "Search time zones, e.g. Asia/Shanghai"
+    },
+    "dateRange": {
+      "placeholder": "Choose a date range",
+      "maxDays": "Up to {maxDays} days, including both ends",
+      "confirm": "Apply"
+    }
+  },
+  "status": {
+    "updated": "Updated",
+    "running": "In progress",
+    "failedKeepOld": "Failed, previous data kept",
+    "failed": "Failed",
+    "noData": "No successful data yet",
+    "offline": "Offline",
+    "ready": "Ready to pull",
+    "pending": "Pending"
+  },
+  "atoms": {
+    "previewError": "This preview encountered an error. Ask the team to fix it. Browser storage is unavailable in this isolated preview.",
+    "kicker": "AGENT WORKSPACE",
+    "hero": "An AI team that ships a working app.",
+    "sub": "Describe a product. Mike plans it, Emma scopes it, Bob picks the structure, and Alex writes a page you can click in the preview.",
+    "placeholder": "A weekend market map, a studio booking board, a tool library…",
+    "hint": "Enter to build · Shift+Enter for a new line",
+    "build": "Build",
+    "building": "Starting…",
+    "examples": "Try one",
+    "team": "The team on this build",
+    "projects": "Your projects",
+    "empty": "Nothing in this browser yet. The first idea you send will land here.",
+    "noAccount": "No account. Projects stay with this browser. Published links are public.",
+    "versions": "versions",
+    "version": "version",
+    "published": "Published",
+    "delete": "Delete",
+    "preview": "Preview",
+    "code": "Code",
+    "history": "History",
+    "remix": "Remix",
+    "download": "Download",
+    "publish": "Publish",
+    "updateLive": "Update live",
+    "desktop": "Desktop",
+    "mobile": "Mobile",
+    "back": "All projects",
+    "followPlaceholder": "Ask the team to change the app…",
+    "send": "Send",
+    "stop": "Stop",
+    "files": "Files",
+    "emptyPreview": "The preview will show up here once Alex has a page.",
+    "emptyCode": "No files yet.",
+    "restore": "Restore",
+    "current": "Current",
+    "viewing": "Viewing an older version",
+    "backToCurrent": "Back to current",
+    "copyLink": "Copy link",
+    "copied": "Copied",
+    "unpublish": "Unpublish",
+    "close": "Close",
+    "liveNote": "Anyone with this link can open the app full screen.",
+    "retry": "Run the team",
+    "interrupted": "The last run looks interrupted.",
+    "takeOver": "Take over",
+    "notFound": "This project isn't in this browser.",
+    "home": "Back home",
+    "mockPill": "Mock team",
+    "livePill": "Live model",
+    "noKey": "No provider key on this server. Use the mock team or configure the model secret.",
+    "examplesList": {
+      "one": {
+        "title": "Farmers market map",
+        "prompt": "A weekend farmers market map for a small coastal town. Shoppers filter stalls by what's in season, save a shortlist, and see which stalls take cards."
+      },
+      "two": {
+        "title": "Pottery studio board",
+        "prompt": "A pottery studio booking board where members reserve wheels, see which glazes are in stock, and join a weekend firing."
+      },
+      "three": {
+        "title": "Tool library",
+        "prompt": "A neighborhood tool library. Neighbors list drills and ladders, request to borrow them, and check what's back by Sunday."
+      },
+      "four": {
+        "title": "Espresso journal",
+        "prompt": "An espresso tasting journal. Log beans, score sweetness and finish, and compare the last five shots side by side."
+      }
+    },
+    "loading": "Loading project…",
+    "loadError": "Could not load this project.",
+    "requestError": "The request could not be completed.",
+    "streamError": "The team hit an error.",
+    "sessionError": "Could not start a browser session.",
+    "deleteTitle": "Delete project?",
+    "deleteConfirm": "Delete “{title}”? This cannot be undone.",
+    "chat": "Team conversation",
+    "savedVersion": "Version {number} ready",
+    "previewTitle": "App preview",
+    "previewAddress": "Live preview",
+    "resize": "Resize conversation panel",
+    "ideaRequired": "Describe what you want to build.",
+    "ideaLength": "Use at most 4,000 characters.",
+    "messageRequired": "Enter a message for the team.",
+    "messageLength": "Use at most 4,000 characters.",
+    "newProject": "New project",
+    "workspace": "Workspace",
+    "historyNote": "Preview a saved version or restore it as the current app.",
+    "errorTitle": "Something went wrong",
+    "versionLabel": "Version {number}",
+    "versionCount": "{count} versions",
+    "justNow": "Just now",
+    "bytes": "{count} B",
+    "kilobytes": "{count} KB"
+  },
+  "agents": {
+    "mike": {
+      "name": "Mike",
+      "role": "Team lead",
+      "blurb": "Runs the plan and keeps every specialist on the same job.",
+      "status": "Mike is planning the work…"
+    },
+    "emma": {
+      "name": "Emma",
+      "role": "Product manager",
+      "blurb": "Turns the idea into a small spec Alex can actually build.",
+      "status": "Emma is writing the requirements…"
+    },
+    "bob": {
+      "name": "Bob",
+      "role": "Architect",
+      "blurb": "Picks a structure that fits a single self-contained page.",
+      "status": "Bob is choosing the structure…"
+    },
+    "alex": {
+      "name": "Alex",
+      "role": "Engineer",
+      "blurb": "Writes the app you can click in the live preview.",
+      "status": "Alex is writing code…"
+    },
+    "david": {
+      "name": "David",
+      "role": "Data analyst",
+      "blurb": "Says what you would measure if this met real people.",
+      "status": "David is reading the results…"
+    }
+  }
+}
