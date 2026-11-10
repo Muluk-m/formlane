@@ -37,9 +37,7 @@
     {
       "binding": "DB",
       "database_name": "atoms-demo",
-      // PLACEHOLDER — not a real database.
-      // Replace this UUID with the id printed by: npx wrangler d1 create atoms-demo
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "ffd1afdb-33f4-4063-ae97-4a624c034cd7",
       "migrations_dir": "migrations"
     }
   ]
