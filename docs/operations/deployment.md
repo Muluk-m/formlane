@@ -4,7 +4,7 @@
 
 The authorized target **Maqiqian0316@gmail.com's Account** is verified as `252fba810f75c0370e5aa7200abc8f80`. The live site is https://formlane-9dp.pages.dev. Pages `formlane` calls Worker `formlane-api` through service binding `API`; the Worker reuses project D1 `atoms-demo`. The additive run-fence migration was applied without deleting data.
 
-The remaining functional blocker is the model credential: production reports `hasKey: false` and `mock: false`. Configure the provider secret on `formlane-api`, then verify a real generation. Previous company-account deployments are not this release.
+Production model configuration is `gpt-6.1-sol` at `https://sub2api.qiliangjia.org/v1`. The API key is a Cloudflare Secret on `formlane-api`; never put it in source or logs. Health reports `hasKey: true`, `mock: false`. Real generation, the generated counter interaction, and saved-code reload were verified. Previous company-account deployments are not this release.
 
 ## Release gate
 
