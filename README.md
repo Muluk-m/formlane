@@ -1,4 +1,4 @@
-# Atoms Demo
+# Formlane
 
 Describe an app in a sentence and watch a small AI product team build it. Mike leads, Emma writes the product brief, Bob chooses the structure, Alex generates a single HTML app, and David suggests what to measure. A follow-up asks Mike and Alex to revise the current app and save another version.
 
