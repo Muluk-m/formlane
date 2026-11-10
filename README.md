@@ -83,9 +83,9 @@ Migration verification: remote Biome checks, six package typechecks, 24 tests, V
 
 ## Deployment status
 
-**Public deployment is blocked on access to the designated Cloudflare account: Maqiqian0316@gmail.com's Account.** Its account ID is unverified. The observed dashboard session exposes company accounts, not that Gmail account. Prior `chanyan.workers.dev` deployments used an unauthorized wrong account and are **not a valid deliverable or a verified production URL**.
+Live site: **https://formlane-9dp.pages.dev**. Deployed to the verified **Maqiqian0316@gmail.com's Account** (`252fba810f75c0370e5aa7200abc8f80`) using Pages `formlane`, service-bound Worker `formlane-api`, and the existing project D1 database. The Formlane logo, homepage, same-origin API, and database-backed project listing were verified online.
 
-Do not reuse those account/database IDs or deploy through a fallback identity. Once the correct account is accessible, verify its ID and bound D1 resource, then obtain authorization for remote migration, secret writes, and deployment. The deployment guard must fail closed on an account name/ID mismatch. See the [deployment procedure](docs/operations/deployment.md). No public URL is claimed here.
+**Real generation is not ready:** the production model API key is not configured (`hasKey: false`, `mock: false`). Set `OPENAI_API_KEY` on `formlane-api` before treating this as a fully usable generation demo. No email registration or verification is required. See [deployment](docs/operations/deployment.md).
 
 ## Limits and behavior worth knowing
 

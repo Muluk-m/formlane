@@ -1,7 +1,7 @@
 {
   "cloudflare": {
     "accountName": "Maqiqian0316@gmail.com's Account",
-    "accountId": null
+    "accountId": "252fba810f75c0370e5aa7200abc8f80"
   },
   "test": {
     "branch": "test",
@@ -12,9 +12,9 @@
   },
   "production": {
     "branch": "main",
-    "pagesProject": "atoms-demo-web",
-    "worker": "atoms-demo-server",
+    "pagesProject": "formlane",
+    "worker": "formlane-api",
     "databaseName": "atoms-demo",
-    "databaseId": null
+    "databaseId": "ffd1afdb-33f4-4063-ae97-4a624c034cd7"
   }
 }
