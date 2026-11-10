@@ -114,18 +114,21 @@ npm run preview   # wrangler dev without rebuilding
 
 ## Deploy
 
-The `database_id` in `wrangler.jsonc` is a **placeholder** (`00000000-0000-0000-0000-000000000000`). Replace it before the first remote deploy.
+The production Worker and D1 database are already configured in `wrangler.jsonc` for the Cloudflare account used by this project. The public deployment is:
+
+```text
+https://atoms-demo.chanyan.workers.dev
+```
+
+To deploy changes:
 
 ```bash
-npx wrangler login
-npx wrangler d1 create atoms-demo
-# Paste the printed database_id into wrangler.jsonc (binding DB, database_name atoms-demo)
-
 npm run build
 npx wrangler d1 migrations apply atoms-demo --remote
-npx wrangler secret put OPENAI_API_KEY
 npx wrangler deploy
 ```
+
+The public demo runs with `MOCK_LLM=true`, so it is usable without a provider secret. For a live model, set `OPENAI_API_KEY` as a Worker secret and switch `MOCK_LLM` to `false`.
 
 Optional secrets / vars (vars already have defaults in `wrangler.jsonc`):
 
