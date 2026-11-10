@@ -1,7 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="8" fill="#000000"/>
-  <circle cx="11" cy="13" r="3" fill="#ffffff"/>
-  <circle cx="20" cy="11" r="2.2" fill="#47c2ff"/>
-  <circle cx="18.5" cy="20" r="3.2" fill="#e3f0ff"/>
-  <circle cx="11" cy="21.5" r="1.6" fill="#ffffff"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Formlane"><rect width="32" height="32" rx="7.5" fill="#000000"/><path d="M10 24V8h13M10 16h10" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M17 24h6V18" stroke="#47C2FF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>

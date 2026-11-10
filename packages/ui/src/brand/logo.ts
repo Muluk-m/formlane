@@ -1,5 +1,5 @@
 /**
- * The Atoms Demo AD monogram and completion check, inherited from Skyline.
+ * The Formlane F: a white branching path with a sky-blue completion lane.
  * Single source for React LogoMark and static SVG assets. Drawn on a 32×32 grid;
  * keep this module erasable TypeScript for asset-generation tools.
  */
@@ -11,8 +11,8 @@ export const LOGO_TILE_RADIUS = 7.5
 
 /** Stroked paths, round caps and joins. */
 export const LOGO_STROKES: ReadonlyArray<{ d: string; width: number; check?: true }> = [
-  { d: 'M5.8 25 12.2 7h3.6V25M8.6 18.6h7.2M15.8 7h2.4a9 9 0 0 1 0 18h-2.4', width: 2.8 },
-  { d: 'M18.9 16.3l1.9 2.1 3.4-4.5', width: 2.4, check: true },
+  { d: 'M10 24V8h13M10 16h10', width: 3 },
+  { d: 'M17 24h6V18', width: 3, check: true },
 ]
 
 export type LogoSvgOptions = {
@@ -31,7 +31,7 @@ export function logoSvg({
   color,
   square = false,
   size,
-  title = 'Atoms Demo',
+  title = 'Formlane',
 }: LogoSvgOptions = {}): string {
   const ink = color ?? (variant === 'tile' ? '#fff' : 'currentColor')
   const dims = size ? ` width="${size}" height="${size}"` : ''

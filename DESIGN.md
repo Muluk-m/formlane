@@ -1,6 +1,6 @@
 ---
 version: alpha
-name: Atoms Demo · Skyline
+name: Formlane · Skyline
 description: >-
   An AI product-team workspace. Pure white canvas, a light sky-blue page header,
   white cards with soft shadows, and black as the sole action color. Sky blue is
@@ -254,7 +254,7 @@ components:
     backgroundColor: "{colors.chart-muted}"
 ---
 
-# Atoms Demo design system
+# Formlane design system
 
 ## Overview
 
@@ -272,7 +272,7 @@ These rules govern the Atoms shell, not the HTML generated from a user's prompt.
 
 ### Brand
 
-The inherited AD monogram now means **Atoms Demo**. Its completion check, shared stem, 32×32 grid, black tile, white strokes, and sky-blue check remain unchanged. Geometry and static asset serialization live in `packages/ui/src/brand/logo.ts`; UI consumers use `LogoMark` or `Logo`. The wordmark comes from the shared `brand.name` catalog key in both locales.
+The Formlane mark combines a white F-shaped branching path with a sky-blue finishing lane. It uses the inherited 32×32 grid, black tile, rounded strokes, and Skyline palette without retaining the reference product's AD monogram. Geometry and static asset serialization live in `packages/ui/src/brand/logo.ts`; UI consumers use `LogoMark` or `Logo`. The wordmark comes from the shared `brand.name` catalog key in both locales. Regenerate the favicon with `node scripts/brand-assets.mjs` after geometry changes.
 
 - `tile` is the black application/fav-icon mark; `glyph` follows `currentColor` for monochrome contexts.
 - Keep proportions, colors, and strokes. No extra outlines or shadows. Minimum rendered size: 16px.
