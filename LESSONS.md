@@ -4,6 +4,8 @@ Read before changing a related area. Entries distinguish observed migration mist
 
 ## This migration
 
+- **2026-11-11 — Text acceptance disagreed with its polling condition.** Polling accepted contained text, but the final verdict still required equality, so `Saved Ada` failed an expectation of `Saved`. Reuse the match result and exercise the real browser path. Reducing model turn limits or changing prompts does not fix false validation failures; use SDK tool termination for completed specialist work.
+
 - **2026-11-10 — A `/p` Vite proxy also matched `/project` and broke direct reloads.** Match `/p/` and `/api/` explicitly; verify SPA route reloads separately from client-side navigation.
 - **2026-11-10 — Historical scaffold storage failure:** an earlier mock document used browser storage inside an opaque iframe and never installed its event handlers. That generator is obsolete; retain the lesson, not a mock execution path. Keep generated apps isolated and exercise real state-changing interactions rather than inferring success from dispatched clicks.
 
