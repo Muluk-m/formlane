@@ -1,9 +1,18 @@
+import { projectTemplateSchema } from '@atoms-demo/contracts'
+import {
+  createProjectSource,
+  isProjectPath,
+  type ProjectSource,
+  projectSourceHash,
+  validateProjectSource,
+} from '@atoms-demo/core/project'
 import { Agent, Runner, tool } from '@openai/agents-core'
 import { OpenAIProvider } from '@openai/agents-openai'
 import { z } from 'zod'
 
 import type { ExecutorConfig } from './config'
 import { observeModelStream } from './model-stream'
+import { compileProject } from './project-build'
 import type { DurableExecutor, HarnessContext, HarnessResult } from './types'
 import {
   artifactHash,
@@ -19,35 +28,60 @@ const actionSchema = z.object({
   task: z.string().min(1),
 })
 type Action = z.infer<typeof actionSchema>
+type Build = { sourceHash: string; artifactHash: string; revision: number }
 type Workspace = {
   brief: string
   architecture: string
+  source: ProjectSource | null
   html: string
+  build: Build | null
   checks: BrowserCheck[]
   report: ValidationReport | null
-  review: { accepted: boolean; findings: string } | null
+  validatedBy: string | null
+  implementationValidation: Build | null
+  review: { accepted: boolean; findings: string; sourceHash: string; artifactHash: string } | null
   lastOutput: string
   revision: number
 }
 const roles = { emma: 'Emma', bob: 'Bob', alex: 'Alex', david: 'David' } as const
-const artifactSchema = z.string().min(80).max(180000)
-const artifactEditsSchema = z
+const filePathSchema = z.string().refine(isProjectPath, 'Use a safe relative project file path.')
+const fileContentSchema = z.string().max(180000)
+const fileEditsSchema = z
   .array(z.object({ find: z.string().min(1).max(180000), replacement: z.string().max(180000) }))
   .min(1)
   .max(8)
 
-export function applyArtifactEdits(html: string, edits: z.infer<typeof artifactEditsSchema>) {
-  if (!html) throw new Error('Read the workspace and write an initial artifact before editing.')
-  let candidate = html
-  for (const { find, replacement } of edits) {
+export function applyFileEdits(content: string, edits: z.infer<typeof fileEditsSchema>) {
+  let candidate = content
+  for (const { find, replacement } of fileEditsSchema.parse(edits)) {
     const index = candidate.indexOf(find)
-    if (index < 0) throw new Error('Edit target was not found. Read the current workspace.')
+    if (index < 0) throw new Error('Edit target was not found. Read the current file.')
     if (candidate.indexOf(find, index + 1) >= 0)
       throw new Error('Edit target is ambiguous. Include enough surrounding text to match once.')
-    if (find === replacement) throw new Error('Edit replacement must change the candidate.')
+    if (find === replacement) throw new Error('Edit replacement must change the file.')
     candidate = candidate.slice(0, index) + replacement + candidate.slice(index + find.length)
   }
-  return artifactSchema.parse(candidate)
+  return fileContentSchema.parse(candidate)
+}
+
+async function currentBuild(workspace: Workspace): Promise<Build | null> {
+  const { source, build, html, revision } = workspace
+  if (!source || !build || build.revision !== revision || !html) return null
+  if (build.sourceHash !== (await projectSourceHash(source))) return null
+  if (build.artifactHash !== (await artifactHash(html))) return null
+  return build
+}
+
+function invalidateSource(workspace: Workspace, source: ProjectSource) {
+  validateProjectSource(source)
+  workspace.source = source
+  workspace.revision++
+  workspace.html = ''
+  workspace.build = null
+  workspace.report = null
+  workspace.validatedBy = null
+  workspace.implementationValidation = null
+  workspace.review = null
 }
 
 export async function executeHarness(
@@ -59,6 +93,8 @@ export async function executeHarness(
 ): Promise<HarnessResult> {
   if (!env.OPENAI_API_KEY)
     throw Object.assign(new Error('Model credentials are missing.'), { code: 'provider' })
+  signal.throwIfAborted()
+  if (context.previousSource) validateProjectSource(context.previousSource)
   const provider = new OpenAIProvider({
     apiKey: env.OPENAI_API_KEY,
     baseURL: env.ENDPOINT,
@@ -73,9 +109,13 @@ export async function executeHarness(
   let workspace: Workspace = {
     brief: '',
     architecture: '',
-    html: context.previousHtml ?? '',
+    source: context.previousSource ? structuredClone(context.previousSource) : null,
+    html: '',
+    build: null,
     checks: [],
     report: null,
+    validatedBy: null,
+    implementationValidation: null,
     review: null,
     lastOutput: '',
     revision: 0,
@@ -84,7 +124,7 @@ export async function executeHarness(
   try {
     for (let turn = 0; turn < 8; turn++) {
       signal.throwIfAborted()
-      const action = await durable.run(`manager-${turn}`, async () => {
+      const action = await durable.run(`project-v1-manager-${turn}`, async () => {
         await emit('agent_start', { id: 'mike', name: 'Mike' })
         const choose = (role: Action['role'], description: string) =>
           tool({
@@ -98,10 +138,13 @@ export async function executeHarness(
           model,
           toolUseBehavior: 'stop_on_first_tool',
           modelSettings: { toolChoice: 'required', parallelToolCalls: false },
-          instructions: `You manage a real application build. Choose ONE specialist tool per turn within eight delegations. Emma defines scope once, Bob designs architecture once, Alex implements and validates, and David independently reviews. Alex returns immediately after validation; failed reports are concrete evidence for a targeted repair delegation. Never repeat Emma or Bob. Delegate Alex at most twice in total. If the current artifact has a passing report, delegate David instead of rewriting HTML. Missing test coverage belongs to David. After a repair, David must review the repaired artifact again. Complete as soon as the current report passes and review accepts. Tools return durable dispatch receipts; use the next turn for the selected result.`,
+          instructions: `You manage a real project build. Choose ONE specialist tool per turn within eight delegations. Emma defines scope once, Bob chooses and initializes a suitable template once (or preserves the existing project on follow-ups), Alex implements source files, builds and validates, and David independently runs browser validation and reviews. Alex returns immediately after validation; failed reports are concrete evidence for a targeted repair delegation. Never repeat Emma or Bob. Delegate Alex at most twice in total. If the current build has a passing implementation report, delegate David instead of rewriting files. Missing test coverage belongs to David. After a repair, David must review the repaired build again. Complete as soon as the current source is built, browser checks pass and independent review accepts. Tools return durable dispatch receipts; use the next turn for the selected result.`,
           tools: [
             choose('emma', 'Delegate product requirements and acceptance criteria'),
-            choose('bob', 'Delegate architecture planning'),
+            choose(
+              'bob',
+              'Delegate template selection, actual project initialization and architecture',
+            ),
             choose('alex', 'Delegate implementation or targeted repair'),
             choose('david', 'Delegate independent browser validation and review'),
             choose('complete', 'Finish only after actual validation passes and review accepts'),
@@ -112,12 +155,15 @@ export async function executeHarness(
           JSON.stringify({
             idea: context.idea,
             request: context.request,
-            hasPreviousApp: Boolean(context.previousHtml),
+            hasPreviousApp: Boolean(context.previousSource),
             history,
             workspace: {
               brief: workspace.brief,
               architecture: workspace.architecture,
               revision: workspace.revision,
+              template: workspace.source?.template ?? null,
+              files: Object.keys(workspace.source?.files ?? {}).sort(),
+              build: workspace.build,
               report: workspace.report,
               review: workspace.review,
             },
@@ -129,23 +175,32 @@ export async function executeHarness(
         return decision
       })
       if (action.role === 'complete') {
+        const build = await currentBuild(workspace)
         if (
-          workspace.html &&
+          workspace.source &&
+          build &&
+          workspace.implementationValidation?.sourceHash === build.sourceHash &&
+          workspace.implementationValidation.artifactHash === build.artifactHash &&
           workspace.report?.valid &&
-          workspace.report.artifactHash === (await artifactHash(workspace.html)) &&
-          workspace.review?.accepted === true
-        )
-          return { html: workspace.html, summary: action.task }
+          workspace.report.artifactHash === build.artifactHash &&
+          workspace.validatedBy === 'david' &&
+          workspace.review?.accepted === true &&
+          workspace.review.sourceHash === build.sourceHash &&
+          workspace.review.artifactHash === build.artifactHash
+        ) {
+          signal.throwIfAborted()
+          return { source: workspace.source, html: workspace.html, summary: action.task }
+        }
         history.push({
           role: 'system',
           task: action.task,
           result:
-            'Completion rejected: current artifact needs passing browser checks and independent acceptance.',
+            'Completion rejected: current source requires a successful build, Alex browser validation, and passing independent David validation and acceptance.',
         })
         continue
       }
       const role = action.role
-      const stepName = `delegate-${turn}-${role}`
+      const stepName = `project-v1-delegate-${turn}-${role}`
       workspace = await durable.run(stepName, async () => {
         const current: Workspace = structuredClone(workspace)
         const bytes = new Uint8Array(
@@ -162,7 +217,7 @@ export async function executeHarness(
         const messageId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
         const observed = observeModelStream(model, emit, signal, role, messageId)
         // A retried delegation starts from its durable workspace, not an interrupted draft.
-        if (role === 'alex') await emit('code_reset', { text: current.html })
+        await emit('project_reset', { source: current.source })
         await emit('tool_start', {
           id: stepName,
           name: `delegate_${role}`,
@@ -172,171 +227,264 @@ export async function executeHarness(
         })
         await emit('agent_start', { id: role, name: roles[role], task: action.task })
         await emit('message_start', { id: messageId, role: 'agent', agent: role })
+        let toolIndex = 0
+        const withEvidence = async <T>(name: string, execute: () => Promise<T>): Promise<T> => {
+          signal.throwIfAborted()
+          const id = `${stepName}:${name}:${toolIndex++}`
+          await emit('tool_start', { id, name, agent: role })
+          const output = await execute()
+          signal.throwIfAborted()
+          await emit('tool_end', {
+            id,
+            name,
+            agent: role,
+            output: name === 'read_file' ? { revision: current.revision } : output,
+          })
+          return output
+        }
+        const toolError = (error: unknown) => ({
+          error: error instanceof Error ? error.message : 'Project operation failed.',
+        })
+        const missingSource = { error: 'Initialize a project before working with files.' }
         const read = tool({
           name: 'read_workspace',
           description:
-            'Read the actual current files, brief and validation findings before doing work.',
+            'Read the brief, architecture, file listing, build and browser evidence. Use read_file for exact file content.',
           parameters: z.object({}),
-          execute: async () => {
-            await emit('tool_start', {
-              id: `${stepName}:read`,
-              name: 'read_workspace',
-              agent: role,
-            })
-            await emit('tool_end', {
-              id: `${stepName}:read`,
-              name: 'read_workspace',
-              agent: role,
-              output: { revision: current.revision },
-            })
-            return { ...current, originalIdea: context.idea, userRequest: context.request }
-          },
+          execute: async () =>
+            withEvidence('read_workspace', async () => ({
+              brief: current.brief,
+              architecture: current.architecture,
+              template: current.source?.template ?? null,
+              files: Object.entries(current.source?.files ?? {})
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([path, content]) => ({ path, characters: content.length })),
+              revision: current.revision,
+              build: current.build,
+              checks: current.checks,
+              report: current.report,
+              review: current.review,
+              originalIdea: context.idea,
+              userRequest: context.request,
+            })),
+        })
+        const initialize = tool({
+          name: 'initialize_project',
+          description:
+            'Choose vanilla for simple HTML/CSS/JS apps or react-ts for component-based interactive apps and create its runnable scaffold. Existing projects cannot be reset.',
+          parameters: z.object({
+            template: projectTemplateSchema,
+            reason: z.string().min(1).max(2000),
+          }),
+          execute: async ({ template, reason }) =>
+            withEvidence('initialize_project', async () => {
+              if (current.source)
+                return {
+                  error: 'The project already exists. Preserve its template and edit its files.',
+                }
+              const source = createProjectSource(template)
+              invalidateSource(current, source)
+              await emit('project_initialized', { source, reason })
+              return {
+                template,
+                files: Object.keys(source.files).sort(),
+                revision: current.revision,
+                reason,
+              }
+            }),
+        })
+        const readFile = tool({
+          name: 'read_file',
+          description: 'Read the exact current text of one project file before editing it.',
+          parameters: z.object({ path: filePathSchema }),
+          execute: async ({ path }) =>
+            withEvidence('read_file', async () => {
+              if (!current.source) return missingSource
+              const content = current.source.files[path]
+              return content === undefined
+                ? { error: `File does not exist: ${path}` }
+                : { path, content }
+            }),
         })
         const write = tool({
-          name: 'write_artifact',
+          name: 'write_file',
           description:
-            'Write the complete index.html candidate and behavioral acceptance checks. Does not publish or mark complete.',
-          parameters: z.object({
-            html: artifactSchema,
-            checks: browserChecksSchema,
-          }),
-          execute: async ({ html, checks }) => {
-            signal.throwIfAborted()
-            await emit('tool_start', {
-              id: `${stepName}:write`,
-              name: 'write_artifact',
-              agent: role,
-            })
-            current.html = html
-            current.checks = checks
-            current.report = null
-            current.review = null
-            current.revision++
-            await emit('tool_end', {
-              id: `${stepName}:write`,
-              name: 'write_artifact',
-              agent: role,
-              output: { revision: current.revision, bytes: html.length },
-            })
-            await observed.commit(html)
-            return {
-              revision: current.revision,
-              message: 'Candidate stored. Run validate_preview; it is not accepted yet.',
-            }
-          },
+            'Create or replace one source file. Supply path before content. The template package.json is protected. Invalidates build and browser review; run build_project afterward.',
+          parameters: z.object({ path: filePathSchema, content: fileContentSchema }),
+          execute: async ({ path, content }) =>
+            withEvidence('write_file', async () => {
+              if (!current.source) return missingSource
+              try {
+                invalidateSource(current, {
+                  ...current.source,
+                  files: { ...current.source.files, [path]: content },
+                })
+              } catch (error) {
+                return toolError(error)
+              }
+              await observed.commit(path, content)
+              return {
+                path,
+                revision: current.revision,
+                message: 'File saved. Build and validate current source before acceptance.',
+              }
+            }),
         })
         const edit = tool({
-          name: 'edit_artifact',
+          name: 'edit_file',
           description:
-            'Repair the current HTML using ordered literal replacements, each matching exactly once. All edits apply together; an invalid target leaves the candidate unchanged. Preserves acceptance checks and invalidates validation/review. Run validate_preview afterward.',
-          parameters: z.object({ edits: artifactEditsSchema }),
-          execute: async ({ edits }) => {
-            signal.throwIfAborted()
-            await emit('tool_start', {
-              id: `${stepName}:edit`,
-              name: 'edit_artifact',
-              agent: role,
-            })
-            let html: string
-            try {
-              html = applyArtifactEdits(current.html, edits)
-            } catch (error) {
-              const output = {
-                error: error instanceof Error ? error.message : 'Artifact edit failed.',
+            'Apply ordered literal replacements to one existing file, each matching exactly once. All edits apply together or none do. Preserves checks, invalidates build and review.',
+          parameters: z.object({ path: filePathSchema, edits: fileEditsSchema }),
+          execute: async ({ path, edits }) =>
+            withEvidence('edit_file', async () => {
+              if (!current.source) return missingSource
+              const previous = current.source.files[path]
+              if (previous === undefined) return { error: `File does not exist: ${path}` }
+              let content: string
+              try {
+                content = applyFileEdits(previous, edits)
+                invalidateSource(current, {
+                  ...current.source,
+                  files: { ...current.source.files, [path]: content },
+                })
+              } catch (error) {
+                return toolError(error)
               }
-              await emit('tool_end', {
-                id: `${stepName}:edit`,
-                name: 'edit_artifact',
-                agent: role,
-                output,
-              })
+              await observed.commit(path, content)
+              return {
+                path,
+                revision: current.revision,
+                message: 'Edits applied; checks preserved. Build and validate again.',
+              }
+            }),
+        })
+        const deleteFile = tool({
+          name: 'delete_file',
+          description:
+            'Delete an obsolete source file. Required index.html and protected package.json cannot be deleted. Invalidates build and review.',
+          parameters: z.object({ path: filePathSchema }),
+          execute: async ({ path }) =>
+            withEvidence('delete_file', async () => {
+              if (!current.source) return missingSource
+              if (current.source.files[path] === undefined)
+                return { error: `File does not exist: ${path}` }
+              try {
+                const files = { ...current.source.files }
+                delete files[path]
+                invalidateSource(current, { ...current.source, files })
+              } catch (error) {
+                return toolError(error)
+              }
+              await emit('file_deleted', { path })
+              return { path, revision: current.revision }
+            }),
+        })
+        const build = tool({
+          name: 'build_project',
+          description:
+            'Compile current project files with the trusted compiler. Returns real build errors. Successful current-source build is required before browser validation; source/config scripts are never executed.',
+          parameters: z.object({}),
+          execute: async () =>
+            withEvidence('build_project', async () => {
+              current.build = null
+              current.html = ''
+              current.report = null
+              current.validatedBy = null
+              current.implementationValidation = null
+              current.review = null
+              let output: { ok: boolean; issues: string[]; sourceHash?: string }
+              try {
+                if (!current.source) throw new Error(missingSource.error)
+                const result = await compileProject(current.source, signal)
+                signal.throwIfAborted()
+                const sourceHash = await projectSourceHash(current.source)
+                if (result.sourceHash !== sourceHash)
+                  throw new Error('Build did not match the current project source.')
+                const htmlHash = await artifactHash(result.html)
+                signal.throwIfAborted()
+                current.html = result.html
+                current.build = { sourceHash, artifactHash: htmlHash, revision: current.revision }
+                output = { ok: true, issues: [], sourceHash }
+              } catch (error) {
+                signal.throwIfAborted()
+                output = { ok: false, issues: [toolError(error).error] }
+              }
+              await emit('build_result', output)
               return output
-            }
-            current.html = html
-            current.report = null
-            current.review = null
-            current.revision++
-            const output = {
-              revision: current.revision,
-              message: 'Edits applied; checks preserved. Run validate_preview before acceptance.',
-            }
-            await emit('tool_end', {
-              id: `${stepName}:edit`,
-              name: 'edit_artifact',
-              agent: role,
-              output,
-            })
-            await emit('code_reset', { text: html })
-            return output
-          },
+            }),
         })
         const setChecks = tool({
           name: 'set_acceptance_checks',
           description:
-            'Replace browser acceptance checks without modifying HTML or its hash. Clears prior validation and review; run validate_preview afterward.',
+            'Replace browser checks without modifying source or build. Clears prior validation and review; run validate_preview afterward.',
           parameters: z.object({ checks: browserChecksSchema }),
-          execute: async ({ checks }) => {
-            signal.throwIfAborted()
-            await emit('tool_start', {
-              id: `${stepName}:checks`,
-              name: 'set_acceptance_checks',
-              agent: role,
-            })
-            current.checks = checks
-            current.report = null
-            current.review = null
-            const output = {
-              revision: current.revision,
-              checks: checks.length,
-              message: 'Checks replaced; HTML unchanged. Run validate_preview before review.',
-            }
-            await emit('tool_end', {
-              id: `${stepName}:checks`,
-              name: 'set_acceptance_checks',
-              agent: role,
-              output,
-            })
-            return output
-          },
+          execute: async ({ checks }) =>
+            withEvidence('set_acceptance_checks', async () => {
+              current.checks = checks
+              current.report = null
+              current.validatedBy = null
+              current.review = null
+              return {
+                revision: current.revision,
+                checks: checks.length,
+                message: 'Checks replaced. Validate before review.',
+              }
+            }),
         })
         const validate = tool({
           name: 'validate_preview',
           description:
-            'Execute real isolated browser actions and assertions against the current candidate. Text assertions require containment; other assertions require exact equality. Returns genuine failures for repair.',
+            'Execute isolated browser actions against the successful build of CURRENT source. Returns genuine failures for repair. Text assertions use containment; other assertions use exact equality.',
           parameters: z.object({}),
-          execute: async () => {
-            signal.throwIfAborted()
-            await emit('tool_start', {
-              id: `${stepName}:validate`,
-              name: 'validate_preview',
-              agent: role,
-            })
-            current.report = await validateArtifact(current.html, current.checks, signal)
-            await emit('validation', { ...current.report })
-            await emit('tool_end', {
-              id: `${stepName}:validate`,
-              name: 'validate_preview',
-              agent: role,
-              output: current.report,
-            })
-            return current.report
-          },
+          execute: async () =>
+            withEvidence('validate_preview', async () => {
+              const built = await currentBuild(current)
+              signal.throwIfAborted()
+              if (!built)
+                return {
+                  error:
+                    'Build current source successfully with build_project before browser validation.',
+                }
+              const report = await validateArtifact(current.html, current.checks, signal)
+              signal.throwIfAborted()
+              current.report = report
+              current.validatedBy = role
+              current.review = null
+              if (role === 'alex')
+                current.implementationValidation =
+                  report.valid && report.artifactHash === built.artifactHash ? built : null
+              await emit('validation', { ...report })
+              return report
+            }),
         })
         const accept = tool({
           name: 'record_review',
           description:
-            'Record independent review of user requirements and browser evidence. Accept only if tests cover the requested behavior and latest artifact passed.',
+            'Record independent review. Accept only after your own browser validation passes for current build and checks cover requested behavior.',
           parameters: z.object({ accepted: z.boolean(), findings: z.string() }),
-          execute: async ({ accepted, findings }) => {
-            if (
-              accepted &&
-              (!current.report?.valid ||
-                current.report.artifactHash !== (await artifactHash(current.html)))
-            )
-              return { accepted: false, error: 'No passing report for the current artifact.' }
-            current.review = { accepted, findings }
-            return { accepted, findings }
-          },
+          execute: async ({ accepted, findings }) =>
+            withEvidence('record_review', async () => {
+              const built = await currentBuild(current)
+              signal.throwIfAborted()
+              if (
+                accepted &&
+                (!built ||
+                  !current.report?.valid ||
+                  current.report.artifactHash !== built.artifactHash ||
+                  current.validatedBy !== 'david')
+              )
+                return {
+                  accepted: false,
+                  error: 'No passing independent browser report for the current source build.',
+                }
+              current.review = {
+                accepted,
+                findings,
+                sourceHash: built?.sourceHash ?? '',
+                artifactHash: built?.artifactHash ?? '',
+              }
+              return current.review
+            }),
         })
         const checkInstructions =
           'Use 2–8 checks, at most 12 actions and 8 total assertions per check. Every selector must be a complete valid CSS selector; quote attribute values with double quotes, e.g. input[data-favorites-only="true"], never leave an attribute selector open. Each check starts with fresh page state and an optional viewport (width 375–1440, height 640–1200; default 1280x720). Actions: click(selector, null), fill(selector, string), press(selector, schema-enumerated key), reload(body, null). Reload resets in-memory state inside the opaque iframe. Put exact assertions in assertions; legacy assertion remains supported and counts toward the same limit. Kinds: text (expected is contained in selected text), value, count, attribute (supply attribute name; missing attributes do not equal empty strings), no-horizontal-overflow (selector body, expected "true"; fixed document-width check). expected is always a string; attribute is null or omitted for other kinds. Keep independent QA coverage compact: combine related assertions in one check, then call validate_preview immediately. Do not replace checks repeatedly after a passing report.'
@@ -346,10 +494,10 @@ export async function executeHarness(
           role === 'emma'
             ? 'You are the product agent. Read workspace. Define only the requested scope and 2–8 observable acceptance criteria, including requested interactions. Combine related outcomes; do not invent extra requirements, features, persistence, or visual constraints. Answer concisely in the user language.'
             : role === 'bob'
-              ? 'You are the architect. Read workspace and product brief, choose a self-contained HTML/CSS/JS structure with in-memory state for an opaque iframe. No external network, storage, backend, CDN or secrets. Define testable semantic selectors. Stay under 250 words; no HTML, implementation, or test-code dumps.'
+              ? 'You are the architect. Read workspace and product brief. For a new project call initialize_project with vanilla (simple HTML/CSS/JS) or react-ts (component-based interactive UI), choosing from user requirements and explaining the choice. Do not merely describe initialization: create the scaffold with the tool. For follow-ups preserve the existing template and files; do not reinitialize. Plan real source modules, CSS and semantic selectors. The compiler supports local JS/TS/JSX/TSX/CSS imports and SVG assets; package.json dependencies and scripts are protected. Apps run in an opaque iframe: no external network, browser storage, backend, CDN or secrets. Keep architecture under 250 words; no source dumps.'
               : role === 'alex'
-                ? `You are the implementation agent. Read workspace. Implement the requested self-contained app, or repair exact reported app defects preserving unrelated behavior. Use write_artifact for the initial FULL HTML and checks; no code fences as a substitute. Keep generation proportional to scope: for a small single-page app aim for 6–8 KB of HTML, using data-driven repeated UI, shared event handlers, concise CSS, and simple inline SVG. This is a size target, not permission to omit requested behavior or accessibility. Avoid verbose whitespace and decorative markup that delays usable output. For targeted repairs use edit_artifact with unique literal replacements instead of rewriting the full document. Preserve existing checks while repairing HTML. ${checkInstructions} Use set_acceptance_checks for malformed-check corrections without rewriting working HTML. Call validate_preview after writing, editing, or correcting checks. That tool ends this delegation and returns its evidence to the manager, who can request a targeted repair if needed. No external resources, fetch, browser storage, cookies or parent access. Fits sandbox allow-scripts allow-forms. Prefer compact semantic markup and clear polished layout.`
-                : `You are an independent QA agent. Read workspace and user requirements. ${checkInstructions} Assess whether checks cover requested behavior, not tautologies. When coverage is insufficient, create your own complete check set with set_acceptance_checks, then run validate_preview yourself; do not ask Alex for fake code edits or HTML rewrites to add tests. Call validate_preview for actual browser evidence and record_review accepted true only if the current checks pass and the app meets the requested brief. Distinguish tool limitations or missing coverage from actual app defects. Request Alex repairs only for concrete app defects with evidence. Record_review false for unresolved defects or coverage gaps; never invent passing evidence or unrequested requirements.`
+                ? `You are the implementation agent. Read workspace and relevant source files. Preserve the selected template and existing source on follow-ups. Only initialize_project if no project exists. Implement real source files with write_file (path before content), edit_file for unique targeted replacements, and delete_file for obsolete files. Keep the Vite index.html entry and canonical package.json; do not generate fake source from compiled HTML. Use local modules and concise CSS, with React/TypeScript components for react-ts. No arbitrary dependencies or config scripts: only template dependencies and the trusted compiler are supported. Preserve unrelated behavior and existing checks during repairs. ${checkInstructions} Use set_acceptance_checks for checks, then call build_project. Fix actual compiler errors and rebuild. Call validate_preview only after a successful build of current source; it ends this delegation and sends evidence to the manager. Every file change requires a fresh build and validation. No external resources, fetch, browser storage, cookies or parent access. Fits sandbox allow-scripts allow-forms. Prefer semantic markup, accessible controls and clear polished layout. No source dumps in ordinary chat.`
+                : `You are an independent QA agent. Read workspace, relevant files and user requirements. ${checkInstructions} Assess whether checks cover requested behavior, not tautologies. When coverage is insufficient, create your own complete check set with set_acceptance_checks. Run validate_preview yourself on the current compiled build, then record_review accepted true only when checks pass and the app meets the brief. Do not ask Alex for source changes merely to add tests. Distinguish missing coverage or tool limitations from concrete app defects. Request targeted repairs only for actual defects with evidence. Record_review false for unresolved defects, missing build or coverage gaps; never invent passing evidence or unrequested requirements.`
         const specialist = new Agent({
           name: roles[role],
           model: observed.model,
@@ -360,17 +508,19 @@ export async function executeHarness(
           },
           tools:
             role === 'alex'
-              ? [read, write, edit, setChecks, validate]
+              ? [read, initialize, readFile, write, edit, deleteFile, build, setChecks, validate]
               : role === 'david'
-                ? [read, setChecks, validate, accept]
-                : [read],
+                ? [read, readFile, setChecks, validate, accept]
+                : role === 'bob'
+                  ? [read, readFile, initialize]
+                  : [read],
           modelSettings: {
             parallelToolCalls: false,
             ...(role === 'alex' || role === 'david' ? { toolChoice: 'required' as const } : {}),
           },
         })
         const stream = await runner.run(specialist, action.task, {
-          maxTurns: 6,
+          maxTurns: role === 'alex' ? 48 : role === 'david' ? 16 : 10,
           signal,
           stream: true,
         })
@@ -386,6 +536,7 @@ export async function executeHarness(
           }
         }
         await stream.completed
+        signal.throwIfAborted()
         if (pending) await emit('token', { id: messageId, text: pending })
         const output = stream.finalOutput ?? ''
         current.lastOutput = output
@@ -418,6 +569,7 @@ export async function executeHarness(
               ? workspace.architecture
               : JSON.stringify({
                   revision: workspace.revision,
+                  build: workspace.build,
                   report: workspace.report,
                   review: workspace.review,
                   specialistOutput: workspace.lastOutput,

@@ -98,23 +98,14 @@ export async function listVersions(db: Db, projectId: string): Promise<AppVersio
 export async function getVersion(db: Db, projectId: string, versionId: string) {
   return (
     (await db
-      .select({ ...versionFields, html: versions.html })
+      .select({ ...versionFields, html: versions.html, source: versions.source })
       .from(versions)
       .where(and(eq(versions.project_id, projectId), eq(versions.id, versionId)))
       .get()) ?? null
   )
 }
-export async function currentHtml(db: Db, versionId: string | null) {
-  if (!versionId) return null
-  return (
-    (
-      await db
-        .select({ html: versions.html })
-        .from(versions)
-        .where(eq(versions.id, versionId))
-        .get()
-    )?.html ?? null
-  )
+export async function currentVersion(db: Db, projectId: string, versionId: string | null) {
+  return versionId ? getVersion(db, projectId, versionId) : null
 }
 export async function restoreVersion(
   db: Db,
@@ -155,7 +146,7 @@ export async function restoreVersion(
       created_at: input.now,
     }),
   ])
-  return { html: version.html, number: version.number }
+  return { html: version.html, source: version.source, number: version.number }
 }
 export async function deleteProject(db: Db, projectId: string, ownerId: string) {
   if (!(await getProject(db, projectId, ownerId))) return false
@@ -216,7 +207,7 @@ export async function getPublished(db: Db, slug: string) {
       .get()) ?? null
   )
 }
-export async function remixProject(db: Db, sourceId: string, ownerId: string) {
+export async function remixProject(db: Db, sourceId: string, ownerId: string, versionId?: string) {
   const source = await getProject(db, sourceId, ownerId)
   if (!source) return null
   const now = Date.now(),
@@ -227,9 +218,11 @@ export async function remixProject(db: Db, sourceId: string, ownerId: string) {
     .from(versions)
     .where(eq(versions.project_id, sourceId))
     .orderBy(versions.number)
+  const selectedVersionId = versionId ?? source.current_version_id
+  const selectedIndex = builds.findIndex((version) => version.id === selectedVersionId)
+  if (selectedVersionId && selectedIndex < 0) return null
   const copied = builds.map((version) => ({ ...version, id: crypto.randomUUID(), project_id: id }))
-  const current =
-    copied[builds.findIndex((version) => version.id === source.current_version_id)]?.id ?? null
+  const current = copied[selectedIndex]?.id ?? null
   // Every statement in a D1 batch commits together, including large histories.
   const statements = [
     db.insert(projects).values({

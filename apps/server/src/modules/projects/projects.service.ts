@@ -33,12 +33,18 @@ export const projectsService = {
   },
   async get(context: ProjectContext, id: string) {
     const row = await requireProject(context, id)
-    const [messages, versions, html] = await Promise.all([
+    const [messages, versions, current] = await Promise.all([
       repo.listMessages(context.db, id),
       repo.listVersions(context.db, id),
-      repo.currentHtml(context.db, row.current_version_id),
+      repo.currentVersion(context.db, id, row.current_version_id),
     ])
-    return { project: repo.toProject(row), messages, versions, html }
+    return {
+      project: repo.toProject(row),
+      messages,
+      versions,
+      html: current?.html ?? null,
+      source: current?.source ?? null,
+    }
   },
   async delete(context: ProjectContext, id: string) {
     await projectsService.cancel(context, id)
@@ -79,8 +85,8 @@ export const projectsService = {
       throw new ORPCError('NOT_FOUND')
     return { ok: true as const }
   },
-  async remix(context: ProjectContext, id: string) {
-    const project = await repo.remixProject(context.db, id, context.ownerId)
+  async remix(context: ProjectContext, id: string, versionId?: string) {
+    const project = await repo.remixProject(context.db, id, context.ownerId, versionId)
     if (!project) throw new ORPCError('NOT_FOUND')
     return { project }
   },

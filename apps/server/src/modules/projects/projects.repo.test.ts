@@ -1,14 +1,21 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { fileURLToPath, URL } from 'node:url'
 import { messageSchema, runEventSchema, runSchema } from '@atoms-demo/contracts'
+import {
+  createProjectSource,
+  legacyProjectSource,
+  type ProjectSource,
+} from '@atoms-demo/core/project'
 import { sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
+import { strFromU8, unzipSync } from 'fflate'
 import { Miniflare } from 'miniflare'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Db } from '../../db/client'
 import * as schema from '../../db/schema'
 import worker from '../../index'
 import * as projects from './projects.repo'
+import { projectsService } from './projects.service'
 import * as runs from './runs.repo'
 
 let runtime: Miniflare
@@ -17,8 +24,18 @@ let binding: D1Database
 const ownerId = '11111111-1111-4111-8111-111111111111'
 const projectId = '22222222-2222-4222-8222-222222222222'
 const result = {
+  source: createProjectSource('react-ts'),
   html: '<!doctype html><html><body><button>Save</button></body></html>',
   summary: 'Saved the validated app.',
+}
+
+async function applyMigration(database: D1Database, source: string) {
+  for (const statement of source
+    .replace(/^\s*--[^\n]*/gm, '')
+    .split(';')
+    .map((statement) => statement.trim())
+    .filter(Boolean))
+    await database.prepare(statement).run()
 }
 
 beforeEach(async () => {
@@ -37,7 +54,10 @@ beforeEach(async () => {
               },
             },
           },
-          env: { DB: { type: 'd1', name: 'atoms-test' } },
+          env: {
+            DB: { type: 'd1', name: 'atoms-test' },
+            LEGACY_DB: { type: 'd1', name: 'atoms-legacy-test' },
+          },
         },
       },
     ],
@@ -46,12 +66,7 @@ beforeEach(async () => {
   const directory = fileURLToPath(new URL('../../../migrations/', import.meta.url))
   for (const name of (await readdir(directory)).filter((name) => name.endsWith('.sql')).sort()) {
     const source = await readFile(`${directory}/${name}`, 'utf8')
-    for (const statement of source
-      .replace(/--[^\n]*/g, '')
-      .split(';')
-      .map((sql) => sql.trim())
-      .filter(Boolean))
-      await binding.prepare(statement).run()
+    await applyMigration(binding, source)
   }
   db = drizzle(binding, { schema })
   await projects.createProject(db, {
@@ -125,7 +140,12 @@ describe('durable generation persistence on real D1', () => {
     expect(claimed.status).toBe(200)
     const payload = (await claimed.json()) as {
       job: {
-        context: { runId: string; idea: string; request: string; previousHtml: string | null }
+        context: {
+          runId: string
+          idea: string
+          request: string
+          previousSource: ProjectSource | null
+        }
         leaseToken: string
         deadline: number
       }
@@ -134,7 +154,7 @@ describe('durable generation persistence on real D1', () => {
       runId: queued.id,
       idea: 'Build a planner',
       request: 'Build the app',
-      previousHtml: null,
+      previousSource: null,
     })
     const path = `/runs/${queued.id}`
     const leaseToken = payload.job.leaseToken
@@ -230,7 +250,7 @@ describe('durable generation persistence on real D1', () => {
       env,
     )
     expect(await replay.json()).toMatchObject({
-      job: { context: { runId: followup.id, request: 'Follow up', previousHtml: result.html } },
+      job: { context: { runId: followup.id, request: 'Follow up', previousSource: result.source } },
     })
     const failure = await worker.fetch(
       new Request(`http://localhost/internal/executor/runs/${followup.id}/fail`, {
@@ -356,7 +376,12 @@ describe('durable generation persistence on real D1', () => {
   it('preserves immutable JSON checkpoints across crashes, including JSON null', async () => {
     const run = await create()
     const first = await claim()
-    const draft = { html: result.html, notes: ['validated'], nested: { ok: true } }
+    const draft = {
+      source: result.source,
+      html: result.html,
+      notes: ['validated'],
+      nested: { ok: true },
+    }
     expect(await runs.putCheckpoint(db, run.id, first.lease_token, 'draft', draft, 4)).toBe(true)
     expect(await runs.putCheckpoint(db, run.id, first.lease_token, 'nullable', null, 4)).toBe(true)
     await runs.putCheckpoint(db, run.id, first.lease_token, 'draft', { overwrite: true }, 5)
@@ -452,6 +477,7 @@ describe('durable generation persistence on real D1', () => {
     await runs.completeRun(db, run.id, leased.lease_token, { ...result, html: 'late replay' }, 5)
     expect(await projects.listVersions(db, projectId)).toHaveLength(1)
     expect((await projects.getVersion(db, projectId, run.id))?.html).toBe(result.html)
+    expect((await projects.getVersion(db, projectId, run.id))?.source).toEqual(result.source)
     expect(await projects.getProject(db, projectId, ownerId)).toMatchObject({
       status: 'idle',
       run_id: null,
@@ -556,21 +582,30 @@ describe('durable generation persistence on real D1', () => {
       db,
       second.id,
       secondLease.lease_token,
-      { ...result, html: '<html>Second version</html>' },
+      { ...result, source: createProjectSource('vanilla'), html: '<html>Second version</html>' },
       5,
     )
     const active = await create(6)
     const activeLease = await claim(6)
-    await projects.restoreVersion(db, {
+    const restored = await projects.restoreVersion(db, {
       projectId,
       ownerId,
       versionId: first.id,
       messageId: crypto.randomUUID(),
       now: 7,
     })
+    expect(restored).toEqual({ html: result.html, source: result.source, number: 1 })
     await runs.completeRun(db, active.id, activeLease.lease_token, result, 8)
     expect(await runs.heartbeat(db, active.id, activeLease.lease_token, 8)).toBe(false)
     expect((await projects.getProject(db, projectId, ownerId))?.current_version_id).toBe(first.id)
+    const context = { db, ownerId, origin: 'http://localhost', env: { DB: binding } }
+    expect(await projectsService.get(context, projectId)).toMatchObject({
+      html: result.html,
+      source: result.source,
+    })
+    expect((await projectsService.version(context, projectId, second.id)).version.source).toEqual(
+      createProjectSource('vanilla'),
+    )
     expect(await projects.listVersions(db, projectId)).toHaveLength(2)
     expect((await runs.getRun(db, active.id))?.status).toBe('cancelled')
     expect((await runs.listRunEvents(db, active.id, 0)).at(-1)?.data.status).toBe('cancelled')
@@ -579,16 +614,216 @@ describe('durable generation persistence on real D1', () => {
   it('remixes saved history and deletes run events with a project', async () => {
     const run = await create()
     const leased = await claim()
-    await runs.putCheckpoint(db, run.id, leased.lease_token, 'draft', { html: result.html }, 3)
+    await runs.putCheckpoint(db, run.id, leased.lease_token, 'project-v1:draft', result, 3)
     await runs.completeRun(db, run.id, leased.lease_token, result, 3)
     const remix = await projects.remixProject(db, projectId, ownerId)
     if (!remix) throw new Error('Expected the saved project to remix.')
     expect(remix.currentVersionId).not.toBe(run.id)
     expect(await projects.listVersions(db, remix.id)).toHaveLength(1)
+    expect(remix.publishedSlug).toBeNull()
+    expect(remix.publishedVersionId).toBeNull()
+    const copied = await projects.currentVersion(db, remix.id, remix.currentVersionId)
+    expect(copied).toMatchObject({ html: result.html, source: result.source })
     await projects.deleteProject(db, projectId, ownerId)
     expect(await runs.getRun(db, run.id)).toBeNull()
     expect(await runs.listRunEvents(db, run.id, 0)).toEqual([])
     expect(await db.select().from(schema.runCheckpoints)).toEqual([])
     expect(await projects.getProject(db, remix.id, ownerId)).not.toBeNull()
+    expect(await projects.currentVersion(db, remix.id, remix.currentVersionId)).toEqual(copied)
+  })
+})
+
+describe('saved project sources', () => {
+  it('backfills every legacy source without changing saved previews, pointers, or version constraints', async () => {
+    const legacy = await runtime.getD1Database('LEGACY_DB')
+    const directory = fileURLToPath(new URL('../../../migrations/', import.meta.url))
+    const names = (await readdir(directory)).filter((name) => name.endsWith('.sql')).sort()
+    for (const name of names.filter((name) => name < '0005_project_sources.sql'))
+      await applyMigration(legacy, await readFile(`${directory}/${name}`, 'utf8'))
+    const historicalHtml = '<!doctype html>\n<html><body>旧版; "quoted" \'text\'</body></html>'
+    const currentHtml =
+      '<!doctype html>\r\n<html><body>Current <script>let x = 1;</script></body></html>'
+    await legacy
+      .prepare(`INSERT INTO projects (id, owner_id, title, idea, created_at, updated_at,
+      current_version_id, published_slug, published_version_id) VALUES (?, ?, ?, ?, 1, 2, ?, ?, ?)`)
+      .bind(projectId, ownerId, 'Legacy', 'Preserve app', 'legacy-two', 'legacy-app', 'legacy-one')
+      .run()
+    for (const [id, number, html] of [
+      ['legacy-one', 1, historicalHtml],
+      ['legacy-two', 2, currentHtml],
+    ] as const)
+      await legacy
+        .prepare(
+          'INSERT INTO versions (id, project_id, number, html, prompt, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        )
+        .bind(id, projectId, number, html, `Request ${number}`, number)
+        .run()
+    await applyMigration(legacy, await readFile(`${directory}/0005_project_sources.sql`, 'utf8'))
+    const migrated = drizzle(legacy, { schema })
+    expect(await projects.getVersion(migrated, projectId, 'legacy-one')).toMatchObject({
+      id: 'legacy-one',
+      number: 1,
+      prompt: 'Request 1',
+      createdAt: 1,
+      html: historicalHtml,
+      source: legacyProjectSource(historicalHtml),
+    })
+    expect(await projects.currentVersion(migrated, projectId, 'legacy-two')).toMatchObject({
+      html: currentHtml,
+      source: legacyProjectSource(currentHtml),
+    })
+    expect(await projects.getProject(migrated, projectId, ownerId)).toMatchObject({
+      current_version_id: 'legacy-two',
+      published_version_id: 'legacy-one',
+      published_slug: 'legacy-app',
+    })
+    expect(await projects.getPublished(migrated, 'legacy-app')).toEqual({
+      title: 'Legacy',
+      html: historicalHtml,
+    })
+    await expect(
+      legacy
+        .prepare(
+          'INSERT INTO versions (id, project_id, number, html, prompt, created_at) VALUES (?, ?, 3, ?, ?, 3)',
+        )
+        .bind('missing-source', projectId, currentHtml, 'Missing source')
+        .run(),
+    ).rejects.toThrow()
+    await expect(
+      migrated.insert(schema.versions).values({
+        id: 'duplicate-number',
+        project_id: projectId,
+        number: 1,
+        html: currentHtml,
+        prompt: 'Duplicate',
+        created_at: 3,
+        source: result.source,
+      }),
+    ).rejects.toThrow()
+  })
+
+  it('downloads the authorized saved source ZIP for current and historical versions', async () => {
+    const first = await create()
+    const firstLease = await claim()
+    await runs.completeRun(db, first.id, firstLease.lease_token, result, 4)
+    await projects.publishProject(db, projectId, ownerId, 'source-download', 5)
+    const second = await create(6)
+    const secondLease = await claim(7)
+    const secondResult = {
+      ...result,
+      source: createProjectSource('vanilla'),
+      html: '<html>New preview</html>',
+    }
+    await runs.completeRun(db, second.id, secondLease.lease_token, secondResult, 8)
+    const download = (id: string, versionId?: string, owner = ownerId) =>
+      worker.fetch(
+        new Request(
+          `http://localhost/api/projects/${id}/download${versionId ? `?version=${versionId}` : ''}`,
+          {
+            headers: { 'x-owner-id': owner },
+          },
+        ),
+        { DB: binding },
+      )
+    const historical = await download(projectId, first.id)
+    expect(historical.status).toBe(200)
+    expect(historical.headers.get('content-type')).toBe('application/zip')
+    expect(historical.headers.get('content-disposition')).toContain('planner-v1.zip')
+    expect(historical.headers.get('cache-control')).toBe('no-store')
+    const unpack = async (response: Response) =>
+      Object.fromEntries(
+        Object.entries(unzipSync(new Uint8Array(await response.arrayBuffer()))).map(
+          ([path, content]) => [path, strFromU8(content)],
+        ),
+      )
+    expect(await unpack(historical)).toEqual(result.source.files)
+    expect(await unpack(await download(projectId))).toEqual(secondResult.source.files)
+    expect((await download(projectId, first.id, crypto.randomUUID())).status).toBe(404)
+    const remix = await projects.remixProject(db, projectId, ownerId)
+    if (!remix) throw new Error('Expected remix.')
+    expect((await download(remix.id, first.id)).status).toBe(404)
+    const published = await worker.fetch(new Request('http://localhost/p/source-download'), {
+      DB: binding,
+    })
+    expect(await published.text()).toBe(result.html)
+  })
+
+  it('rejects incomplete and unsafe completion sources before changing the saved version', async () => {
+    const first = await create(Date.now())
+    const firstLease = await claim(Date.now())
+    await runs.completeRun(db, first.id, firstLease.lease_token, result, Date.now())
+    const followup = await create(Date.now())
+    const lease = await claim(Date.now())
+    const env = { DB: binding, EXECUTOR_TOKEN: crypto.randomUUID() }
+    const invalidSources: unknown[] = [
+      undefined,
+      { ...result.source, files: { ...result.source.files, '../outside.txt': 'escape' } },
+      {
+        ...result.source,
+        files: { ...result.source.files, 'package.json': '{"scripts":{"install":"malicious"}}' },
+      },
+      { ...result.source, files: { 'index.html': '<html>Missing manifest</html>' } },
+    ]
+    for (const source of invalidSources) {
+      const response = await worker.fetch(
+        new Request(`http://localhost/internal/executor/runs/${followup.id}/complete`, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${env.EXECUTOR_TOKEN}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ leaseToken: lease.lease_token, result: { ...result, source } }),
+        }),
+        env,
+      )
+      expect(response.status).toBe(400)
+    }
+    expect(await projects.currentVersion(db, projectId, first.id)).toMatchObject({
+      source: result.source,
+      html: result.html,
+    })
+    expect((await projects.getProject(db, projectId, ownerId))?.current_version_id).toBe(first.id)
+    expect(await projects.listVersions(db, projectId)).toHaveLength(1)
+    expect((await runs.getRun(db, followup.id))?.status).toBe('running')
+  })
+
+  it('remixes the selected historical source and rejects foreign version selections', async () => {
+    const first = await create()
+    const firstLease = await claim()
+    await runs.completeRun(db, first.id, firstLease.lease_token, result, 4)
+    const second = await create(5)
+    const secondLease = await claim(6)
+    await runs.completeRun(
+      db,
+      second.id,
+      secondLease.lease_token,
+      {
+        ...result,
+        source: createProjectSource('vanilla'),
+        html: '<html>Second</html>',
+      },
+      7,
+    )
+    const context = { db, ownerId, origin: 'http://localhost', env: { DB: binding } }
+    const { project: historical } = await projectsService.remix(context, projectId, first.id)
+    expect(
+      await projects.currentVersion(db, historical.id, historical.currentVersionId),
+    ).toMatchObject({
+      source: result.source,
+      html: result.html,
+      number: 1,
+    })
+    const { project: current } = await projectsService.remix(context, projectId)
+    expect(
+      (await projects.currentVersion(db, current.id, current.currentVersionId))?.source,
+    ).toEqual(createProjectSource('vanilla'))
+    const count = (await projects.listProjects(db, ownerId)).length
+    await expect(projectsService.remix(context, historical.id, second.id)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    })
+    await expect(
+      projectsService.remix({ ...context, ownerId: crypto.randomUUID() }, projectId, first.id),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    expect(await projects.listProjects(db, ownerId)).toHaveLength(count)
   })
 })

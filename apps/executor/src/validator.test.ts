@@ -1,3 +1,4 @@
+import { MAX_PREVIEW_BYTES } from '@atoms-demo/core/project'
 import { RunContext, tool } from '@openai/agents-core'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
@@ -17,6 +18,20 @@ describe('artifact acceptance boundaries', () => {
     )
     expect(report.valid).toBe(false)
     expect(report.issues).toContain('Return a complete HTML document.')
+  })
+  it('allows compiled runtime-sized previews up to the UTF-8 byte cap and rejects multibyte overflow', async () => {
+    const prefix = '<!doctype html><html><body>'
+    const suffix = '</body></html>'
+    const available = MAX_PREVIEW_BYTES - prefix.length - suffix.length
+    const content = 'é'.repeat(Math.floor(available / 2)) + 'x'.repeat(available % 2)
+    const atLimit = `${prefix}${content}${suffix}`
+    const oversized = `${prefix}${content}é${suffix}`
+    const issue = `Artifact exceeds ${MAX_PREVIEW_BYTES} UTF-8 bytes.`
+    // Invalid checks keep this a size-boundary test without allocating a browser.
+    const acceptedSize = await validateArtifact(atLimit, [], new AbortController().signal)
+    const rejectedSize = await validateArtifact(oversized, [], new AbortController().signal)
+    expect(acceptedSize.issues).not.toContain(issue)
+    expect(rejectedSize.issues).toContain(issue)
   })
   it('binds validation evidence to the exact candidate', async () => {
     expect(await artifactHash('<button>Save</button>')).not.toBe(

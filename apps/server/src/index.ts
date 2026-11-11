@@ -1,5 +1,6 @@
 import { followupSchema, generateSchema } from '@atoms-demo/contracts'
 import { isUuid, slugify } from '@atoms-demo/core/html'
+import { strToU8, zipSync } from 'fflate'
 import { type Context, Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { streamSSE } from 'hono/streaming'
@@ -62,9 +63,19 @@ app.get('/api/projects/:id/download', async (c) => {
   if (!versionId) return c.json({ error: 'Nothing to download yet.' }, 400)
   const version = await getVersion(db, row.id, versionId)
   if (!version) return c.json({ error: 'Version not found.' }, 404)
-  return c.body(version.html, 200, {
-    'content-type': 'text/html; charset=utf-8',
-    'content-disposition': `attachment; filename="${slugify(row.title)}-v${version.number}.html"`,
+  const archive = zipSync(
+    Object.fromEntries(
+      Object.entries(version.source.files).map(([path, content]) => [path, strToU8(content)]),
+    ),
+    { level: 0 },
+  )
+  return new Response(archive, {
+    headers: {
+      'cache-control': 'no-store',
+      'content-type': 'application/zip',
+      'content-disposition': `attachment; filename="${slugify(row.title)}-v${version.number}.zip"`,
+      'x-content-type-options': 'nosniff',
+    },
   })
 })
 app.post('/api/projects/:id/generate', (c) => beginRun(c, 'initial'))

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { applyArtifactEdits } from './agents'
+import { applyFileEdits } from './agents'
 import { validateArtifact } from './validator'
 
 const html = `<!doctype html><html><body>
@@ -90,7 +90,7 @@ marker.addEventListener('keydown', event => {
   }
 });
 </script></body></html>`
-  const repaired = applyArtifactEdits(candidate, [
+  const repaired = applyFileEdits(candidate, [
     { find: 'marker.click();', replacement: 'activate();' },
   ])
   const report = await validateArtifact(
