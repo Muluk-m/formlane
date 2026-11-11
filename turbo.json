@@ -8,7 +8,7 @@
       "env": ["BUILD_VERSION", "BUILD_COMMIT", "GITHUB_SHA"]
     },
     "typecheck": { "dependsOn": ["^typecheck"], "outputs": [] },
-    "test": { "cache": false, "env": ["CI"] },
+    "test": { "cache": false, "env": ["CI", "CHROMIUM_EXECUTABLE_PATH"] },
     "dev": { "cache": false, "persistent": true }
   }
 }
