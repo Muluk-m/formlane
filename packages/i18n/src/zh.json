@@ -36,6 +36,33 @@
       "agentInterrupted": "{name} 的工作已中断",
       "validation": "预览验证",
       "repair": "修复尝试",
+      "execution": "执行过程",
+      "executing": "正在执行",
+      "steps": "{count} 项活动",
+      "reasoning": "推理摘要",
+      "awaitingResult": "等待工具返回结果…",
+      "reviewPassed": "评审通过",
+      "reviewNeedsWork": "需要修改",
+      "checksPassed": "{total} 项检查中 {count} 项通过",
+      "fields": {
+        "task": "任务",
+        "summary": "摘要",
+        "findings": "评审发现",
+        "issues": "待解决问题",
+        "checks": "浏览器检查",
+        "accepted": "评审通过",
+        "valid": "验证通过",
+        "passed": "通过",
+        "name": "检查项",
+        "actual": "实际结果",
+        "expected": "预期结果",
+        "revision": "草稿修订",
+        "htmlLength": "HTML 字符数",
+        "checkCount": "检查数量",
+        "error": "错误",
+        "brief": "产品需求",
+        "architecture": "架构方案"
+      },
       "toolStatus": {
         "running": "执行中",
         "complete": "已完成",
@@ -92,6 +119,15 @@
     "pending": "待接受"
   },
   "atoms": {
+    "landing": {
+      "headline": "你的下一个应用",
+      "headlineAccent": "从一个想法开始。",
+      "subtitle": "说说你想做什么，和 AI 团队一起把它变成应用。",
+      "inspiration": "找一点灵感",
+      "projectsNote": "继续上次的创作",
+      "saved": "已有保存版本",
+      "notBuilt": "尚未构建"
+    },
     "previewError": "预览遇到了错误，请让团队修复。隔离预览中无法使用浏览器持久存储。",
     "kicker": "智能体工作台",
     "hero": "一组 AI 同事，把想法做成能用的应用。",
@@ -122,7 +158,20 @@
     "followPlaceholder": "发送构建或改进这个应用的指令…",
     "send": "发送",
     "stop": "停止",
-    "files": "文件",
+    "files": {
+      "navigation": "文件",
+      "singleFile": "1 个文件",
+      "sourceLabel": "index.html 源代码",
+      "liveDraft": "实时草稿",
+      "unsavedDraft": "未保存的草稿",
+      "savedVersion": "已保存版本",
+      "draftHint": "此草稿尚未保存为版本。",
+      "generating": "正在生成",
+      "generatingTitle": "正在构建你的应用",
+      "generatingDescription": "团队正在工作，生成的代码将在可用时显示在这里。",
+      "emptyTitle": "暂无生成的代码",
+      "emptyDescription": "在对话中开始构建，即可创建应用的 HTML 文件。"
+    },
     "emptyPreview": "已保存且通过验证的版本会显示在这里。首个版本完成前也可以发送构建指令。",
     "emptyCode": "还没有文件。",
     "restore": "恢复",
@@ -241,9 +290,9 @@
     },
     "david": {
       "name": "David",
-      "role": "数据分析",
-      "blurb": "告诉你如果拿去给人用，该看哪些数。",
-      "status": "David 正在看结果…"
+      "role": "质量评审",
+      "blurb": "在真实浏览器中独立检查应用，验证通过后再验收。",
+      "status": "David 正在验证应用…"
     }
   }
 }

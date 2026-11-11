@@ -1,7 +1,8 @@
 import { useI18n } from '@atoms-demo/i18n/react'
 import { Button } from '@atoms-demo/ui/components/button'
 import { ButtonGroup } from '@atoms-demo/ui/components/button-group'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { CodeSurface } from '@atoms-demo/ui/composites/code-surface'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { formatBytes } from '../lib/format'
 import { highlightHtml } from '../lib/highlight'
 
@@ -12,6 +13,7 @@ export function Stage({
   device,
   running,
   staleLabel,
+  phaseLabel,
   onTab,
   onDevice,
   onBack,
@@ -22,11 +24,14 @@ export function Stage({
   device: 'desktop' | 'mobile'
   running: boolean
   staleLabel: string | null
+  phaseLabel?: string
   onTab: (tab: 'preview' | 'code') => void
   onDevice: (device: 'desktop' | 'mobile') => void
   onBack: () => void
 }) {
   const { t, locale } = useI18n()
+  const sizeLabel = useMemo(() => formatBytes(new Blob([code]).size, locale), [code, locale])
+  const draft = !staleLabel && code !== html
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-surface-sunken">
       <div className="flex flex-wrap items-center justify-between gap-2 p-3">
@@ -90,42 +95,25 @@ export function Stage({
             )}
           </div>
         ) : (
-          <div
-            className="flex h-full overflow-hidden rounded-lg border bg-card"
-            data-testid="code-view"
+          <CodeSurface
+            hasCode={Boolean(code)}
+            running={running && !staleLabel}
+            draft={draft}
+            phaseLabel={phaseLabel}
+            sizeLabel={sizeLabel}
           >
-            <aside className="hidden w-36 shrink-0 border-r p-3 text-sm xl:block">
-              <p className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">
-                {t('atoms.files')}
-              </p>
-              <p className="rounded bg-muted px-2 py-1">index.html</p>
-              {code && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {formatBytes(new Blob([code]).size, locale)}
-                </p>
-              )}
-            </aside>
-            {code ? (
-              <CodeBlock code={code} running={running} />
-            ) : (
-              <div className="grid flex-1 place-items-center text-muted-foreground">
-                {t('atoms.emptyCode')}
-              </div>
-            )}
-          </div>
+            {code && <CodeBlock code={code} />}
+          </CodeSurface>
         )}
       </div>
     </section>
   )
 }
-function CodeBlock({ code, running }: { code: string; running: boolean }) {
-  const [pretty, setPretty] = useState(() => highlightHtml(code))
-  useEffect(() => {
-    const handle = window.setTimeout(() => setPretty(highlightHtml(code)), running ? 160 : 0)
-    return () => window.clearTimeout(handle)
-  }, [code, running])
+function CodeBlock({ code }: { code: string }) {
+  const deferredCode = useDeferredValue(code)
+  const pretty = useMemo(() => highlightHtml(deferredCode), [deferredCode])
   return (
-    <pre className="code-sheet flex-1">
+    <pre className="code-sheet min-h-full w-max min-w-full overflow-visible!">
       {pretty.map((line) => (
         <span key={line.offset} data-line={line.number} className="code-line">
           {line.tokens.length

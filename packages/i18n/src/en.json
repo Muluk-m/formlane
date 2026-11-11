@@ -36,6 +36,33 @@
       "agentInterrupted": "{name} was interrupted",
       "validation": "Preview validation",
       "repair": "Repair attempt",
+      "execution": "Execution trace",
+      "executing": "Executing",
+      "steps": "{count} activities",
+      "reasoning": "Reasoning summary",
+      "awaitingResult": "Waiting for the tool result…",
+      "reviewPassed": "Review passed",
+      "reviewNeedsWork": "Changes requested",
+      "checksPassed": "{count} of {total} checks passed",
+      "fields": {
+        "task": "Task",
+        "summary": "Summary",
+        "findings": "Review findings",
+        "issues": "Issues",
+        "checks": "Browser checks",
+        "accepted": "Review accepted",
+        "valid": "Validation passed",
+        "passed": "Passed",
+        "name": "Check",
+        "actual": "Observed",
+        "expected": "Expected",
+        "revision": "Draft revision",
+        "htmlLength": "HTML characters",
+        "checkCount": "Checks",
+        "error": "Error",
+        "brief": "Product brief",
+        "architecture": "Architecture"
+      },
       "toolStatus": {
         "running": "Running",
         "complete": "Completed",
@@ -96,6 +123,15 @@
     "pending": "Pending"
   },
   "atoms": {
+    "landing": {
+      "headline": "Your next app",
+      "headlineAccent": "starts with an idea.",
+      "subtitle": "Describe what you have in mind. Build it with your AI team.",
+      "inspiration": "A little inspiration",
+      "projectsNote": "Pick up where you left off",
+      "saved": "Saved version",
+      "notBuilt": "Not built yet"
+    },
     "previewError": "This preview encountered an error. Ask the team to fix it. Browser storage is unavailable in this isolated preview.",
     "kicker": "AGENT WORKSPACE",
     "hero": "An AI team that ships a working app.",
@@ -126,7 +162,20 @@
     "followPlaceholder": "Give instructions to build or improve this app…",
     "send": "Send",
     "stop": "Stop",
-    "files": "Files",
+    "files": {
+      "navigation": "Files",
+      "singleFile": "1 file",
+      "sourceLabel": "index.html source code",
+      "liveDraft": "Live draft",
+      "unsavedDraft": "Unsaved draft",
+      "savedVersion": "Saved version",
+      "draftHint": "This draft is not a saved version.",
+      "generating": "Generation in progress",
+      "generatingTitle": "Your build is underway",
+      "generatingDescription": "The team is working. Generated code will appear here as soon as it is available.",
+      "emptyTitle": "No generated code yet",
+      "emptyDescription": "Start a build in the conversation to create your app’s HTML file."
+    },
     "emptyPreview": "A saved, validated version will appear here. You can send instructions before the first version is ready.",
     "emptyCode": "No files yet.",
     "restore": "Restore",
@@ -245,9 +294,9 @@
     },
     "david": {
       "name": "David",
-      "role": "Data analyst",
-      "blurb": "Says what you would measure if this met real people.",
-      "status": "David is reading the results…"
+      "role": "Quality reviewer",
+      "blurb": "Independently checks the app in a real browser before accepting it.",
+      "status": "David is validating the app…"
     }
   }
 }

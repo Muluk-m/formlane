@@ -6,17 +6,17 @@ This is a recreation of the core [atoms.dev](https://atoms.dev/) loop: team conv
 
 Try the [live workspace](https://formlane-9dp.pages.dev) or the [published market example](https://formlane-9dp.pages.dev/p/7e2g3qqnnd).
 
-![Production assistant-ui workspace](docs/screenshots/assistant-production.png)
-![Published market application](docs/screenshots/real-market-desktop.png)
+![Idea workspace](docs/screenshots/home-redesign-desktop.png)
+![Execution trace and generated code](docs/screenshots/execution-redesign-desktop.png)
 
-The workspace screenshot shows the deployed assistant-ui interface and the accepted market application. See the [counter verification workspace](docs/screenshots/assistant-workspace.png), [mobile conversation](docs/screenshots/assistant-mobile.png), and [prompt composer](docs/screenshots/assistant-home.png).
+The screenshots show the redesigned interface using a persisted real-provider counter project. See the [mobile homepage](docs/screenshots/home-redesign-mobile.png), [mobile source view](docs/screenshots/code-redesign-mobile.png), and [published market example](docs/screenshots/real-market-desktop.png).
 
 ## Features
 
 - English/Chinese interface, example prompts, and this browser's project list.
-- assistant-ui conversations, streaming Markdown, agent identities, paired tool calls, expandable results, and runtime-owned prompt composers.
+- assistant-ui conversations, streaming Markdown, grouped execution traces, actual delegation tasks, per-tool outcomes, review summaries, and runtime-owned prompt composers.
 - Resizable conversation/preview workspace on desktop; full-height conversation and preview switching on mobile.
-- Sandboxed interactive preview, syntax-highlighted HTML, desktop/mobile preview sizes.
+- Sandboxed interactive preview, a syntax-highlighted `index.html` source view with live draft streaming, and desktop/mobile preview sizes.
 - Follow-up revisions with the current HTML in context.
 - Version history, historical preview, and restoring a saved result as current.
 - Publish a saved result at `/p/:slug`, republish the same link, or unpublish it.

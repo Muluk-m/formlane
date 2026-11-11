@@ -20,11 +20,13 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { cn } from 'cn'
 import { type ReactNode, useId, useState } from 'react'
 import { Button } from '#components/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '#components/collapsible'
 import { ExternalLink } from '#components/link'
 import { Spinner } from '#components/spinner'
 import {
   AssistantActivity,
   AssistantActivityIcon,
+  AssistantReasoning,
   AssistantStructuredOutput,
   AssistantToolCall,
 } from '#composites/assistant-activity'
@@ -71,6 +73,7 @@ function SystemText({ text }: TextMessagePartProps) {
 
 const messageParts = {
   Text: MarkdownText,
+  Reasoning: AssistantReasoning,
   tools: { Fallback: AssistantToolCall },
   data: {
     by_name: { activity: AssistantActivity, 'structured-output': AssistantStructuredOutput },
@@ -85,10 +88,9 @@ function AssistantMessage({ resolveAgent }: { resolveAgent: AssistantAgentResolv
   const hasText = useAuiState((s) =>
     s.message.content.some((part) => part.type === 'text' && part.text.length > 0),
   )
+  const stepCount = useAuiState((s) => s.message.content.length)
   const identity = resolveAgent(typeof custom.agent === 'string' ? custom.agent : null)
-  const system = role === 'system' || custom.kind === 'system'
-  const activity = custom.kind === 'activity' || custom.kind === 'tool'
-  if (system) {
+  if (role === 'system' || custom.kind === 'system') {
     return (
       <MessagePrimitive.Root className="px-3 py-1" data-testid="system-message">
         <MessagePrimitive.Parts components={{ Text: SystemText }} />
@@ -105,29 +107,49 @@ function AssistantMessage({ resolveAgent }: { resolveAgent: AssistantAgentResolv
       </MessagePrimitive.Root>
     )
   }
+  if (custom.kind === 'execution') {
+    return (
+      <MessagePrimitive.Root className="min-w-0" data-testid="execution-message">
+        <Collapsible defaultOpen className="min-w-0 rounded-xl border border-border bg-card">
+          <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded-xl px-3 py-3 text-left outline-none hover:bg-surface-sunken/60 focus-visible:ring-2 focus-visible:ring-ring">
+            <AssistantActivityIcon tone={status?.type === 'running' ? 'running' : 'recorded'} />
+            <span className="flex-1 text-xs font-medium">
+              {t(status?.type === 'running' ? 'ui.assistant.executing' : 'ui.assistant.execution')}
+            </span>
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {t('ui.assistant.steps', { count: stepCount })}
+            </span>
+            <HugeiconsIcon
+              icon={ArrowDown02Icon}
+              strokeWidth={1.5}
+              aria-hidden
+              className="size-3.5 text-muted-foreground transition-transform group-aria-expanded:rotate-180 motion-reduce:transition-none"
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="mx-3 mb-3 border-l border-border pl-2" data-testid="execution-steps">
+              <MessagePrimitive.Parts components={messageParts} />
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      </MessagePrimitive.Root>
+    )
+  }
   return (
-    <MessagePrimitive.Root
-      className={cn('min-w-0', !activity && 'space-y-2')}
-      data-testid={activity ? 'activity-message' : 'assistant-message'}
-    >
-      {!activity && (
-        <div className="flex items-center gap-2">
-          <span
-            className="flex size-6 shrink-0 items-center justify-center rounded-full bg-secondary text-foreground"
-            aria-hidden
-          >
-            <HugeiconsIcon icon={User02Icon} strokeWidth={1.5} className="size-3.5" />
-          </span>
-          <span className="text-xs font-semibold text-foreground">{identity.name}</span>
-          {identity.role && <span className="text-xs text-muted-foreground">{identity.role}</span>}
-        </div>
-      )}
-      {activity && typeof custom.agent === 'string' && (
-        <p className="mb-1.5 text-xs text-muted-foreground">{identity.name}</p>
-      )}
+    <MessagePrimitive.Root className="min-w-0 space-y-3" data-testid="assistant-message">
+      <div className="flex items-center gap-2">
+        <span
+          className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-sunken text-foreground"
+          aria-hidden
+        >
+          <HugeiconsIcon icon={User02Icon} strokeWidth={1.5} className="size-4" />
+        </span>
+        <span className="text-xs font-semibold text-foreground">{identity.name}</span>
+        {identity.role && <span className="text-xs text-muted-foreground">{identity.role}</span>}
+      </div>
       <div className="min-w-0 space-y-2">
         <MessagePrimitive.Parts components={messageParts} />
-        {!activity && status?.type === 'running' && (
+        {status?.type === 'running' && (
           <span
             role="status"
             className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
@@ -138,7 +160,7 @@ function AssistantMessage({ resolveAgent }: { resolveAgent: AssistantAgentResolv
             {hasText && <span className="sr-only">{t('ui.assistant.writing')}</span>}
           </span>
         )}
-        {!activity && status?.type === 'incomplete' && (
+        {status?.type === 'incomplete' && (
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <AssistantActivityIcon tone="incomplete" />
             {t('ui.assistant.incomplete')}
@@ -221,7 +243,10 @@ export function AssistantComposer({
       className={cn('shrink-0 bg-card', mode === 'conversation' && 'border-t border-border p-3')}
     >
       <ComposerPrimitive.Root
-        className="rounded-xl border border-input bg-background p-3 shadow-card transition-shadow focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/15"
+        className={cn(
+          'rounded-2xl border border-input bg-background shadow-card transition-shadow focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/10',
+          mode === 'idea' ? 'p-4 sm:p-5' : 'p-3',
+        )}
         data-testid={mode === 'idea' ? 'idea-composer' : 'chat-composer'}
         onSubmit={(event) => {
           if (blocked || !trimmed || trimmed.length > 4000) {

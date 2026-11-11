@@ -90,7 +90,7 @@ function pairActivity(events: readonly RunEvent[]): Activity[] {
 function activityMessage(activity: Activity, runStatus: Run['status'] | null): ThreadMessageLike {
   const { start, end, superseded } = activity
   const event = end ?? start
-  const data = event.data
+  const data = end ? { ...start.data, ...end.data } : start.data
   const isTool = start.type === 'tool_start' || start.type === 'tool_end'
   const isAgent = start.type === 'agent_start' || start.type === 'agent_end'
   const isError = failed(data)
@@ -196,6 +196,104 @@ export function toAssistantMessages(
     )
   }
 
+  const summaries = new Map<string, { first: RunEvent; text: string }>()
+  const seen = new Set<string>()
+  for (const event of [...activity].sort((a, b) => a.sequence - b.sequence)) {
+    if (event.type !== 'reasoning_summary' || typeof event.data.text !== 'string') continue
+    const eventKey = `${event.runId}:${event.sequence}`
+    if (seen.has(eventKey)) continue
+    seen.add(eventKey)
+    const key = `${event.runId}:${String(event.data.id)}`
+    const summary = summaries.get(key)
+    if (summary) summary.text += event.data.text
+    else summaries.set(key, { first: event, text: event.data.text })
+  }
+  for (const [key, { first, text }] of summaries) {
+    converted.push({
+      id: `reasoning:${key}`,
+      role: 'assistant',
+      createdAt: new Date(first.createdAt),
+      status: complete,
+      content: [{ type: 'reasoning', text }],
+      metadata: {
+        runId: first.runId,
+        custom: { kind: 'reasoning', agent: first.data.agent },
+      },
+    })
+  }
+
   // Stable sorting keeps existing message order when actual timestamps tie.
   return converted.sort((a, b) => (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0))
+}
+
+/** Group adjacent execution records without losing each invocation's outcome. */
+export function groupExecutionMessages(
+  messages: readonly ThreadMessageLike[],
+): ThreadMessageLike[] {
+  const grouped: ThreadMessageLike[] = []
+  type Part = Exclude<ThreadMessageLike['content'], string>[number]
+  let group:
+    | {
+        source: ThreadMessageLike
+        parts: Part[]
+        states: Record<string, { agent: unknown; status: MessageStatus | undefined }>
+        running: boolean
+      }
+    | undefined
+  const flush = () => {
+    if (!group) return
+    grouped.push({
+      ...group.source,
+      id: `execution:${group.source.id}`,
+      content: group.parts,
+      status: group.running ? { type: 'running' } : complete,
+      metadata: {
+        ...group.source.metadata,
+        custom: { kind: 'execution', partStates: group.states },
+      },
+    })
+    group = undefined
+  }
+  for (const message of messages) {
+    const parts = message.content
+    if (
+      typeof parts !== 'string' &&
+      message.role === 'assistant' &&
+      parts.every((part) => part.type === 'text' && !part.text.trim())
+    )
+      continue
+    const kind = message.metadata?.custom?.kind
+    if (
+      kind === 'activity' &&
+      message.status?.type === 'complete' &&
+      typeof parts !== 'string' &&
+      parts.every(
+        (part) =>
+          part.type === 'data' &&
+          part.name === 'activity' &&
+          (part.data.type === 'agent_start' || part.data.type === 'agent_end') &&
+          !part.data.data.task,
+      )
+    )
+      continue
+    if (
+      typeof parts === 'string' ||
+      (kind !== 'activity' && kind !== 'tool' && kind !== 'reasoning')
+    ) {
+      flush()
+      grouped.push(message)
+      continue
+    }
+    if (group && group.source.metadata?.runId !== message.metadata?.runId) flush()
+    group ??= { source: message, parts: [], states: {}, running: false }
+    group.running ||= message.status?.type === 'running'
+    for (const part of parts) {
+      group.parts.push(part)
+      const key = part.type === 'tool-call' ? part.toolCallId : 'id' in part ? part.id : undefined
+      if (key)
+        group.states[key] = { agent: message.metadata?.custom?.agent, status: message.status }
+    }
+  }
+  flush()
+  return grouped
 }
