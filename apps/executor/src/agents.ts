@@ -29,6 +29,25 @@ type Workspace = {
   revision: number
 }
 const roles = { emma: 'Emma', bob: 'Bob', alex: 'Alex', david: 'David' } as const
+const artifactSchema = z.string().min(80).max(180000)
+const artifactEditsSchema = z
+  .array(z.object({ find: z.string().min(1).max(180000), replacement: z.string().max(180000) }))
+  .min(1)
+  .max(8)
+
+export function applyArtifactEdits(html: string, edits: z.infer<typeof artifactEditsSchema>) {
+  if (!html) throw new Error('Read the workspace and write an initial artifact before editing.')
+  let candidate = html
+  for (const { find, replacement } of edits) {
+    const index = candidate.indexOf(find)
+    if (index < 0) throw new Error('Edit target was not found. Read the current workspace.')
+    if (candidate.indexOf(find, index + 1) >= 0)
+      throw new Error('Edit target is ambiguous. Include enough surrounding text to match once.')
+    if (find === replacement) throw new Error('Edit replacement must change the candidate.')
+    candidate = candidate.slice(0, index) + replacement + candidate.slice(index + find.length)
+  }
+  return artifactSchema.parse(candidate)
+}
 
 export async function executeHarness(
   env: ExecutorConfig,
@@ -174,7 +193,7 @@ export async function executeHarness(
           description:
             'Write the complete index.html candidate and behavioral acceptance checks. Does not publish or mark complete.',
           parameters: z.object({
-            html: z.string().min(80).max(180000),
+            html: artifactSchema,
             checks: browserChecksSchema,
           }),
           execute: async ({ html, checks }) => {
@@ -200,6 +219,51 @@ export async function executeHarness(
               revision: current.revision,
               message: 'Candidate stored. Run validate_preview; it is not accepted yet.',
             }
+          },
+        })
+        const edit = tool({
+          name: 'edit_artifact',
+          description:
+            'Repair the current HTML using ordered literal replacements, each matching exactly once. All edits apply together; an invalid target leaves the candidate unchanged. Preserves acceptance checks and invalidates validation/review. Run validate_preview afterward.',
+          parameters: z.object({ edits: artifactEditsSchema }),
+          execute: async ({ edits }) => {
+            signal.throwIfAborted()
+            await emit('tool_start', {
+              id: `${stepName}:edit`,
+              name: 'edit_artifact',
+              agent: role,
+            })
+            let html: string
+            try {
+              html = applyArtifactEdits(current.html, edits)
+            } catch (error) {
+              const output = {
+                error: error instanceof Error ? error.message : 'Artifact edit failed.',
+              }
+              await emit('tool_end', {
+                id: `${stepName}:edit`,
+                name: 'edit_artifact',
+                agent: role,
+                output,
+              })
+              return output
+            }
+            current.html = html
+            current.report = null
+            current.review = null
+            current.revision++
+            const output = {
+              revision: current.revision,
+              message: 'Edits applied; checks preserved. Run validate_preview before acceptance.',
+            }
+            await emit('tool_end', {
+              id: `${stepName}:edit`,
+              name: 'edit_artifact',
+              agent: role,
+              output,
+            })
+            await emit('code_reset', { text: html })
+            return output
           },
         })
         const setChecks = tool({
@@ -280,7 +344,7 @@ export async function executeHarness(
             : role === 'bob'
               ? 'You are the architect. Read workspace and product brief, choose a self-contained HTML/CSS/JS structure with in-memory state for an opaque iframe. No external network, storage, backend, CDN or secrets. Define testable semantic selectors. Stay under 250 words; no HTML, implementation, or test-code dumps.'
               : role === 'alex'
-                ? `You are the implementation agent. Read workspace. Implement the requested self-contained app, or repair exact reported app defects preserving unrelated behavior. Use write_artifact for FULL HTML and checks; no code fences as a substitute. ${checkInstructions} Use set_acceptance_checks for malformed-check corrections without rewriting working HTML. Call validate_preview after writing or correcting checks. That tool ends this delegation and returns its evidence to the manager, who can request a targeted repair if needed. No external resources, fetch, browser storage, cookies or parent access. Fits sandbox allow-scripts allow-forms. Prefer compact semantic markup and clear polished layout.`
+                ? `You are the implementation agent. Read workspace. Implement the requested self-contained app, or repair exact reported app defects preserving unrelated behavior. Use write_artifact for the initial FULL HTML and checks; no code fences as a substitute. For targeted repairs use edit_artifact with unique literal replacements instead of rewriting the full document. Preserve existing checks while repairing HTML. ${checkInstructions} Use set_acceptance_checks for malformed-check corrections without rewriting working HTML. Call validate_preview after writing, editing, or correcting checks. That tool ends this delegation and returns its evidence to the manager, who can request a targeted repair if needed. No external resources, fetch, browser storage, cookies or parent access. Fits sandbox allow-scripts allow-forms. Prefer compact semantic markup and clear polished layout.`
                 : `You are an independent QA agent. Read workspace and user requirements. ${checkInstructions} Assess whether checks cover requested behavior, not tautologies. When coverage is insufficient, create your own complete check set with set_acceptance_checks, then run validate_preview yourself; do not ask Alex for fake code edits or HTML rewrites to add tests. Call validate_preview for actual browser evidence and record_review accepted true only if the current checks pass and the app meets the requested brief. Distinguish tool limitations or missing coverage from actual app defects. Request Alex repairs only for concrete app defects with evidence. Record_review false for unresolved defects or coverage gaps; never invent passing evidence or unrequested requirements.`
         const specialist = new Agent({
           name: roles[role],
@@ -292,7 +356,7 @@ export async function executeHarness(
           },
           tools:
             role === 'alex'
-              ? [read, write, setChecks, validate]
+              ? [read, write, edit, setChecks, validate]
               : role === 'david'
                 ? [read, setChecks, validate, accept]
                 : [read],
