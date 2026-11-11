@@ -10,8 +10,61 @@ export interface HighlightLine {
   tokens: HighlightToken[]
 }
 
+export function sourceLanguage(path: string) {
+  const extension = path.split('.').at(-1)?.toLowerCase()
+  switch (extension) {
+    case 'html':
+    case 'svg':
+      return 'html'
+    case 'css':
+      return 'css'
+    case 'js':
+    case 'jsx':
+      return 'javascript'
+    case 'ts':
+    case 'tsx':
+      return 'typescript'
+    case 'json':
+      return 'json'
+    case 'md':
+      return 'markdown'
+    default:
+      return 'text'
+  }
+}
+
+export function highlightSource(code: string, path: string): HighlightLine[] {
+  const language = sourceLanguage(path)
+  if (language === 'html') return highlightHtml(code)
+  if (language === 'text') return tokenLines([{ offset: 0, text: code }])
+  const pattern =
+    language === 'css'
+      ? /\/\*[\s\S]*?(?:\*\/|$)|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|#[\da-fA-F]{3,8}\b|[\w-]+(?=\s*:)|[.#]?[\w-]+(?=\s*[{,])/g
+      : language === 'markdown'
+        ? /^#{1,6}\s.+$|`[^`]*`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]*\)/gm
+        : /\/\*[\s\S]*?(?:\*\/|$)|\/\/[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b(?:import|export|from|default|const|let|var|function|return|if|else|for|while|class|new|async|await|type|interface|extends|implements|true|false|null|undefined|throw|try|catch|switch|case|break|typeof)\b|\b\d+(?:\.\d+)?\b/g
+  const tokens: HighlightToken[] = []
+  let cursor = 0
+  for (const match of code.matchAll(pattern)) {
+    if (match.index > cursor) tokens.push({ offset: cursor, text: code.slice(cursor, match.index) })
+    const text = match[0]
+    const className =
+      text.startsWith('//') || text.startsWith('/*')
+        ? 'tok-c'
+        : /^["'`]/.test(text)
+          ? 'tok-str'
+          : language === 'css' || /^\d/.test(text)
+            ? 'tok-attr'
+            : 'tok-tag'
+    tokens.push({ offset: match.index, text, className })
+    cursor = match.index + text.length
+  }
+  if (cursor < code.length) tokens.push({ offset: cursor, text: code.slice(cursor) })
+  return tokenLines(tokens)
+}
+
 /** Return plain text tokens; React owns escaping and element construction. */
-export function highlightHtml(code: string): HighlightLine[] {
+function highlightHtml(code: string): HighlightLine[] {
   const tokens: HighlightToken[] = []
   const pattern = /<!--[\s\S]*?(?:-->|$)|<\/?[a-zA-Z][^>]*(?:>|$)/g
   let cursor = 0
@@ -25,6 +78,10 @@ export function highlightHtml(code: string): HighlightLine[] {
     cursor = match.index + match[0].length
   }
   if (cursor < code.length) tokens.push({ offset: cursor, text: code.slice(cursor) })
+  return tokenLines(tokens)
+}
+
+function tokenLines(tokens: HighlightToken[]): HighlightLine[] {
   const lines: HighlightLine[] = []
   let line: HighlightLine = { offset: 0, number: 1, tokens: [] }
   for (const token of tokens) {
