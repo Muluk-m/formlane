@@ -4,6 +4,8 @@ Read before changing a related area. Entries distinguish observed migration mist
 
 ## This migration
 
+- **2026-11-11 — Retry displayed a stale project failure beside an active run.** Project details and run observations refresh independently. Once a current run is known, its lifecycle is authoritative for generation errors; do not combine it with a cached failure from an older run. Keep transport and action failures separately visible.
+
 - **2026-11-11 — Text acceptance disagreed with its polling condition.** Polling accepted contained text, but the final verdict still required equality, so `Saved Ada` failed an expectation of `Saved`. Reuse the match result and exercise the real browser path. Reducing model turn limits or changing prompts does not fix false validation failures; use SDK tool termination for completed specialist work.
 
 - **2026-11-10 — A `/p` Vite proxy also matched `/project` and broke direct reloads.** Match `/p/` and `/api/` explicitly; verify SPA route reloads separately from client-side navigation.
