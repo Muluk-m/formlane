@@ -498,6 +498,7 @@ export function ProjectPage() {
 
   const displayHtml = viewing?.html ?? html
   const displayCode = viewing?.html ?? code
+  const projectError = run ? null : project.error
   const publishedCurrent = Boolean(
     project.publishedSlug && project.publishedVersionId === project.currentVersionId,
   )
@@ -571,7 +572,7 @@ export function ProjectPage() {
         </div>
       </header>
       {(banner ||
-        project.error ||
+        projectError ||
         run?.status === 'failed' ||
         run?.status === 'cancelled' ||
         connection !== 'connected') && (
@@ -587,7 +588,7 @@ export function ProjectPage() {
                   ? t(`atoms.runError.${run.errorCode ?? 'internal'}`)
                   : run?.status === 'cancelled'
                     ? t('atoms.runCancelled')
-                    : banner || project.error}
+                    : banner || projectError}
             </p>
             {run?.status === 'failed' && (run.error || banner) && (
               <p className="break-words text-xs">{run.error || banner}</p>
