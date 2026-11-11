@@ -12,6 +12,53 @@
     "confirm": "Confirm"
   },
   "ui": {
+    "assistant": {
+      "name": "Assistant",
+      "you": "You",
+      "emptyTitle": "A space to build together",
+      "emptyDescription": "Send an idea or a change. Your team's work and decisions will appear here.",
+      "writing": "Writing…",
+      "incomplete": "Response interrupted",
+      "latest": "Jump to latest",
+      "composerHint": "Enter to send · Shift+Enter for a new line",
+      "composerWorking": "Your team is working. You can stop this run at any time.",
+      "composerUnavailable": "The conversation is not ready for new instructions yet.",
+      "characters": "{count} / 4,000 characters",
+      "input": "Input",
+      "result": "Result",
+      "noResult": "No result was recorded.",
+      "rawDetails": "Technical details",
+      "emptyValue": "Empty",
+      "true": "Yes",
+      "false": "No",
+      "agentWorking": "{name} is working",
+      "agentDone": "{name} finished",
+      "agentInterrupted": "{name} was interrupted",
+      "validation": "Preview validation",
+      "repair": "Repair attempt",
+      "toolStatus": {
+        "running": "Running",
+        "complete": "Completed",
+        "failed": "Failed",
+        "cancelled": "Cancelled",
+        "incomplete": "Incomplete",
+        "waiting": "Waiting",
+        "recorded": "Recorded"
+      },
+      "tools": {
+        "read_workspace": "Read workspace",
+        "write_artifact": "Write app",
+        "edit_artifact": "Edit app",
+        "set_acceptance_checks": "Set browser checks",
+        "validate_preview": "Validate preview",
+        "record_review": "Review app",
+        "delegate_mike": "Coordinate the team",
+        "delegate_emma": "Define requirements",
+        "delegate_bob": "Plan the architecture",
+        "delegate_alex": "Build the app",
+        "delegate_david": "Review the result"
+      }
+    },
     "sidebar": {
       "title": "Navigation",
       "description": "Project navigation and workspace settings.",

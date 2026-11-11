@@ -4,9 +4,10 @@ import {
   runSchema,
 } from '@atoms-demo/contracts'
 import { slugify } from '@atoms-demo/core/html'
-import type { AppVersion, ChatMessage, Project } from '@atoms-demo/core/types'
+import type { AppVersion, Project } from '@atoms-demo/core/types'
 import { useI18n } from '@atoms-demo/i18n/react'
 import { Button } from '@atoms-demo/ui/components/button'
+import { ButtonGroup } from '@atoms-demo/ui/components/button-group'
 import {
   Dialog,
   DialogContent,
@@ -30,6 +31,7 @@ import {
 } from 'react'
 import { ChatPane } from '../components/ChatPane'
 import { Stage } from '../components/Stage'
+import type { ConversationMessage } from '../features/assistant/messages'
 import {
   publishProjectMutation,
   remixProjectMutation,
@@ -48,8 +50,6 @@ import {
 } from '../lib/api'
 import { relativeTime } from '../lib/format'
 
-export type UiMessage = Omit<ChatMessage, 'agent'> & { agent: string | null; pending?: boolean }
-
 function isActiveRun(run: HarnessRun | null) {
   return run?.status === 'queued' || run?.status === 'running'
 }
@@ -67,7 +67,7 @@ export function ProjectPage() {
   const unpublishMutation = useMutation(unpublishProjectMutation)
   const remixMutation = useMutation(remixProjectMutation)
   const [project, setProject] = useState<Project | null>(null)
-  const [messages, setMessages] = useState<UiMessage[]>([])
+  const [messages, setMessages] = useState<ConversationMessage[]>([])
   const [versions, setVersions] = useState<AppVersion[]>([])
   const [html, setHtml] = useState('')
   const [code, setCode] = useState('')
@@ -83,6 +83,7 @@ export function ProjectPage() {
   const [activeAgents, setActiveAgents] = useState<Record<string, string>>({})
   const running = isActiveRun(run)
   const [tab, setTab] = useState<'preview' | 'code'>('preview')
+  const [mobilePanel, setMobilePanel] = useState<'chat' | 'preview'>('chat')
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
   const [historyOpen, setHistoryOpen] = useState(false)
   const [viewing, setViewing] = useState<(AppVersion & { html: string }) | null>(null)
@@ -243,7 +244,7 @@ export function ProjectPage() {
         return next
       })
     } else if (event.type === 'message_start') {
-      const message: UiMessage = {
+      const message: ConversationMessage = {
         id: String(data.id),
         role: data.role === 'system' ? 'system' : data.role === 'user' ? 'user' : 'agent',
         agent: typeof data.agent === 'string' ? data.agent : null,
@@ -518,7 +519,7 @@ export function ProjectPage() {
   return (
     <div className="flex h-[calc(100dvh-3rem)] min-h-[36rem] flex-col bg-background">
       <header className="flex flex-wrap items-center gap-3 border-b p-3">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-full sm:basis-auto">
           <h1 className="truncate text-lg font-semibold">{project.title}</h1>
           <p className="truncate text-xs text-muted-foreground">
             {t('atoms.versionCount', { count: versions.length })}
@@ -616,10 +617,33 @@ export function ProjectPage() {
           )}
         </div>
       )}
+      {!wide && (
+        <ButtonGroup className="m-3" aria-label={t('atoms.chat')}>
+          <Button
+            className="flex-1"
+            variant={mobilePanel === 'chat' ? 'default' : 'outline'}
+            aria-pressed={mobilePanel === 'chat'}
+            data-testid="workspace-chat"
+            onClick={() => setMobilePanel('chat')}
+          >
+            {t('atoms.chat')}
+          </Button>
+          <Button
+            className="flex-1"
+            variant={mobilePanel === 'preview' ? 'default' : 'outline'}
+            aria-pressed={mobilePanel === 'preview'}
+            data-testid="workspace-preview"
+            onClick={() => setMobilePanel('preview')}
+          >
+            {t('atoms.preview')}
+          </Button>
+        </ButtonGroup>
+      )}
       <div className="flex min-h-0 flex-1" style={{ flexDirection: wide ? 'row' : 'column' }}>
         <div
           className="min-h-0 min-w-0 shrink-0"
-          style={wide ? { width: split, maxWidth: '60%' } : { height: '48%' }}
+          style={wide ? { width: split, maxWidth: '60%' } : { flex: 1 }}
+          hidden={!wide && mobilePanel !== 'chat'}
         >
           <ChatPane
             messages={messages}
@@ -656,21 +680,23 @@ export function ProjectPage() {
             }}
           />
         )}
-        <Stage
-          html={displayHtml}
-          code={displayCode}
-          tab={tab}
-          device={device}
-          running={running}
-          staleLabel={
-            viewing
-              ? `${t('atoms.viewing')} · ${t('atoms.versionLabel', { number: viewing.number })}`
-              : null
-          }
-          onTab={setTab}
-          onDevice={setDevice}
-          onBack={() => setViewing(null)}
-        />
+        <div className="min-h-0 min-w-0 flex-1" hidden={!wide && mobilePanel !== 'preview'}>
+          <Stage
+            html={displayHtml}
+            code={displayCode}
+            tab={tab}
+            device={device}
+            running={running}
+            staleLabel={
+              viewing
+                ? `${t('atoms.viewing')} · ${t('atoms.versionLabel', { number: viewing.number })}`
+                : null
+            }
+            onTab={setTab}
+            onDevice={setDevice}
+            onBack={() => setViewing(null)}
+          />
+        </div>
       </div>
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
         <DialogContent
