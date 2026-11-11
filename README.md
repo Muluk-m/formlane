@@ -4,12 +4,14 @@ Describe an app in a sentence and watch an AI product team build it. Mike delega
 
 This is a recreation of the core [atoms.dev](https://atoms.dev/) loop: team conversation, interactive preview, and a published link. There is no registered account system. Projects belong to an anonymous browser identity.
 
-Try the [live workspace](https://formlane-9dp.pages.dev) or the [published market example](https://formlane-9dp.pages.dev/p/7e2g3qqnnd).
+Try the [live workspace](https://formlane-9dp.pages.dev), the [published React counter](https://formlane-9dp.pages.dev/p/8tq3mrv54j), or the [published market example](https://formlane-9dp.pages.dev/p/7e2g3qqnnd).
 
 ![Idea workspace](docs/screenshots/home-redesign-desktop.png)
 ![Execution trace and generated code](docs/screenshots/execution-redesign-desktop.png)
 
 The screenshots show the deployed interface and a persisted real-provider counter project. See the [live draft before acceptance](docs/screenshots/live-draft-production.png), [mobile homepage](docs/screenshots/home-redesign-mobile.png), [mobile source view](docs/screenshots/code-redesign-mobile.png), and [published market example](docs/screenshots/real-market-desktop.png).
+
+The deployed multi-file workflow is shown in the [React source workspace](docs/screenshots/react-source-production.png) and [375px mobile source view](docs/screenshots/react-source-mobile-production.png).
 
 ## Features
 
@@ -88,6 +90,8 @@ The Vite UI uses the Worker API; `pnpm dev:web` and `pnpm dev:server` run them s
 Use focused tests and package typechecks while developing; one integration owner coordinates full checks. See [development](docs/operations/development.md), [testing](docs/internals/testing.md), and [debugging](docs/operations/debugging.md).
 
 Current real-provider acceptance passed with Grok run/version `a89ff0f4-d116-4e85-80e0-b22de6a46412` in 629 seconds. Alex's eight browser checks and David's seven independent checks passed before saving. Hands-on production verification covered category filtering, detail/card data, synchronized favorites, empty intersections, Enter/Space activation, 375px layout, in-memory reset, saved-version reload, download integrity and anonymous publication. [CI](https://github.com/Muluk-m/formlane/actions/runs/43002293994) passed lint, typechecks, tests and builds. Browser response fixtures also verified that stale project errors cannot override the current run while actual run failures remain visible. See [deployment evidence](docs/operations/deployment.md) for run IDs and limits. Earlier runs exercised reconnect and cancellation; process-crash recovery is covered by lease/checkpoint invariants, not claimed as a live crash experiment.
+
+Multi-file production acceptance passed on release `23c2fcdd2265`: real Grok generation saved a six-file React + TypeScript project, and a follow-up changed only `src/Counter.tsx` while preserving the first version. Both runs passed browser validation and independent review. Hands-on checks covered click/Space increments, reset, exact ZIP/source equality, saved-version restore, remix, frozen publication, reload, and mobile draft preservation. The downloaded project independently passed `pnpm build` and `pnpm typecheck`. [Release CI](https://github.com/Muluk-m/formlane/actions/runs/43062672465) passed; the published React counter above runs the accepted second version.
 
 ## Deployment status
 
