@@ -4,10 +4,12 @@ Describe an app in a sentence and watch an AI product team build it. Mike uses O
 
 This is a recreation of the core [atoms.dev](https://atoms.dev/) loop: team conversation, interactive preview, and a published link. There is no registered account system. Projects belong to an anonymous browser identity.
 
-![Skyline home](docs/screenshots/skyline-home.webp)
-![Skyline workspace](docs/screenshots/skyline-workspace.webp)
+Try the [live workspace](https://formlane-9dp.pages.dev) or the [published market example](https://formlane-9dp.pages.dev/p/7e2g3qqnnd).
 
-Historical screenshots from the earlier local mock-backed scaffold, retained as visual history only. They do not verify the current real-provider durable harness; mock generation is no longer supported.
+![Real-provider workspace](docs/screenshots/real-workspace.png)
+![Published market application](docs/screenshots/real-market-desktop.png)
+
+Current production screenshots from the accepted Grok run. A [375px mobile screenshot](docs/screenshots/real-market-mobile.png) is also available.
 
 ## Features
 
@@ -82,17 +84,18 @@ The Vite UI uses the Worker API; `pnpm dev:web` and `pnpm dev:server` run them s
 
 Use focused tests and package typechecks while developing; one integration owner coordinates full checks. See [development](docs/operations/development.md), [testing](docs/internals/testing.md), and [debugging](docs/operations/debugging.md).
 
-Historical verification included live run `d9280a36-e697-468c-b726-57bd770f9b32`, which completed on the GCP executor after independent review rejected incomplete checks and accepted the revalidated artifact. Browser disconnection/reconnection, initial-run retry, explicit cancellation (`2db2a64e-fe85-45bc-8796-0cfc2ca1a4dd`), generated Enter/add behavior, completion state and saved-code reload were exercised. Current executor [CI](https://github.com/Muluk-m/formlane/actions/runs/42998823261) passes lint, typechecks, tests and builds, including real-browser validation and targeted SVG keyboard repair. Full market-app acceptance with the newly configured Grok model remains pending; see the [deployment evidence](docs/operations/deployment.md). Process-crash recovery is covered by lease/checkpoint invariants, not claimed as a live crash experiment.
+Current real-provider acceptance passed with Grok run/version `a89ff0f4-d116-4e85-80e0-b22de6a46412` in 629 seconds. Alex's eight browser checks and David's seven independent checks passed before saving. Hands-on production verification covered category filtering, detail/card data, synchronized favorites, empty intersections, Enter/Space activation, 375px layout, in-memory reset, saved-version reload, download integrity and anonymous publication. [CI](https://github.com/Muluk-m/formlane/actions/runs/43002293994) passed lint, typechecks, tests and builds. Browser response fixtures also verified that stale project errors cannot override the current run while actual run failures remain visible. See [deployment evidence](docs/operations/deployment.md) for run IDs and limits. Earlier runs exercised reconnect and cancellation; process-crash recovery is covered by lease/checkpoint invariants, not claimed as a live crash experiment.
 
 ## Deployment status
 
 Live site: **https://formlane-9dp.pages.dev**. Deployed to the verified **Maqiqian0316@gmail.com's Account** (`252fba810f75c0370e5aa7200abc8f80`) using Pages `formlane`, service-bound Worker `formlane-api`, and the existing project D1 database. The Formlane logo, homepage, same-origin API, and database-backed project listing were verified online.
 
-Agent compute runs on the user-approved GCP VM `formlane-agent`, with Node 24 and native Playwright under non-root systemd. The configured model is `grok-4.7` at `https://sub2api.qiliangjia.org/v1`; its key is in the root-owned mode-600 executor environment file, not frontend code. The requested `grok-build-4.7` name was unavailable; the provider's registered 4.7 model passed SDK tool-call probes. The Cloudflare Free CPU limit killed the earlier validator implementation, so Workflows/browser bindings were superseded without a billing upgrade. The historical successful run above used the earlier model configuration and does not establish current Grok acceptance. See [deployment](docs/operations/deployment.md) for accounts, cost approval, secret handling and evidence boundaries.
+Agent compute runs on the user-approved GCP VM `formlane-agent`, with Node 24 and native Playwright under non-root systemd. The configured model is `grok-4.7` at `https://sub2api.qiliangjia.org/v1`; its key is in the root-owned mode-600 executor environment file, not frontend code. The requested `grok-build-4.7` name was unavailable; the provider's registered 4.7 model passed SDK probes and the market-app acceptance above. The Cloudflare Free CPU limit killed the earlier validator implementation, so Workflows/browser bindings were superseded without a billing upgrade. See [deployment](docs/operations/deployment.md) for accounts, cost approval, secret handling and evidence boundaries.
 
 ## Limits and behavior worth knowing
 
 - Generated apps are self-contained frontend HTML, not provisioned backends, authentication systems, or databases.
+- Real-provider latency remains significant: the verified market build took 10 minutes 29 seconds. Runs exceeding the 15-minute deadline fail without replacing the previous saved version.
 - Project data and saved HTML persist in D1; generated-app interactive state does not. Generated apps use in-memory state inside the opaque-origin preview rather than relying on browser storage.
 - D1 checkpoints resume durable orchestration, not an interrupted provider token stream. In-flight specialist calls may replay after lease reclaim or a crash.
 - Historical preview, current version, and published version are distinct. Restoring changes the current result, not the public link; publish again to update that link.
