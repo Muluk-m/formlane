@@ -12,6 +12,53 @@
     "confirm": "确认"
   },
   "ui": {
+    "assistant": {
+      "name": "助手",
+      "you": "你",
+      "emptyTitle": "一起把想法做出来",
+      "emptyDescription": "发送一个想法或修改要求，团队的工作过程与决策会显示在这里。",
+      "writing": "正在撰写…",
+      "incomplete": "回复已中断",
+      "latest": "查看最新消息",
+      "composerHint": "Enter 发送 · Shift+Enter 换行",
+      "composerWorking": "团队正在工作，你可以随时停止本次任务。",
+      "composerUnavailable": "对话暂时无法接收新指令。",
+      "characters": "{count} / 4,000 个字符",
+      "input": "输入",
+      "result": "结果",
+      "noResult": "尚无已记录的结果。",
+      "rawDetails": "技术详情",
+      "emptyValue": "空",
+      "true": "是",
+      "false": "否",
+      "agentWorking": "{name} 正在工作",
+      "agentDone": "{name} 已完成工作",
+      "agentInterrupted": "{name} 的工作已中断",
+      "validation": "预览验证",
+      "repair": "修复尝试",
+      "toolStatus": {
+        "running": "执行中",
+        "complete": "已完成",
+        "failed": "失败",
+        "cancelled": "已取消",
+        "incomplete": "未完成",
+        "waiting": "等待中",
+        "recorded": "已记录"
+      },
+      "tools": {
+        "read_workspace": "读取工作区",
+        "write_artifact": "编写应用",
+        "edit_artifact": "修改应用",
+        "set_acceptance_checks": "设置浏览器检查",
+        "validate_preview": "验证预览",
+        "record_review": "评审应用",
+        "delegate_mike": "协调团队",
+        "delegate_emma": "明确需求",
+        "delegate_bob": "规划架构",
+        "delegate_alex": "构建应用",
+        "delegate_david": "评审结果"
+      }
+    },
     "sidebar": { "title": "导航", "description": "项目导航与工作区设置。", "toggle": "切换导航" },
     "spinner": {
       "loading": "加载中"

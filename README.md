@@ -6,15 +6,16 @@ This is a recreation of the core [atoms.dev](https://atoms.dev/) loop: team conv
 
 Try the [live workspace](https://formlane-9dp.pages.dev) or the [published market example](https://formlane-9dp.pages.dev/p/7e2g3qqnnd).
 
-![Real-provider workspace](docs/screenshots/real-workspace.png)
+![assistant-ui workspace with a real agent run](docs/screenshots/assistant-workspace.png)
 ![Published market application](docs/screenshots/real-market-desktop.png)
 
-Current production screenshots from the accepted Grok run. A [375px mobile screenshot](docs/screenshots/real-market-mobile.png) is also available.
+The workspace screenshot shows assistant-ui observing a real Grok run. See the [mobile conversation](docs/screenshots/assistant-mobile.png) and [prompt composer](docs/screenshots/assistant-home.png). The market screenshot records the previously accepted published application.
 
 ## Features
 
 - English/Chinese interface, example prompts, and this browser's project list.
-- Streaming agent conversation beside a resizable preview/code workspace.
+- assistant-ui conversations, streaming Markdown, agent identities, paired tool calls, expandable results, and runtime-owned prompt composers.
+- Resizable conversation/preview workspace on desktop; full-height conversation and preview switching on mobile.
 - Sandboxed interactive preview, syntax-highlighted HTML, desktop/mobile preview sizes.
 - Follow-up revisions with the current HTML in context.
 - Version history, historical preview, and restoring a saved result as current.
@@ -28,12 +29,12 @@ The repository adopts the engineering and Skyline design baseline of the read-on
 
 | Workspace                                  | Responsibility                                                                                       |
 | ------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `apps/web`                                 | React/Vite, TanStack Router and Query, React Hook Form/Zod, project and generation UI                |
+| `apps/web`                                 | React/Vite, TanStack Router and Query, assistant-ui external runtimes, Zod, project orchestration    |
 | `apps/server`                              | Hono control-plane Worker, oRPC contracts, D1 runs/events/checkpoints, executor lease API            |
 | `apps/executor`                            | Node 24, OpenAI Agents SDK manager/specialists, native Playwright, remote checkpoint recovery on GCP |
 | `packages/contracts`                       | Shared oRPC/Zod contract consumed by the server and typed web client                                 |
 | `packages/atoms-core` (`@atoms-demo/core`) | Runtime-independent types, HTML/text parsing, and prompts                                            |
-| `packages/ui`                              | Shared shadcn base-nova / Base UI primitives and composites, Hugeicons, Skyline tokens               |
+| `packages/ui`                              | assistant-ui conversation composites, shadcn base-nova / Base UI controls, Hugeicons, Skyline tokens |
 | `packages/i18n`                            | The single English/Chinese message catalog and locale helpers                                        |
 
 ```mermaid
@@ -50,6 +51,8 @@ flowchart LR
 ```
 
 The contract is imported from `@atoms-demo/contracts`, not inferred by importing server code. CRUD uses the typed oRPC client; SSE observes persisted run events rather than owning model execution. Shared packages do not depend on applications. See [architecture](docs/internals/architecture.md) and [ADR-0012](docs/adr/0012-durable-agent-harness.md).
+
+The assistant-ui external runtime observes existing persisted messages and SSE events; it does not start a second agent backend. Tool invocations are paired by run and sequence, replayed events are deduplicated, and missing results remain unfinished after cancellation or failure. Completed structured agent output uses expandable data parts. Homepage suggestions, prompt drafts, send/stop controls, message rendering, and viewport scrolling use assistant-ui; the original D1 ownership and saved-version rules remain authoritative.
 
 ## Durable, real-provider execution
 

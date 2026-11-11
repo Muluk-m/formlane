@@ -329,6 +329,12 @@ Keep title tracking and a maximum weight of 600. Right-align numeric columns and
 - On wide screens, maintain the resizable chat/preview split. On narrow screens, keep the prompt and selected preview usable rather than squeezing both panels below readable widths. The inherited 1024px desktop table baseline is not a minimum width for the entire Atoms application.
 - 1280px and 1440px are useful desktop review widths. Dense tables scroll horizontally instead of compressing columns. Desktop/mobile preview controls describe the generated app's viewport, not the outer application breakpoint.
 
+### Agent conversations
+
+Use assistant-ui for all agent and conversation surfaces, including the landing prompt and suggestions, streaming messages, Markdown, tool calls/results, status, and send/stop controls. Shared conversation composites live in `packages/ui`; their external runtime adapts the existing durable run store. Keep the Skyline palette and Hugeicons rather than introducing registry demo colors or another icon family.
+
+Show user messages in quiet secondary bubbles and identify specialist responses with names and roles. Tool start/end events form one disclosure; failed, cancelled, and unfinished work must not appear successful. Expand structured validation and review results on demand instead of printing raw JSON into the transcript. Long system text and artifact identifiers must wrap within the panel. On mobile, switch between full-height conversation and preview; retain the mounted conversation and its draft while viewing the app.
+
 ### Public output `/p/:slug`
 
 The public route renders the version explicitly published to that slug. It is generated output, not an administrative shell, and does not expose owner chat or project controls. Restoring a version in the workspace does not change the published result until publishing again. An unavailable publication must not silently redirect to another project or a newer unpublished result.

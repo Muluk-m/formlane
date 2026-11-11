@@ -24,39 +24,6 @@ input {
   background: linear-gradient(to bottom, var(--sky-wash), transparent 260px), var(--background);
 }
 
-.caret {
-  display: inline-block;
-  width: 0.4rem;
-  height: 1em;
-  background: currentColor;
-  animation: pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  50% {
-    opacity: 0.35;
-  }
-}
-
-.rich .li {
-  display: block;
-  padding-left: 1rem;
-  position: relative;
-}
-.rich .li::before {
-  content: "•";
-  position: absolute;
-  left: 0.2rem;
-  color: var(--link);
-}
-.rich code {
-  border-radius: 0.25rem;
-  background: var(--surface-sunken);
-  padding: 0.1rem 0.25rem;
-  font-family: var(--font-mono);
-  font-size: 0.85em;
-}
-
 .code-sheet {
   overflow: auto;
   background: var(--surface-sunken);
@@ -133,10 +100,5 @@ input {
 @media (max-width: 860px) {
   .splitter {
     display: none;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .caret {
-    animation: none;
   }
 }
