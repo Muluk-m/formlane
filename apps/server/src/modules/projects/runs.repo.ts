@@ -1,4 +1,5 @@
 import type { Run, RunErrorCode, RunEvent } from '@atoms-demo/contracts'
+import type { ProjectSource } from '@atoms-demo/core/project'
 import { and, desc, eq, gt, inArray, lte, max, type SQL, sql } from 'drizzle-orm'
 import type { Db } from '../../db/client'
 import { messages, projects, runCheckpoints, runEvents, runs, versions } from '../../db/schema'
@@ -359,7 +360,7 @@ export async function completeRun(
   db: Db,
   runId: string,
   leaseToken: string,
-  result: { html: string; summary: string },
+  result: { source: ProjectSource; html: string; summary: string },
   now: number,
 ) {
   const messageId = await stableUuid(`${runId}:complete`)
@@ -368,7 +369,7 @@ export async function completeRun(
       .insert(versions)
       .select(sql`
       select r.id, r.project_id, (select coalesce(max(number), 0) + 1 from versions where project_id = r.project_id),
-        ${result.html}, r.request, ${now} from runs r
+        ${result.html}, r.request, ${now}, ${JSON.stringify(result.source)} from runs r
       where r.id = ${runId} and ${leased(runId, leaseToken, now)}
     `)
       .onConflictDoNothing({ target: versions.id }),
