@@ -494,7 +494,7 @@ Use sticky sunken headers with caption text. Text columns align left; numeric co
 
 ### Forms
 
-Use React Hook Form, Zod, and the shared Field family. Put field errors below their control, retain input after server errors, and treat server validation as authoritative. Disable submission while pending and show active wording/spinner without changing the button width. Mark optional fields in the label rather than adding required asterisks. Keep business schemas in contracts rather than creating divergent frontend copies.
+Conversation drafts and submission use assistant-ui with Zod validation. Other editable fields use the shared Field family. Put field errors below their control, retain input after server errors, and treat server validation as authoritative. Disable submission while pending and show active wording/spinner without changing the button width. Mark optional fields in the label rather than adding required asterisks. Keep business schemas in contracts rather than creating divergent frontend copies.
 
 ### Feedback and accessibility
 
