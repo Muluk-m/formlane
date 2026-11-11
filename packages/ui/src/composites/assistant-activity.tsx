@@ -30,8 +30,12 @@ type ExecutionState = { agent?: string | null; status?: MessageStatus }
 
 const toolNames = {
   read_workspace: 'ui.assistant.tools.read_workspace',
-  write_artifact: 'ui.assistant.tools.write_artifact',
-  edit_artifact: 'ui.assistant.tools.edit_artifact',
+  initialize_project: 'ui.assistant.tools.initialize_project',
+  read_file: 'ui.assistant.tools.read_file',
+  write_file: 'ui.assistant.tools.write_file',
+  edit_file: 'ui.assistant.tools.edit_file',
+  delete_file: 'ui.assistant.tools.delete_file',
+  build_project: 'ui.assistant.tools.build_project',
   set_acceptance_checks: 'ui.assistant.tools.set_acceptance_checks',
   validate_preview: 'ui.assistant.tools.validate_preview',
   record_review: 'ui.assistant.tools.record_review',
@@ -60,12 +64,21 @@ const fieldNames = {
   error: 'ui.assistant.fields.error',
   brief: 'ui.assistant.fields.brief',
   architecture: 'ui.assistant.fields.architecture',
+  path: 'ui.assistant.fields.path',
+  template: 'ui.assistant.fields.template',
+  reason: 'ui.assistant.fields.reason',
+  ok: 'ui.assistant.fields.ok',
+  files: 'ui.assistant.fields.files',
 } as const
 const technicalFields: Record<string, true> = {
   id: true,
   runId: true,
   artifactHash: true,
   html: true,
+  source: true,
+  content: true,
+  edits: true,
+  sourceHash: true,
   createdAt: true,
 }
 
@@ -340,7 +353,9 @@ export function AssistantToolCall({
       ? args.input
       : isObject(args) && typeof args.task === 'string'
         ? args.task
-        : undefined
+        : isObject(args) && typeof args.path === 'string'
+          ? args.path
+          : undefined
   const error = isObject(result) && typeof result.error === 'string' ? result.error : undefined
   const hasArgs = args !== undefined && (!isObject(args) || Object.keys(args).length > 0)
   return (
@@ -379,7 +394,7 @@ export function AssistantToolCall({
 }
 
 type ActivityData = {
-  type: 'agent_start' | 'agent_end' | 'validation' | 'repair'
+  type: 'agent_start' | 'agent_end' | 'validation' | 'repair' | 'build_result'
   data: Record<string, unknown>
 }
 
@@ -402,6 +417,17 @@ export function AssistantActivity({ id, data: event }: DataMessagePartProps<Acti
     return (
       <ActivityRow label={label} tone={tone} testId="agent-activity">
         {task ? <p className="whitespace-pre-wrap break-words">{task}</p> : undefined}
+      </ActivityRow>
+    )
+  }
+  if (event.type === 'build_result') {
+    return (
+      <ActivityRow
+        label={t(detail.ok === true ? 'atoms.files.buildPassed' : 'atoms.files.buildFailed')}
+        tone={detail.ok === true ? 'complete' : 'failed'}
+        testId="agent-activity"
+      >
+        <DetailValue value={detail} />
       </ActivityRow>
     )
   }

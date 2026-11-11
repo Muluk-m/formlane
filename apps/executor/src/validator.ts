@@ -1,3 +1,4 @@
+import { MAX_PREVIEW_BYTES } from '@atoms-demo/core/project'
 import { chromium } from 'playwright'
 import { z } from 'zod'
 
@@ -115,7 +116,8 @@ export async function validateArtifact(
   }
   if (!/^\s*<!doctype html/i.test(html) || !/<\/html>\s*$/i.test(html))
     report.issues.push('Return a complete HTML document.')
-  if (html.length > 180_000) report.issues.push('Artifact exceeds 180000 characters.')
+  if (new TextEncoder().encode(html).byteLength > MAX_PREVIEW_BYTES)
+    report.issues.push(`Artifact exceeds ${MAX_PREVIEW_BYTES} UTF-8 bytes.`)
   const parsedChecks = browserChecksSchema.safeParse(checks)
   if (!parsedChecks.success)
     report.issues.push(`Invalid acceptance checks: ${parsedChecks.error.message}`)

@@ -14,17 +14,17 @@ The bearer-authenticated executor API grants a 60-second lease refreshed every 1
 
 Cancellation fences writes immediately; the executor aborts when heartbeat authority is lost. Conditional writes reject stale, cancelled and expired producers, including late tool results. Timeout, provider failure and validation failure differ from explicit cancellation. Draft artifacts are not successful versions; completion requires current-artifact browser evidence and independent review.
 
-The server repository/service boundary uses `db/schema.ts`. Preserve migration history and apply `0004_executor_leases.sql` after the earlier run/event migrations. Requests do not create schema. See [ADR-0012](../adr/0012-durable-agent-harness.md).
+The server repository/service boundary uses `db/schema.ts`. Preserve migration history through `0005_project_sources.sql`, which backfills old versions into explicit Vanilla source snapshots while retaining their original HTML and IDs. Stop old executors and drain active runs before the source-aware cutover; legacy checkpoints do not contain the new source/build contract. Requests do not create schema. See [deployment](../operations/deployment.md) for cutover ordering.
 
 ## Three version selections
 
-- **Current:** `currentVersionId`, the saved HTML used as the starting point for a follow-up.
+- **Current:** `currentVersionId`, the immutable source snapshot used as the starting point for a follow-up.
 - **Viewed:** local UI selection when inspecting history; viewing alone does not change persisted current state.
 - **Published:** `publishedVersionId`, the explicit saved result exposed by the public slug.
 
-A validated and independently accepted generation creates an immutable HTML version and updates current. A failed generation leaves the previous complete current version intact. Restore selects a saved version as current; it does not rewrite that version or change the published pointer. Republish deliberately updates the public pointer. Unpublish clears public access without deleting private history.
+A built, browser-validated and independently accepted generation atomically saves immutable source plus its compiled preview and updates current. A failed generation leaves the previous complete current version intact. Restore selects both parts of a saved version as current; it does not rewrite that version or change the published pointer. Republish deliberately updates the public pointer. Unpublish clears public access without deleting private history.
 
-Remix creates independent project/message/version identities. It must not share mutable pointers with the source or accidentally inherit public ownership. Download chooses the requested authorized saved version, including a historical one when that is what the UI is showing.
+Remix creates independent project/message/version identities and selects the requested historical version, or current version when omitted. It must not share mutable pointers with the source or accidentally inherit public ownership. Download returns the complete source ZIP for the requested authorized saved version. Public links expose only its frozen compiled preview, never its private conversation or source API.
 
 ## D1 implementation constraints
 

@@ -1,4 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises'
+import { projectSourceSchema } from '@atoms-demo/contracts'
 import { z } from 'zod'
 import type { ExecutorConfig } from './config'
 
@@ -7,7 +8,7 @@ const contextSchema = z.object({
   runId: z.string(),
   idea: z.string(),
   request: z.string(),
-  previousHtml: z.string().nullable(),
+  previousSource: projectSourceSchema.nullable(),
 })
 export const claimSchema = z.object({
   job: z
