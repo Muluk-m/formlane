@@ -8,7 +8,11 @@ The user-approved compute target is GCP VM `formlane-agent`, zone `us-central1-c
 
 At approval, the browser showed $296.45 in trial credit and 62 days remaining. The approved VM is `e2-standard-2` (2 vCPU, 8 GB RAM) with 30 GB disk; the displayed estimate was $51.92/month plus IPv4, egress and other applicable charges. This dated estimate is not a spending cap. No billing upgrade was authorized. The compute move followed a validator failure at Cloudflare Free's 10 ms Worker CPU limit; see [ADR-0012](../adr/0012-durable-agent-harness.md).
 
-The model remains `gpt-6.1-sol` at `https://sub2api.qiliangjia.org/v1`. Executor secrets/configuration live in root-owned mode-600 `/etc/formlane/executor.env`, read by systemd; never source them into browser code or logs. `EXECUTOR_TOKEN` must match the Cloudflare Secret on `formlane-api`. The integration owner reported 18 server tests and 3 executor tests passing; current online GCP acceptance is ongoing, not completed. Earlier counter/reload checks and screenshots are predecessor evidence only.
+The configured model is `gpt-6.1-sol` at `https://sub2api.qiliangjia.org/v1`. Executor secrets/configuration live in root-owned mode-600 `/etc/formlane/executor.env`, read by systemd; never source them into browser code or logs. `EXECUTOR_TOKEN` must match the Cloudflare Secret on `formlane-api`.
+
+On 2026-11-11, acceptance fix `0f8d673` was deployed to GCP. Both real-browser regression tests passed there under the non-root `formlane` account with Chromium sandboxing enabled. Revision `3bb34b3` then passed [CI lint, typecheck, tests and build](https://github.com/Muluk-m/formlane/actions/runs/42987607630), using system Chrome for Ubuntu AppArmor compatibility. A real-provider SDK probe terminated successfully at its review tool within one model turn.
+
+End-to-end acceptance is still incomplete: run `df472c7e-e072-4560-8163-834700016b79` exhausted provider retries with an upstream overload error. Run `bc659365-971b-431c-b117-14dc125412bd` reached browser validation: initial data, category filtering, details and mobile overflow passed; favorite and keyboard checks used a selector absent from the generated HTML. Alex returned the report to the manager as intended, but the repair delegation retried until the persisted 15-minute deadline. Neither run saved a version. These results do not establish successful generation, independent QA acceptance or saved-version interactions.
 
 ## Release gate
 
