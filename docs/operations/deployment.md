@@ -8,7 +8,7 @@ The user-approved compute target is GCP VM `formlane-agent`, zone `us-central1-c
 
 At approval, the browser showed $296.45 in trial credit and 62 days remaining. The approved VM is `e2-standard-2` (2 vCPU, 8 GB RAM) with 30 GB disk; the displayed estimate was $51.92/month plus IPv4, egress and other applicable charges. This dated estimate is not a spending cap. No billing upgrade was authorized. The compute move followed a validator failure at Cloudflare Free's 10 ms Worker CPU limit; see [ADR-0012](../adr/0012-durable-agent-harness.md).
 
-The configured model is `gpt-6.1-sol` at `https://sub2api.qiliangjia.org/v1`. Executor secrets/configuration live in root-owned mode-600 `/etc/formlane/executor.env`, read by systemd; never source them into browser code or logs. `EXECUTOR_TOKEN` must match the Cloudflare Secret on `formlane-api`.
+The configured model is `grok-4.7` at `https://sub2api.qiliangjia.org/v1`, using the replacement key supplied on 2026-11-11. The requested name `grok-build-4.7` returned HTTP 404; the key's model list exposes `grok-4.7` and a separate `grok-build-0.1`. The registered 4.7 model passed a real SDK tool-call probe before configuration was changed. Executor secrets/configuration live in root-owned mode-600 `/etc/formlane/executor.env`, read by systemd; never source them into browser code or logs. `EXECUTOR_TOKEN` must match the Cloudflare Secret on `formlane-api`.
 
 On 2026-11-11, acceptance fix `0f8d673` was deployed to GCP. Both real-browser regression tests passed there under the non-root `formlane` account with Chromium sandboxing enabled. Revision `3bb34b3` then passed [CI lint, typecheck, tests and build](https://github.com/Muluk-m/formlane/actions/runs/42987607630), using system Chrome for Ubuntu AppArmor compatibility. A real-provider SDK probe terminated successfully at its review tool within one model turn.
 
@@ -27,7 +27,7 @@ End-to-end acceptance is still incomplete: run `df472c7e-e072-4560-8163-83470001
 
 ## Configuration boundaries
 
-`pnpm deploy <test|production>` verifies account ownership; `--apply` deploys. Verified production IDs live in `deploy/environments.json`; test IDs remain unset. The script passes the account through the environment for Pages, uses a temporary discoverable `wrangler.jsonc`, and copies Functions beside it. The API Worker has no public workers.dev route because Pages accesses it through its service binding.
+`pnpm run deploy <test|production>` verifies account ownership; add `--apply` to deploy. Use the explicit `run` form so pnpm does not interpret deployment flags as options for its built-in `deploy` command. Verified production IDs live in `deploy/environments.json`; test IDs remain unset. The script passes the account through the environment for Pages, uses a temporary discoverable `wrangler.jsonc`, and copies Functions beside it. The API Worker has no public workers.dev route because Pages accesses it through its service binding.
 
 - Root package scripts orchestrate release; inspect their current implementations rather than bypassing them with a direct Wrangler deploy.
 - `apps/server/wrangler.jsonc` owns Worker configuration and D1 binding names; the deployment guard/configuration owns verified target identity.
