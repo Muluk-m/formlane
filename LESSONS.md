@@ -4,6 +4,8 @@ Read before changing a related area. Entries distinguish observed migration mist
 
 ## This migration
 
+- **2026-11-11 — CI stalled on an unnecessary browser dependency install.** The GitHub Ubuntu runner already provides Google Chrome, and executor tests use that binary explicitly. Running Playwright's dependency installer first made the checks depend on Ubuntu mirror DNS and failed before any tests ran. Verify the installed Chrome executable, then run the unchanged browser tests; do not disable sandboxing or skip them.
+
 - **2026-11-11 — Tool-call generation was invisible until the tool executed.** Forwarding only ordinary model text left the code pane empty while `write_artifact` HTML arguments streamed. Observe the installed SDK's real argument events before Runner executes the tool; preserve JSON chunk boundaries and keep draft observation separate from workspace acceptance. Test actual Runner ordering, cancellation, escapes, and final-artifact deduplication.
 
 - **2026-11-11 — assistant-ui clears a draft before the host accepts it.** A plain rejected project-creation promise left the homepage input empty. Reject failed submissions with `MessageNotSentError` so the runtime restores the draft, and exercise the visible input after an actual browser error response.
