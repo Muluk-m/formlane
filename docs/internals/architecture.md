@@ -36,6 +36,10 @@ Generation and follow-up requests start durable runs and return run identity. Th
 
 Execution is real-provider only, with visible errors for missing credentials. Checkpoints can replay in-flight specialist calls; event identities are idempotent, but provider billing is not exactly-once. [ADR-0012](../adr/0012-durable-agent-harness.md) defines the durable harness decision and its evidence limits.
 
+Draft HTML is observed at the SDK model boundary while `write_artifact` arguments are still arriving. The incremental JSON reader emits `code_start` and `code` before tool execution; only the fully parsed, schema-validated tool call updates the workspace. Retry resets the visible draft to the durable workspace, and final reconciliation replaces rather than duplicates partial text. A draft is never a saved version or a publishable preview.
+
+Only explicitly public provider reasoning-summary events become `reasoning_summary` records. The configured Chat Completions provider has no supported public summary, so the interface shows actual delegation tasks and tool evidence without synthesizing reasoning or exposing raw model reasoning.
+
 ## Persistence and public boundary
 
 Read [data-model.md](data-model.md) for pointer and ownership invariants. Local schema setup is an explicit migration step; requests do not auto-create tables. D1/SQLite behavior must be respected instead of importing row-lock or transaction assumptions from the reference PostgreSQL application.

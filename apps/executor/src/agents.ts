@@ -3,6 +3,7 @@ import { OpenAIProvider } from '@openai/agents-openai'
 import { z } from 'zod'
 
 import type { ExecutorConfig } from './config'
+import { observeModelStream } from './model-stream'
 import type { DurableExecutor, HarnessContext, HarnessResult } from './types'
 import {
   artifactHash,
@@ -159,6 +160,9 @@ export async function executeHarness(
           .map((value) => value.toString(16).padStart(2, '0'))
           .join('')
         const messageId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+        const observed = observeModelStream(model, emit, signal, role, messageId)
+        // A retried delegation starts from its durable workspace, not an interrupted draft.
+        if (role === 'alex') await emit('code_reset', { text: current.html })
         await emit('tool_start', {
           id: stepName,
           name: `delegate_${role}`,
@@ -166,7 +170,7 @@ export async function executeHarness(
           childAgent: role,
           input: action.task,
         })
-        await emit('agent_start', { id: role, name: roles[role] })
+        await emit('agent_start', { id: role, name: roles[role], task: action.task })
         await emit('message_start', { id: messageId, role: 'agent', agent: role })
         const read = tool({
           name: 'read_workspace',
@@ -214,7 +218,7 @@ export async function executeHarness(
               agent: role,
               output: { revision: current.revision, bytes: html.length },
             })
-            await emit('code_reset', { text: html })
+            await observed.commit(html)
             return {
               revision: current.revision,
               message: 'Candidate stored. Run validate_preview; it is not accepted yet.',
@@ -348,7 +352,7 @@ export async function executeHarness(
                 : `You are an independent QA agent. Read workspace and user requirements. ${checkInstructions} Assess whether checks cover requested behavior, not tautologies. When coverage is insufficient, create your own complete check set with set_acceptance_checks, then run validate_preview yourself; do not ask Alex for fake code edits or HTML rewrites to add tests. Call validate_preview for actual browser evidence and record_review accepted true only if the current checks pass and the app meets the requested brief. Distinguish tool limitations or missing coverage from actual app defects. Request Alex repairs only for concrete app defects with evidence. Record_review false for unresolved defects or coverage gaps; never invent passing evidence or unrequested requirements.`
         const specialist = new Agent({
           name: roles[role],
-          model,
+          model: observed.model,
           instructions,
           toolUseBehavior: {
             stopAtToolNames:
