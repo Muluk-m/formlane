@@ -34,7 +34,7 @@ const router = os.router({
       projectsService.unpublish(context, input.id),
     ),
     remix: os.projects.remix.handler(({ input, context }) =>
-      projectsService.remix(context, input.id),
+      projectsService.remix(context, input.id, input.versionId),
     ),
     restore: os.projects.restore.handler(({ input, context }) =>
       projectsService.restore(context, input.id, input.versionId),

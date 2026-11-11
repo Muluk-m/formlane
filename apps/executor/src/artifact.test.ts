@@ -1,11 +1,11 @@
 import { expect, it } from 'vitest'
-import { applyArtifactEdits } from './agents'
+import { applyFileEdits } from './agents'
 
 const html =
   '<!doctype html><html><head><title>Market</title></head><body><script>const name = "old";</script><p>Keep me</p></body></html>'
 
 it('applies unique literal repairs in order without expanding replacement tokens', () => {
-  const updated = applyArtifactEdits(html, [
+  const updated = applyFileEdits(html, [
     { find: 'const name = "old";', replacement: 'const name = "$&";' },
     { find: 'const name = "$&";', replacement: 'const name = "$1";' },
   ])
@@ -15,10 +15,17 @@ it('applies unique literal repairs in order without expanding replacement tokens
 })
 
 it('rejects stale, ambiguous, unchanged and oversized repairs', () => {
-  expect(() => applyArtifactEdits(html, [{ find: 'missing', replacement: 'x' }])).toThrow()
-  expect(() => applyArtifactEdits(html, [{ find: 'html', replacement: 'main' }])).toThrow()
-  expect(() => applyArtifactEdits(html, [{ find: 'Market', replacement: 'Market' }])).toThrow()
+  expect(() => applyFileEdits(html, [{ find: 'missing', replacement: 'x' }])).toThrow()
+  expect(() => applyFileEdits(html, [{ find: 'html', replacement: 'main' }])).toThrow()
+  expect(() => applyFileEdits(html, [{ find: 'Market', replacement: 'Market' }])).toThrow()
   expect(() =>
-    applyArtifactEdits(html, [{ find: 'Market', replacement: 'x'.repeat(180000) }]),
+    applyFileEdits(html, [{ find: 'Market', replacement: 'x'.repeat(180000) }]),
   ).toThrow()
+})
+
+it('supports short source modules and empty files after a deletion edit', () => {
+  expect(applyFileEdits('export const n = 1', [{ find: '1', replacement: '2' }])).toBe(
+    'export const n = 2',
+  )
+  expect(applyFileEdits('remove me', [{ find: 'remove me', replacement: '' }])).toBe('')
 })

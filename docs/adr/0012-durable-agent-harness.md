@@ -17,14 +17,14 @@ Mike chooses the next specialist through a schema-validated SDK function tool. T
 The VM polls the API's `/internal/executor` control plane using bearer `EXECUTOR_TOKEN`; it exposes no public application port. D1 grants a 60-second lease, refreshed every 10 seconds. Lease tokens fence checkpoints, events and completion. Lost connectivity or service shutdown leaves work reclaimable after lease expiry; transient provider failures, including an HTTP response stream terminated after headers arrive, use bounded retries. Aborted signals are checked before retry classification, preserving explicit cancellation and deadline enforcement. The persisted 15-minute run deadline still applies across retries and reclaim.
 
 - Emma: product scope and observable acceptance criteria.
-- Bob: self-contained implementation architecture.
-- Alex: reads the workspace, writes candidate HTML and acceptance checks, runs the real browser validator, and repairs reported errors.
-- David: independently reads the workspace, runs browser checks, and accepts or rejects against the brief.
-- Completion requires a passing validation report for the current artifact hash and explicit reviewer acceptance.
+- Bob: selects and initializes the demand-appropriate project template and defines implementation architecture.
+- Alex: reads and modifies project files, builds the current source, writes acceptance checks, runs browser validation and repairs reported errors.
+- David: independently reads source, validates the current build and accepts or rejects against the brief.
+- Completion requires a build bound to the current source and artifact hashes, Alex's passing implementation validation and David's separate passing validation and explicit acceptance.
 
 Specialists terminate at evidence-producing tools: Alex returns immediately from `validate_preview`, and David returns from `record_review`. A failed implementation report goes back to Mike for a targeted repair delegation; a repaired artifact requires a new independent review. This avoids spending additional model turns on narration after the required tools have completed. Tool termination does not bypass the final acceptance gate.
 
-Targeted HTML repairs use ordered literal replacements that each match exactly once. The edit tool applies the complete set atomically, rejects stale or ambiguous targets, preserves the acceptance checks, and invalidates prior validation and review. Small fixes therefore do not require regenerating the whole document, while still requiring fresh browser evidence and independent acceptance.
+Targeted file repairs use ordered literal replacements that each match exactly once. The edit tool applies the complete set atomically, rejects stale or ambiguous targets, preserves acceptance checks, and invalidates the build, validation and review. Small fixes avoid regenerating unchanged files while requiring fresh evidence. Versioned `project-v1-*` checkpoint names keep obsolete HTML-only checkpoints out of the source workflow.
 
 Native Playwright launches sandboxed Chromium with a credential-stripped environment. Each check has a fresh context, opaque iframe, restrictive inherited CSP, blocked HTTP/WebSocket requests, blocked service workers and disabled downloads. Bounded declarative checks support click/fill/press/reload, text containment, exact value/count/attribute assertions, and a fixed horizontal-overflow assertion at a specified viewport. Polling and the final verdict use the same match result. Arbitrary model JavaScript is never evaluated in the privileged executor. Alex and David can replace acceptance checks independently of HTML; doing so invalidates previous validation and review. This avoids requiring implementation changes merely to improve test coverage. Failed validation returns evidence to the agent, not a successful saved version.
 

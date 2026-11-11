@@ -1,3 +1,4 @@
+import type { ProjectSource } from '@atoms-demo/core/project'
 import { sql } from 'drizzle-orm'
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
@@ -47,6 +48,7 @@ export const versions = sqliteTable(
     html: text('html').notNull(),
     prompt: text('prompt').notNull(),
     created_at: integer('created_at').notNull(),
+    source: text('source', { mode: 'json' }).$type<ProjectSource>().notNull(),
   },
   (table) => [uniqueIndex('idx_versions_number').on(table.project_id, table.number)],
 )

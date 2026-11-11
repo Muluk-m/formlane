@@ -1,12 +1,15 @@
+import type { ProjectSource } from '@atoms-demo/core/project'
+
 export interface HarnessContext {
   projectId: string
   runId: string
   idea: string
   request: string
-  previousHtml: string | null
+  previousSource: ProjectSource | null
 }
 
 export interface HarnessResult {
+  source: ProjectSource
   html: string
   summary: string
 }

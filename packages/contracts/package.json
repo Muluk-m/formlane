@@ -11,6 +11,7 @@
     "test": "node ../../scripts/vitest-guard.mjs"
   },
   "dependencies": {
+    "@atoms-demo/core": "workspace:*",
     "@orpc/contract": "^1.16.2",
     "zod": "^4.6.7"
   },

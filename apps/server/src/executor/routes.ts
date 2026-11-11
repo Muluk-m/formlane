@@ -1,5 +1,7 @@
 import { Buffer } from 'node:buffer'
 import { timingSafeEqual } from 'node:crypto'
+import { projectSourceSchema } from '@atoms-demo/contracts'
+import { MAX_PREVIEW_BYTES } from '@atoms-demo/core/project'
 import { eq } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
@@ -8,7 +10,7 @@ import type { Db } from '../db/client'
 import { projects } from '../db/schema'
 import type { Env } from '../env'
 import { publicRunFailure } from '../harness/errors'
-import { currentHtml } from '../modules/projects/projects.repo'
+import { currentVersion } from '../modules/projects/projects.repo'
 import * as runs from '../modules/projects/runs.repo'
 import { expireGeneration, maintainGenerations } from '../modules/projects/runs.service'
 
@@ -31,7 +33,12 @@ const eventSchema = leaseSchema.extend({
 })
 const completeSchema = leaseSchema.extend({
   result: z.object({
-    html: z.string().min(1).max(1_500_000),
+    source: projectSourceSchema,
+    html: z
+      .string()
+      .min(1)
+      .max(MAX_PREVIEW_BYTES)
+      .refine((html) => new TextEncoder().encode(html).byteLength <= MAX_PREVIEW_BYTES),
     summary: z.string().min(1).max(20_000),
   }),
 })
@@ -72,7 +79,8 @@ executorRoutes.post('/claim', async (c) => {
         runId: run.id,
         idea: project.idea,
         request: run.request,
-        previousHtml: await currentHtml(db, run.previous_version_id),
+        previousSource:
+          (await currentVersion(db, run.project_id, run.previous_version_id))?.source ?? null,
       },
       leaseToken: run.lease_token,
       deadline: run.deadline_at,

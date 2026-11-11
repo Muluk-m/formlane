@@ -5,7 +5,7 @@ import { type ConversationMessage, groupExecutionMessages, toAssistantMessages }
 
 const firstRun = '00000000-0000-4000-8000-000000000001'
 const secondRun = '00000000-0000-4000-8000-000000000002'
-const toolData = { id: 'delegate-0-alex:edit', name: 'edit_artifact', agent: 'alex' }
+const toolData = { id: 'delegate-0-alex:edit', name: 'edit_file', agent: 'alex' }
 
 function event(
   sequence: number,
@@ -309,4 +309,36 @@ it('replays only public reasoning summaries without duplicating chunks or exposi
   expect(converted[0]?.content).toEqual([
     { type: 'reasoning', text: 'Inspect the current app. Then validate the change.' },
   ])
+})
+
+it('shows actual project tool inputs and build failures without source prose', () => {
+  const build = { id: 'build-1', name: 'build_project', agent: 'alex' }
+  const failure = { ok: false, issues: ['src/App.tsx: Unterminated string'] }
+  const messages = toAssistantMessages(
+    [],
+    [
+      event(1, 'tool_start', { id: 'read-1', name: 'read_file', input: { path: 'src/App.tsx' } }),
+      event(2, 'tool_end', {
+        id: 'read-1',
+        name: 'read_file',
+        output: { path: 'src/App.tsx', content: 'export default App' },
+      }),
+      event(3, 'tool_start', build),
+      event(4, 'build_result', failure),
+      event(5, 'tool_end', { ...build, output: failure }),
+      event(6, 'file_delta', { path: 'src/App.tsx', text: 'private source draft' }),
+    ],
+    'failed',
+  )
+  expect(messages).toHaveLength(3)
+  expect(tool(messages[0])?.argsText).toBe(JSON.stringify({ path: 'src/App.tsx' }))
+  expect(tool(messages[1])).toMatchObject({
+    toolName: 'build_project',
+    isError: true,
+    result: failure,
+  })
+  expect(messages[2]).toMatchObject({
+    status: { type: 'incomplete', reason: 'error' },
+    content: [{ type: 'data', data: { type: 'build_result', data: failure } }],
+  })
 })

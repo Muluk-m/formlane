@@ -1,5 +1,20 @@
+import { validateProjectSource } from '@atoms-demo/core/project'
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
+
+export const projectTemplateSchema = z.enum(['vanilla', 'react-ts'])
+export const projectSourceSchema = z
+  .object({ template: projectTemplateSchema, files: z.record(z.string(), z.string()) })
+  .superRefine((source, context) => {
+    try {
+      validateProjectSource(source)
+    } catch (error) {
+      context.addIssue({
+        code: 'custom',
+        message: error instanceof Error ? error.message : 'Invalid project source.',
+      })
+    }
+  })
 
 export const projectStatusSchema = z.enum(['idle', 'generating', 'error'])
 export const agentIdSchema = z.enum(['mike', 'emma', 'bob', 'alex', 'david'])
@@ -29,6 +44,7 @@ export const versionSchema = z.object({
   prompt: z.string(),
   createdAt: z.number(),
   html: z.string().optional(),
+  source: projectSourceSchema.optional(),
 })
 export const ideaSchema = z.string().trim().min(1).max(4000)
 export const createProjectSchema = z.object({ idea: ideaSchema })
@@ -107,23 +123,37 @@ export const contract = {
           messages: z.array(messageSchema),
           versions: z.array(versionSchema),
           html: z.string().nullable(),
+          source: projectSourceSchema.nullable(),
         }),
       ),
     delete: api.route({ method: 'DELETE', path: '/projects/{id}' }).input(id).output(ok),
     version: api
       .route({ method: 'GET', path: '/projects/{id}/versions/{versionId}' })
       .input(versionId)
-      .output(z.object({ version: versionSchema.extend({ html: z.string() }) })),
+      .output(
+        z.object({
+          version: versionSchema.extend({ html: z.string(), source: projectSourceSchema }),
+        }),
+      ),
     publish: api
       .route({ method: 'POST', path: '/projects/{id}/publish' })
       .input(id)
       .output(z.object({ slug: z.string(), url: z.url(), versionId: z.uuid() })),
     unpublish: api.route({ method: 'POST', path: '/projects/{id}/unpublish' }).input(id).output(ok),
-    remix: api.route({ method: 'POST', path: '/projects/{id}/remix' }).input(id).output(project),
+    remix: api
+      .route({ method: 'POST', path: '/projects/{id}/remix' })
+      .input(id.extend({ versionId: z.uuid().optional() }))
+      .output(project),
     restore: api
       .route({ method: 'POST', path: '/projects/{id}/restore' })
       .input(versionId)
-      .output(project.extend({ html: z.string(), number: z.number().int().positive() })),
+      .output(
+        project.extend({
+          html: z.string(),
+          source: projectSourceSchema,
+          number: z.number().int().positive(),
+        }),
+      ),
     cancel: api.route({ method: 'POST', path: '/projects/{id}/cancel' }).input(id).output(ok),
   },
 }

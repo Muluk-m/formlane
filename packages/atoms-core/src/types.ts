@@ -1,3 +1,5 @@
+import type { ProjectSource } from './project'
+
 export type AgentId = 'mike' | 'emma' | 'bob' | 'alex' | 'david'
 export type ProjectStatus = 'idle' | 'generating' | 'error'
 
@@ -29,6 +31,7 @@ export interface AppVersion {
   prompt: string
   createdAt: number
   html?: string
+  source?: ProjectSource
 }
 
 export const AGENT_ORDER: AgentId[] = ['mike', 'emma', 'bob', 'alex', 'david']

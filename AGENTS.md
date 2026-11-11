@@ -1,10 +1,10 @@
 # Atoms Demo
 
-A browser-based AI product team: describe an app, watch specialist agents build a single HTML document, revise it, inspect versions, and publish a selected result. Start with [CONTEXT.md](CONTEXT.md) for product terminology. This file contains only rules needed on every task; follow the relevant pointers before changing a subsystem.
+A browser-based AI product team: describe an app, watch specialist agents select a template and build its source files, revise it, inspect versions, and publish a selected preview. Start with [CONTEXT.md](CONTEXT.md) for product terminology. This file contains only rules needed on every task; follow the relevant pointers before changing a subsystem.
 
 ## Invariants
 
-1. Preserve the original product loop: idea → streamed team conversation → complete preview → saved version → optional publication. Follow-up edits reuse the current HTML.
+1. Preserve the original product loop: idea → streamed team conversation → compiled preview → saved source version → optional publication. Follow-up edits reuse the current source tree; acceptance requires a build and browser evidence for that exact source.
 2. A failed or cancelled generation must not replace the last complete version. Partial stream content is not a saved success.
 3. Check anonymous ownership on the server before private project, message, version, or download access. A hidden button is not access control.
 4. Public `/p/:slug` serves only the explicitly published version. Restoring a version does not publish it; unpublishing revokes the public route.

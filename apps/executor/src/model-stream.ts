@@ -1,3 +1,4 @@
+import { isProjectPath } from '@atoms-demo/core/project'
 import { type Model, RunRawModelStreamEvent } from '@openai/agents-core'
 import {
   isOpenAIChatCompletionsRawModelStreamEvent,
@@ -5,40 +6,50 @@ import {
 } from '@openai/agents-openai'
 import type { HarnessEmit } from './types'
 
-/** Reads only a top-level HTML string. Tool/schema validation still owns complete JSON. */
-export class ArtifactJsonStream {
+/** Observes top-level write_file strings. Complete tool/schema validation owns durable source. */
+export class FileJsonStream {
+  path: string | null = null
   private depth = 0
   private expectingKey = false
   private key = ''
-  private stringKind: 'key' | 'html' | 'other' | null = null
+  private stringKind: 'key' | 'path' | 'content' | 'other' | null = null
+  private pathValue = ''
+  private beforePath = ''
+  private seenPath = false
+  private seenContent = false
   private escape = false
   private unicode: string | null = null
   private invalid = false
   private length = 0
   private surrogate = ''
 
-  push(chunk: string): string {
+  push(chunk: string): { path: string | null; text: string } {
     let output = ''
     const append = (character: string) => {
       if (this.stringKind === 'key') {
-        // Only the exact key "html" is interesting; do not retain arbitrary keys.
-        this.key = this.key.length < 5 ? this.key + character : this.key
-      } else if (this.stringKind === 'html') {
+        // Retain only enough to identify path/content, never arbitrary argument values.
+        if (this.key.length < 8) this.key += character
+      } else if (this.stringKind === 'path') {
+        this.pathValue += character
+        if (this.pathValue.length > 180) this.invalid = true
+      } else if (this.stringKind === 'content') {
         this.length++
         if (this.length > 180000) {
           this.invalid = true
           return
         }
         const code = character.charCodeAt(0)
+        let decoded = character
         if (this.surrogate) {
-          output += this.surrogate + character
+          decoded = this.surrogate + character
           this.surrogate = ''
         } else if (code >= 0xd800 && code <= 0xdbff) {
           // Never send half a UTF-16 pair through a JSON/UTF-8 event boundary.
           this.surrogate = character
-        } else {
-          output += character
+          return
         }
+        if (this.path) output += decoded
+        else this.beforePath += decoded
       }
     }
     for (let index = 0; index < chunk.length; index++) {
@@ -66,6 +77,14 @@ export class ArtifactJsonStream {
         } else if (character === '\\') {
           this.escape = true
         } else if (character === '"') {
+          if (this.stringKind === 'path') {
+            if (!isProjectPath(this.pathValue)) this.invalid = true
+            else {
+              this.path = this.pathValue
+              output += this.beforePath
+              this.beforePath = ''
+            }
+          }
           this.stringKind = null
           this.surrogate = ''
         } else if (character.charCodeAt(0) < 0x20) {
@@ -79,10 +98,18 @@ export class ArtifactJsonStream {
         this.stringKind =
           this.depth === 1 && this.expectingKey
             ? 'key'
-            : this.depth === 1 && this.key === 'html'
-              ? 'html'
+            : this.depth === 1 && (this.key === 'path' || this.key === 'content')
+              ? this.key
               : 'other'
         if (this.stringKind === 'key') this.key = ''
+        if (this.stringKind === 'path') {
+          if (this.seenPath) this.invalid = true
+          this.seenPath = true
+        }
+        if (this.stringKind === 'content') {
+          if (this.seenContent) this.invalid = true
+          this.seenContent = true
+        }
         this.expectingKey = false
       } else if (character === '{' || character === '[') {
         this.depth++
@@ -94,7 +121,7 @@ export class ArtifactJsonStream {
         this.key = ''
       }
     }
-    return output
+    return { path: this.path, text: output }
   }
 }
 
@@ -109,9 +136,22 @@ const jsonEscapes: Record<string, string> = {
   t: '\t',
 }
 
-type Call = { name: string; pending: string; reader: ArtifactJsonStream; started: boolean }
+type Call = {
+  name: string
+  argumentsPending: string
+  textPending: string
+  reader: FileJsonStream
+  started: boolean
+}
+const newCall = (name = ''): Call => ({
+  name,
+  argumentsPending: '',
+  textPending: '',
+  reader: new FileJsonStream(),
+  started: false,
+})
 
-/** Await observations at the provider boundary, before Runner can execute the completed tool. */
+/** Await observations at the provider boundary, before Runner executes a completed tool. */
 export function observeModelStream(
   model: Model,
   emit: HarnessEmit,
@@ -119,36 +159,36 @@ export function observeModelStream(
   agent: string,
   messageId: string,
 ) {
-  let draft: string | null = null
-  let pending = ''
-  const flush = async () => {
+  let calls = new Map<string | number, Call>()
+  const flush = async (call: Call) => {
     signal.throwIfAborted()
-    if (!pending) return
-    const text = pending
-    pending = ''
-    await emit('code', { text })
+    if (!call.textPending || !call.reader.path) return
+    const text = call.textPending
+    call.textPending = ''
+    await emit('file_delta', { path: call.reader.path, text })
+  }
+  const flushAll = async () => {
+    for (const call of calls.values()) await flush(call)
   }
   const append = async (call: Call, argumentsDelta: string) => {
-    const text = call.reader.push(argumentsDelta)
-    if (!text) return
-    if (!call.started) {
-      await flush()
+    const { path, text } = call.reader.push(argumentsDelta)
+    if (!path || !text) return
+    const first = !call.started
+    if (first) {
       call.started = true
-      draft = ''
-      await emit('code_start', { path: 'index.html', agent })
+      await emit('file_start', { path, agent })
     }
-    draft = (draft ?? '') + text
-    pending += text
-    // Show the first actual fragment immediately, then batch durable writes.
-    if (draft.length === text.length || pending.length >= 512) await flush()
+    call.textPending += text
+    // Show the first actual fragment immediately, then batch durable writes per file.
+    if (first || call.textPending.length >= 512) await flush(call)
   }
   const observed: Model = {
     supportsPromptModelSelection: model.supportsPromptModelSelection,
     getResponse: (request) => model.getResponse(request),
     getRetryAdvice: (request) => model.getRetryAdvice?.(request),
     async *getStreamedResponse(request) {
-      pending = ''
-      const calls = new Map<string | number, Call>()
+      // A provider retry cannot flush the interrupted response's unsaved fragments.
+      calls = new Map()
       for await (const data of model.getStreamedResponse(request)) {
         signal.throwIfAborted()
         const event = new RunRawModelStreamEvent(data)
@@ -157,54 +197,48 @@ export function observeModelStream(
           for (const delta of choice?.delta.tool_calls ?? []) {
             let call = calls.get(delta.index)
             if (!call) {
-              call = { name: '', pending: '', reader: new ArtifactJsonStream(), started: false }
+              call = newCall()
               calls.set(delta.index, call)
             }
             call.name += delta.function?.name ?? ''
             const argumentsDelta = delta.function?.arguments ?? ''
-            if (call.name === 'write_artifact') {
-              await append(call, call.pending + argumentsDelta)
-              call.pending = ''
-            } else if ('write_artifact'.startsWith(call.name)) {
-              // A compatible provider can split the function name or send arguments first.
-              if (call.pending.length + argumentsDelta.length <= 1200000)
-                call.pending += argumentsDelta
+            if (call.name === 'write_file') {
+              await append(call, call.argumentsPending + argumentsDelta)
+              call.argumentsPending = ''
+            } else if ('write_file'.startsWith(call.name)) {
+              // Compatible providers can split function names or send arguments first.
+              if (call.argumentsPending.length + argumentsDelta.length <= 1200000)
+                call.argumentsPending += argumentsDelta
             }
           }
         } else if (isOpenAIResponsesRawModelStreamEvent(event)) {
           const raw = event.data.event
           if (raw.type === 'response.output_item.added' && raw.item.type === 'function_call') {
-            const call = {
-              name: raw.item.name,
-              pending: '',
-              reader: new ArtifactJsonStream(),
-              started: false,
-            }
+            const call = newCall(raw.item.name)
             calls.set(raw.item.id ?? raw.item.call_id, call)
-            if (call.name === 'write_artifact') await append(call, raw.item.arguments)
+            if (call.name === 'write_file') await append(call, raw.item.arguments)
           } else if (raw.type === 'response.function_call_arguments.delta') {
             const call = calls.get(raw.item_id)
-            if (call?.name === 'write_artifact') await append(call, raw.delta)
+            if (call?.name === 'write_file') await append(call, raw.delta)
           } else if (raw.type === 'response.reasoning_summary_text.delta' && raw.delta) {
             // This explicitly public summary is distinct from raw reasoning/text/content.
             await emit('reasoning_summary', { id: messageId, agent, text: raw.delta })
           }
         }
-        if (data.type === 'response_done') await flush()
+        if (data.type === 'response_done') await flushAll()
         yield data
       }
-      await flush()
+      await flushAll()
     },
   }
   return {
     model: observed,
-    async commit(html: string) {
+    async commit(path: string, content: string) {
       signal.throwIfAborted()
-      await flush()
-      // Complete tool arguments may differ from a malformed/incomplete draft. Replace,
-      // never append the entire artifact a second time after successful streaming.
-      if (draft !== html) await emit('code_reset', { text: html })
-      draft = html
+      await flushAll()
+      signal.throwIfAborted()
+      // Reconcile the complete, validated file by replacement; never append it twice.
+      await emit('file_saved', { path, content })
     },
   }
 }
