@@ -14,7 +14,7 @@ The original Cloudflare Workflows plus Cloudflare browser binding implementation
 
 Mike chooses the next specialist through a schema-validated SDK function tool. That decision is a durable step. Its selected specialist executes a separate Agent/Runner with its own context and role-scoped tools in another step. The next manager turn receives actual specialist results. The executor persists each completed step remotely before advancing and reuses saved results after restart. In-flight calls may replay after a crash; provider billing is not exactly-once.
 
-The VM polls the API's `/internal/executor` control plane using bearer `EXECUTOR_TOKEN`; it exposes no public application port. D1 grants a 60-second lease, refreshed every 10 seconds. Lease tokens fence checkpoints, events and completion. Lost connectivity or service shutdown leaves work reclaimable after lease expiry; transient provider failures have bounded retries. The persisted 15-minute run deadline still applies across retries and reclaim.
+The VM polls the API's `/internal/executor` control plane using bearer `EXECUTOR_TOKEN`; it exposes no public application port. D1 grants a 60-second lease, refreshed every 10 seconds. Lease tokens fence checkpoints, events and completion. Lost connectivity or service shutdown leaves work reclaimable after lease expiry; transient provider failures, including an HTTP response stream terminated after headers arrive, use bounded retries. Aborted signals are checked before retry classification, preserving explicit cancellation and deadline enforcement. The persisted 15-minute run deadline still applies across retries and reclaim.
 
 - Emma: product scope and observable acceptance criteria.
 - Bob: self-contained implementation architecture.

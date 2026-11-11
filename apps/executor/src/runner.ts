@@ -24,19 +24,26 @@ class RunTimeout extends Error {
   }
 }
 
-function providerRetryable(error: unknown): boolean {
+export function providerRetryable(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   if ('status' in error && typeof error.status === 'number')
     return error.status === 429 || error.status >= 500
-  return [
-    'APIConnectionError',
-    'APIConnectionTimeoutError',
-    'RateLimitError',
-    'InternalServerError',
-  ].includes(error.name)
+  // Fetch can fail mid-stream after the SDK has already accepted response headers.
+  if (error instanceof TypeError && error.message === 'terminated') return true
+  return (
+    [
+      'APIConnectionError',
+      'APIConnectionTimeoutError',
+      'RateLimitError',
+      'InternalServerError',
+    ].includes(error.name) ||
+    /overloaded|try again later|temporarily unavailable|concurrency limit exceeded/i.test(
+      error.message,
+    )
+  )
 }
 
-function failureFor(error: unknown): {
+export function failureFor(error: unknown): {
   code: 'provider' | 'validation' | 'timeout' | 'internal'
   message: string
 } {
@@ -53,6 +60,18 @@ function failureFor(error: unknown): {
         'The generated app did not pass validation after repair. Your previous version is unchanged.',
     }
   if (
+    error instanceof Error &&
+    /overloaded|try again later|temporarily unavailable|concurrency limit exceeded/i.test(
+      error.message,
+    )
+  )
+    return {
+      code: 'provider',
+      message:
+        'The model provider is temporarily overloaded. Check the provider configuration and try again.',
+    }
+  if (
+    providerRetryable(error) ||
     code === 'provider' ||
     (error instanceof Error &&
       [
@@ -143,8 +162,8 @@ async function executeJob(
           return result
         } catch (error) {
           signal.throwIfAborted()
-          if (!providerRetryable(error) || attempt >= 2) throw error
-          await delay(2000 * 2 ** attempt, undefined, { signal })
+          if (!providerRetryable(error) || attempt >= 4) throw error
+          await delay(Math.min(60_000, 10_000 * 2 ** attempt), undefined, { signal })
         }
       }
     },
@@ -188,7 +207,15 @@ async function executeJob(
         )
     }
     console.error(
-      JSON.stringify({ event: 'run_failed', runId: job.context.runId, code: failure.code }),
+      JSON.stringify({
+        event: 'run_failed',
+        runId: job.context.runId,
+        code: failure.code,
+        cause:
+          cause instanceof Error
+            ? { name: cause.name, message: cause.message.slice(0, 300) }
+            : { name: typeof cause },
+      }),
     )
   } finally {
     clearTimeout(timer)
