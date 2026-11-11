@@ -21,7 +21,7 @@ The server workspace is Wrangler's working directory; its local configuration li
 - Changes to API shapes begin in contracts, then update server and web. Runtime-independent helpers belong in core; SDK agents, scoped tools, native browser validation and checkpoint orchestration belong in `apps/executor`. D1 persistence and lease authorization belong in `apps/server`.
 - All visible copy uses the single i18n catalog. All product controls use UI. Feature-specific composition stays in the web application.
 - Drizzle schema and SQL migrations move together. Local D1 and deployment bindings are distinct configurations.
-- Preserve initialization and run-fence migration history and apply additive run/event migrations through `0004_executor_leases.sql` before using the executor. Generate Worker binding types with the server's `cf:typegen` script when bindings change. Read [ADR-0012](../adr/0012-durable-agent-harness.md) before changing durable execution.
+- Preserve migration history through `0005_project_sources.sql`. Apply the source snapshot migration before starting a source-aware API/executor, with old runs drained and old executors stopped. Generate Worker binding types with the server's `cf:typegen` script when bindings change. Read [ADR-0012](../adr/0012-durable-agent-harness.md) before changing durable execution.
 
 ## Checks and resource use
 
