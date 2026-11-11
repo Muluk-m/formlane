@@ -9,7 +9,7 @@ Try the [live workspace](https://formlane-9dp.pages.dev) or the [published marke
 ![Idea workspace](docs/screenshots/home-redesign-desktop.png)
 ![Execution trace and generated code](docs/screenshots/execution-redesign-desktop.png)
 
-The screenshots show the redesigned interface using a persisted real-provider counter project. See the [mobile homepage](docs/screenshots/home-redesign-mobile.png), [mobile source view](docs/screenshots/code-redesign-mobile.png), and [published market example](docs/screenshots/real-market-desktop.png).
+The screenshots show the deployed interface and a persisted real-provider counter project. See the [live draft before acceptance](docs/screenshots/live-draft-production.png), [mobile homepage](docs/screenshots/home-redesign-mobile.png), [mobile source view](docs/screenshots/code-redesign-mobile.png), and [published market example](docs/screenshots/real-market-desktop.png).
 
 ## Features
 
