@@ -6,10 +6,10 @@ This is a recreation of the core [atoms.dev](https://atoms.dev/) loop: team conv
 
 Try the [live workspace](https://formlane-9dp.pages.dev) or the [published market example](https://formlane-9dp.pages.dev/p/7e2g3qqnnd).
 
-![assistant-ui workspace with a real agent run](docs/screenshots/assistant-workspace.png)
+![Production assistant-ui workspace](docs/screenshots/assistant-production.png)
 ![Published market application](docs/screenshots/real-market-desktop.png)
 
-The workspace screenshot shows assistant-ui observing a real Grok run. See the [mobile conversation](docs/screenshots/assistant-mobile.png) and [prompt composer](docs/screenshots/assistant-home.png). The market screenshot records the previously accepted published application.
+The workspace screenshot shows the deployed assistant-ui interface and the accepted market application. See the [counter verification workspace](docs/screenshots/assistant-workspace.png), [mobile conversation](docs/screenshots/assistant-mobile.png), and [prompt composer](docs/screenshots/assistant-home.png).
 
 ## Features
 
