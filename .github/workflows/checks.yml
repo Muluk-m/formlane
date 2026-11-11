@@ -23,7 +23,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
-      - run: pnpm --filter @atoms-demo/executor exec playwright install --with-deps chrome
+      - run: /opt/google/chrome/chrome --version
       - run: pnpm test
         env:
           CHROMIUM_EXECUTABLE_PATH: /opt/google/chrome/chrome
