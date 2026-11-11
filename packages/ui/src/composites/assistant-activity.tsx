@@ -1,5 +1,7 @@
 import {
   type DataMessagePartProps,
+  type MessageStatus,
+  type ReasoningMessagePartProps,
   type ToolCallMessagePartProps,
   useAuiState,
 } from '@assistant-ui/react'
@@ -24,6 +26,7 @@ type ActivityTone =
   | 'incomplete'
   | 'waiting'
   | 'recorded'
+type ExecutionState = { agent?: string | null; status?: MessageStatus }
 
 const toolNames = {
   read_workspace: 'ui.assistant.tools.read_workspace',
@@ -39,8 +42,51 @@ const toolNames = {
   delegate_david: 'ui.assistant.tools.delegate_david',
 } as const
 
-function knownTool(name: string): name is keyof typeof toolNames {
-  return Object.hasOwn(toolNames, name)
+const fieldNames = {
+  task: 'ui.assistant.fields.task',
+  summary: 'ui.assistant.fields.summary',
+  findings: 'ui.assistant.fields.findings',
+  issues: 'ui.assistant.fields.issues',
+  checks: 'ui.assistant.fields.checks',
+  accepted: 'ui.assistant.fields.accepted',
+  valid: 'ui.assistant.fields.valid',
+  passed: 'ui.assistant.fields.passed',
+  name: 'ui.assistant.fields.name',
+  actual: 'ui.assistant.fields.actual',
+  expected: 'ui.assistant.fields.expected',
+  revision: 'ui.assistant.fields.revision',
+  htmlLength: 'ui.assistant.fields.htmlLength',
+  checkCount: 'ui.assistant.fields.checkCount',
+  error: 'ui.assistant.fields.error',
+  brief: 'ui.assistant.fields.brief',
+  architecture: 'ui.assistant.fields.architecture',
+} as const
+const technicalFields: Record<string, true> = {
+  id: true,
+  runId: true,
+  artifactHash: true,
+  html: true,
+  createdAt: true,
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function useExecutionState(id?: string): ExecutionState {
+  const custom = useAuiState((s) => s.message.metadata.custom)
+  const status = useAuiState((s) => s.message.status)
+  // This metadata is constructed by the conversation adapter, not the model.
+  const states = custom.partStates as Record<string, ExecutionState> | undefined
+  return (id ? states?.[id] : undefined) ?? { status }
+}
+
+function statusTone(status?: MessageStatus): ActivityTone {
+  if (status?.type === 'running') return 'running'
+  if (status?.type === 'complete') return 'complete'
+  if (status?.reason === 'cancelled') return 'cancelled'
+  if (status?.reason === 'error') return 'failed'
+  return 'incomplete'
 }
 
 export function AssistantActivityIcon({ tone }: { tone: ActivityTone }) {
@@ -59,7 +105,7 @@ export function AssistantActivityIcon({ tone }: { tone: ActivityTone }) {
       aria-hidden
       className={cn(
         'size-4 shrink-0',
-        tone === 'running' && 'motion-safe:animate-spin',
+        tone === 'running' && 'motion-safe:animate-spin text-info',
         tone === 'complete' && 'text-success',
         tone === 'failed' && 'text-destructive',
         (tone === 'incomplete' || tone === 'cancelled') && 'text-warning',
@@ -73,32 +119,71 @@ function ActivityRow({
   tone,
   children,
   testId,
+  actor,
+  summary,
 }: {
   label: string
   tone: ActivityTone
-  children: ReactNode
+  children?: ReactNode
   testId: string
+  actor?: string | null
+  summary?: string
 }) {
   const { t } = useI18n()
+  const heading = (
+    <>
+      <AssistantActivityIcon tone={tone} />
+      <span className="min-w-0 flex-1 text-sm leading-5">
+        {actor && (
+          <span className="mr-2 text-xs text-muted-foreground">
+            {actor.charAt(0).toUpperCase() + actor.slice(1)}
+          </span>
+        )}
+        <span className="font-medium text-foreground">{label}</span>
+      </span>
+      <span
+        className={cn(
+          'shrink-0 text-xs',
+          tone === 'failed' ? 'text-destructive' : 'text-muted-foreground',
+        )}
+      >
+        {t(`ui.assistant.toolStatus.${tone}`)}
+      </span>
+    </>
+  )
+  if (!children)
+    return (
+      <div
+        className="flex min-w-0 items-center gap-2 px-2 py-2"
+        data-testid={testId}
+        data-status={tone}
+      >
+        {heading}
+      </div>
+    )
   return (
     <Collapsible
-      className="min-w-0 rounded-lg border border-border bg-surface-sunken/60"
+      defaultOpen={tone === 'failed'}
+      className="min-w-0"
       data-testid={testId}
       data-status={tone}
     >
-      <CollapsibleTrigger className="group flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-muted-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring">
-        <AssistantActivityIcon tone={tone} />
-        <span className="min-w-0 flex-1 break-words font-medium text-foreground">{label}</span>
-        <span className="shrink-0 text-xs">{t(`ui.assistant.toolStatus.${tone}`)}</span>
+      <CollapsibleTrigger className="group flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-left outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring">
+        {heading}
         <HugeiconsIcon
           icon={ArrowDown01Icon}
           strokeWidth={1.5}
           aria-hidden
-          className="size-3.5 shrink-0 transition-transform group-aria-expanded:rotate-180 motion-reduce:transition-none"
+          className="size-3.5 shrink-0 text-muted-foreground transition-transform group-aria-expanded:rotate-180 motion-reduce:transition-none"
         />
       </CollapsibleTrigger>
+      {summary && (
+        <p className="mb-2 ml-8 mr-3 line-clamp-3 break-words text-xs leading-5 text-muted-foreground">
+          {summary}
+        </p>
+      )}
       <CollapsibleContent>
-        <div className="space-y-3 border-t border-border px-3 py-3 text-xs leading-5">
+        <div className="mb-3 ml-4 space-y-3 border-l border-border py-1 pl-4 pr-2 text-xs leading-5">
           {children}
         </div>
       </CollapsibleContent>
@@ -106,84 +191,126 @@ function ActivityRow({
   )
 }
 
-/** Structured values stay readable; exact nested payloads remain available on demand. */
+function TechnicalDetails({ value }: { value: unknown }) {
+  const { t } = useI18n()
+  return (
+    <Collapsible>
+      <CollapsibleTrigger className="cursor-pointer rounded text-xs text-muted-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        {t('ui.assistant.rawDetails')}
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-surface-sunken p-3 font-mono text-xs">
+          {JSON.stringify(value, null, 2)}
+        </pre>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
 function DetailValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
   const { t } = useI18n()
-  if (value === null || value === undefined || value === '') {
+  if (value === null || value === undefined || value === '')
     return <span className="text-muted-foreground">{t('ui.assistant.emptyValue')}</span>
-  }
-  if (typeof value === 'boolean') {
+  if (typeof value === 'boolean')
     return <span>{t(value ? 'ui.assistant.true' : 'ui.assistant.false')}</span>
+  if (typeof value === 'string' && depth < 2 && /^\s*[[{]/.test(value)) {
+    try {
+      const parsed: unknown = JSON.parse(value)
+      if (isObject(parsed) || Array.isArray(parsed))
+        return <DetailValue value={parsed} depth={depth + 1} />
+    } catch {
+      /* Ordinary text and incomplete JSON stay readable. */
+    }
   }
-  if (typeof value === 'string' || typeof value === 'number') {
+  if (typeof value === 'string' || typeof value === 'number')
     return <p className="max-h-64 overflow-auto whitespace-pre-wrap break-words">{String(value)}</p>
-  }
-  if (depth > 1) {
-    return (
-      <Collapsible>
-        <CollapsibleTrigger className="cursor-pointer rounded text-muted-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          {t('ui.assistant.rawDetails')}
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-2 font-mono text-xs">
-            {JSON.stringify(value, null, 2)}
-          </pre>
-        </CollapsibleContent>
-      </Collapsible>
-    )
-  }
-  if (Array.isArray(value)) {
-    if (!value.length)
-      return <span className="text-muted-foreground">{t('ui.assistant.emptyValue')}</span>
-    return (
-      <ul className="list-disc space-y-1 pl-4">
+  if (depth > 2) return <TechnicalDetails value={value} />
+  if (Array.isArray(value))
+    return value.length ? (
+      <ul className="space-y-2">
         {value.map((item, index) => (
-          // Tool payload arrays are immutable snapshots and have no stable item identifiers.
-          // biome-ignore lint/suspicious/noArrayIndexKey: Preserve the tool's recorded array order.
-          <li key={index}>
+          // biome-ignore lint/suspicious/noArrayIndexKey: Immutable result entries have no identifiers.
+          <li key={index} className="border-l-2 border-border pl-3">
             <DetailValue value={item} depth={depth + 1} />
           </li>
         ))}
       </ul>
+    ) : (
+      <span className="text-muted-foreground">{t('ui.assistant.emptyValue')}</span>
     )
-  }
-  const entries = Object.entries(typeof value === 'object' ? value : {})
-  if (!entries.length)
-    return <span className="text-muted-foreground">{t('ui.assistant.emptyValue')}</span>
+  const entries = Object.entries(isObject(value) ? value : {})
+  const visible = entries.filter(([key]) => !Object.hasOwn(technicalFields, key))
+  const technical = Object.fromEntries(
+    entries.filter(([key]) => Object.hasOwn(technicalFields, key)),
+  )
   return (
-    <dl className="space-y-2">
-      {entries.map(([key, item]) => (
-        <div key={key} className="min-w-0">
-          <dt className="mb-0.5 break-words font-medium text-muted-foreground">
-            {key.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2')}
-          </dt>
-          <dd className="min-w-0">
-            <DetailValue value={item} depth={depth + 1} />
-          </dd>
-        </div>
-      ))}
-    </dl>
+    <div className="space-y-3">
+      <dl className="space-y-3">
+        {visible.map(([key, item]) => (
+          <div key={key} className="min-w-0">
+            <dt className="mb-1 break-words text-xs font-medium text-muted-foreground">
+              {Object.hasOwn(fieldNames, key)
+                ? t(fieldNames[key as keyof typeof fieldNames])
+                : key.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2')}
+            </dt>
+            <dd className="min-w-0 text-foreground">
+              <DetailValue value={item} depth={depth + 1} />
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {Object.keys(technical).length > 0 && <TechnicalDetails value={technical} />}
+    </div>
   )
 }
 
 export function AssistantStructuredOutput({ data }: DataMessagePartProps) {
   const { t } = useI18n()
-  const failed =
-    data !== null &&
-    typeof data === 'object' &&
-    (('valid' in data && data.valid === false) || ('accepted' in data && data.accepted === false))
+  const failed = isObject(data) && (data.valid === false || data.accepted === false)
+  const report = isObject(data) ? data : undefined
+  const label =
+    typeof report?.accepted === 'boolean'
+      ? t(report.accepted ? 'ui.assistant.reviewPassed' : 'ui.assistant.reviewNeedsWork')
+      : typeof report?.valid === 'boolean'
+        ? t(report.valid ? 'atoms.validationPassed' : 'atoms.validationFailed')
+        : t('ui.assistant.result')
+  const checks = Array.isArray(report?.checks) ? report.checks : undefined
+  const summary =
+    typeof report?.findings === 'string'
+      ? report.findings
+      : typeof report?.summary === 'string'
+        ? report.summary
+        : checks?.length
+          ? t('ui.assistant.checksPassed', {
+              count: checks.filter((check) => isObject(check) && check.passed === true).length,
+              total: checks.length,
+            })
+          : undefined
   return (
-    <ActivityRow
-      label={t('ui.assistant.result')}
-      tone={failed ? 'failed' : 'recorded'}
-      testId="structured-output"
+    <div
+      className="rounded-xl border border-border bg-surface-sunken/30 p-2"
+      data-testid="structured-output"
     >
-      <DetailValue value={data} />
-    </ActivityRow>
+      <ActivityRow
+        label={label}
+        summary={summary}
+        tone={
+          failed
+            ? 'failed'
+            : report?.valid === true || report?.accepted === true
+              ? 'complete'
+              : 'recorded'
+        }
+        testId="result-details"
+      >
+        <DetailValue value={data} />
+      </ActivityRow>
+    </div>
   )
 }
 
 export function AssistantToolCall({
+  toolCallId,
   toolName,
   args,
   result,
@@ -192,40 +319,61 @@ export function AssistantToolCall({
   status,
 }: ToolCallMessagePartProps<unknown>) {
   const { t } = useI18n()
-  const messageStatus = useAuiState((s) => s.message.status)
-  // A completed message alone is not evidence that a server-side tool returned.
+  const state = useExecutionState(toolCallId)
   const hasResult = result !== undefined
   const tone: ActivityTone = isError
     ? 'failed'
     : hasResult && !isPreliminary
       ? 'complete'
-      : messageStatus?.type === 'running'
-        ? 'running'
-        : messageStatus?.type === 'incomplete'
-          ? messageStatus.reason === 'cancelled'
-            ? 'cancelled'
-            : 'incomplete'
-          : status.type === 'requires-action'
-            ? 'waiting'
-            : 'incomplete'
-  const label = knownTool(toolName) ? t(toolNames[toolName]) : toolName.replace(/_/g, ' ')
+      : state.status
+        ? statusTone(state.status) === 'complete'
+          ? 'incomplete'
+          : statusTone(state.status)
+        : status.type === 'requires-action'
+          ? 'waiting'
+          : 'incomplete'
+  const label = Object.hasOwn(toolNames, toolName)
+    ? t(toolNames[toolName as keyof typeof toolNames])
+    : toolName.replace(/_/g, ' ')
+  const input =
+    isObject(args) && typeof args.input === 'string'
+      ? args.input
+      : isObject(args) && typeof args.task === 'string'
+        ? args.task
+        : undefined
+  const error = isObject(result) && typeof result.error === 'string' ? result.error : undefined
+  const hasArgs = args !== undefined && (!isObject(args) || Object.keys(args).length > 0)
   return (
-    <ActivityRow label={label} tone={tone} testId="tool-call">
-      <p className="break-all font-mono text-muted-foreground">{toolName}</p>
-      {args !== undefined && (
+    <ActivityRow
+      label={label}
+      actor={state.agent}
+      tone={tone}
+      summary={error ?? input}
+      testId="tool-call"
+    >
+      {hasArgs && (
         <section aria-label={t('ui.assistant.input')}>
-          <h3 className="mb-1 font-medium">{t('ui.assistant.input')}</h3>
-          <DetailValue value={args} />
+          <h3 className="mb-2 font-medium text-muted-foreground">{t('ui.assistant.input')}</h3>
+          <DetailValue value={input ?? args} />
         </section>
       )}
       <section aria-label={t('ui.assistant.result')}>
-        <h3 className="mb-1 font-medium">{t('ui.assistant.result')}</h3>
+        <h3 className="mb-2 font-medium text-muted-foreground">{t('ui.assistant.result')}</h3>
         {hasResult ? (
           <DetailValue value={result} />
         ) : (
-          <p className="text-muted-foreground">{t('ui.assistant.noResult')}</p>
+          <p className="text-muted-foreground">
+            {t(tone === 'running' ? 'ui.assistant.awaitingResult' : 'ui.assistant.noResult')}
+          </p>
         )}
       </section>
+      <TechnicalDetails
+        value={{
+          tool: toolName,
+          ...(hasArgs ? { input: args } : {}),
+          ...(hasResult ? { output: result } : {}),
+        }}
+      />
     </ActivityRow>
   )
 }
@@ -235,56 +383,66 @@ type ActivityData = {
   data: Record<string, unknown>
 }
 
-export function AssistantActivity({ data: event }: DataMessagePartProps<ActivityData>) {
+export function AssistantActivity({ id, data: event }: DataMessagePartProps<ActivityData>) {
   const { t } = useI18n()
-  const status = useAuiState((s) => s.message.status)
+  const { status } = useExecutionState(id)
   const detail = event.data
   const name = typeof detail.name === 'string' ? detail.name : t('ui.assistant.name')
-  const interrupted = status?.type === 'incomplete'
-  let label: string
-  let tone: ActivityTone
-  switch (event.type) {
-    case 'agent_start':
-      label = t(
-        interrupted || status?.type !== 'running'
-          ? 'ui.assistant.agentInterrupted'
-          : 'ui.assistant.agentWorking',
-        { name },
-      )
-      tone =
-        status?.type === 'running'
-          ? 'running'
-          : status?.reason === 'cancelled'
-            ? 'cancelled'
-            : 'incomplete'
-      break
-    case 'agent_end':
-      label = t(interrupted ? 'ui.assistant.agentInterrupted' : 'ui.assistant.agentDone', { name })
-      tone = interrupted ? 'failed' : 'complete'
-      break
-    case 'validation':
-      label = t(
+  if (event.type === 'agent_start' || event.type === 'agent_end') {
+    const tone = statusTone(status)
+    const label = t(
+      tone === 'running'
+        ? 'ui.assistant.agentWorking'
+        : tone === 'complete'
+          ? 'ui.assistant.agentDone'
+          : 'ui.assistant.agentInterrupted',
+      { name },
+    )
+    const task = typeof detail.task === 'string' ? detail.task : undefined
+    return (
+      <ActivityRow label={label} tone={tone} testId="agent-activity">
+        {task ? <p className="whitespace-pre-wrap break-words">{task}</p> : undefined}
+      </ActivityRow>
+    )
+  }
+  const validation = event.type === 'validation'
+  const label = validation
+    ? t(
         detail.valid === true
           ? 'atoms.validationPassed'
           : detail.valid === false
             ? 'atoms.validationFailed'
             : 'ui.assistant.validation',
       )
-      tone = detail.valid === true ? 'complete' : detail.valid === false ? 'failed' : 'incomplete'
-      break
-    case 'repair':
-      label =
-        typeof detail.attempt === 'number'
-          ? t('atoms.repairAttempt', { attempt: detail.attempt })
-          : t('ui.assistant.repair')
-      tone = interrupted ? 'incomplete' : 'recorded'
-      break
-    default:
-      return null
-  }
+    : typeof detail.attempt === 'number'
+      ? t('atoms.repairAttempt', { attempt: detail.attempt })
+      : t('ui.assistant.repair')
+  const tone = validation
+    ? detail.valid === true
+      ? 'complete'
+      : detail.valid === false
+        ? 'failed'
+        : 'incomplete'
+    : 'recorded'
   return (
     <ActivityRow label={label} tone={tone} testId="agent-activity">
       <DetailValue value={detail} />
     </ActivityRow>
+  )
+}
+
+export function AssistantReasoning({ text }: ReasoningMessagePartProps) {
+  const { t } = useI18n()
+  return (
+    <section
+      className="mx-2 my-3 border-l-2 border-info/30 pl-4"
+      data-testid="reasoning-summary"
+      aria-label={t('ui.assistant.reasoning')}
+    >
+      <h3 className="mb-2 text-xs font-medium text-info">{t('ui.assistant.reasoning')}</h3>
+      <p className="whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">
+        {text}
+      </p>
+    </section>
   )
 }

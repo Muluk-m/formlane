@@ -1,7 +1,7 @@
 import type { MessageStatus, ThreadMessageLike } from '@assistant-ui/react'
 import type { Run, RunEvent } from '@atoms-demo/contracts'
 import { expect, it } from 'vitest'
-import { type ConversationMessage, toAssistantMessages } from './messages'
+import { type ConversationMessage, groupExecutionMessages, toAssistantMessages } from './messages'
 
 const firstRun = '00000000-0000-4000-8000-000000000001'
 const secondRun = '00000000-0000-4000-8000-000000000002'
@@ -199,4 +199,114 @@ it('discloses complete structured agent output without rewriting user text or pa
   expect(output[1]?.content).toEqual([{ type: 'text', text: report.content }])
   expect(output[2]?.content).toEqual([{ type: 'text', text: report.content }])
   expect(output[3]?.content).toEqual([{ type: 'text', text: '{"accepted":' }])
+})
+
+it('groups execution without promoting an interrupted attempt to a later successful outcome', () => {
+  const converted = toAssistantMessages(
+    [],
+    [
+      event(1, 'tool_start', toolData),
+      event(2, 'tool_start', toolData),
+      event(3, 'tool_end', { ...toolData, output: { revision: 2 } }),
+    ],
+    'completed',
+  )
+  const grouped = groupExecutionMessages(converted)
+  expect(grouped).toHaveLength(1)
+  expect(grouped[0]?.metadata?.custom).toMatchObject({
+    kind: 'execution',
+    partStates: {
+      [`tool:${firstRun}:1`]: { agent: 'alex', status: { type: 'incomplete', reason: 'other' } },
+      [`tool:${firstRun}:2`]: { agent: 'alex', status: { type: 'complete', reason: 'stop' } },
+    },
+  })
+  expect(grouped[0]?.content).toMatchObject([
+    { type: 'tool-call', toolCallId: `tool:${firstRun}:1` },
+    { type: 'tool-call', result: { revision: 2 } },
+  ])
+})
+
+it('keeps user turns and separate runs outside a shared execution group', () => {
+  const user: ConversationMessage = {
+    id: 'request',
+    role: 'user',
+    agent: null,
+    content: 'Change the title',
+    createdAt: 150,
+  }
+  const grouped = groupExecutionMessages(
+    toAssistantMessages(
+      [user],
+      [
+        event(1, 'tool_start', toolData),
+        event(2, 'tool_end', { ...toolData, output: { revision: 1 } }),
+        event(1, 'tool_start', toolData, secondRun, 300),
+      ],
+      'cancelled',
+    ),
+  )
+  expect(grouped.map((message) => message.role)).toEqual(['assistant', 'user', 'assistant'])
+  expect(grouped[0]?.metadata?.runId).toBe(firstRun)
+  expect(grouped[2]?.metadata?.runId).toBe(secondRun)
+  expect(grouped[2]?.metadata?.custom?.partStates).toMatchObject({
+    [`tool:${secondRun}:1`]: { status: { type: 'incomplete', reason: 'cancelled' } },
+  })
+})
+
+it('retains the delegated task after agent completion and removes empty writing bubbles', () => {
+  const pending: ConversationMessage = {
+    id: 'empty',
+    role: 'agent',
+    agent: 'alex',
+    content: '',
+    pending: true,
+    createdAt: 150,
+  }
+  const grouped = groupExecutionMessages(
+    toAssistantMessages(
+      [pending],
+      [
+        event(1, 'agent_start', {
+          id: 'alex',
+          name: 'Alex',
+          task: 'Implement the keyboard-accessible map',
+        }),
+        event(2, 'agent_end', { id: 'alex', name: 'Alex' }),
+      ],
+      'completed',
+    ),
+  )
+  expect(grouped).toHaveLength(1)
+  expect(grouped[0]?.content).toMatchObject([
+    {
+      type: 'data',
+      data: { type: 'agent_end', data: { task: 'Implement the keyboard-accessible map' } },
+    },
+  ])
+})
+
+it('replays only public reasoning summaries without duplicating chunks or exposing raw reasoning', () => {
+  const summary = event(2, 'reasoning_summary', {
+    id: 'message',
+    agent: 'alex',
+    text: 'Inspect the current app. ',
+  })
+  const converted = toAssistantMessages(
+    [],
+    [
+      event(3, 'reasoning_summary', {
+        id: 'message',
+        agent: 'alex',
+        text: 'Then validate the change.',
+      }),
+      summary,
+      summary,
+      event(1, 'reasoning', { id: 'message', agent: 'alex', text: 'PRIVATE_RAW_CONTENT' }),
+    ],
+    'completed',
+  )
+  expect(converted).toHaveLength(1)
+  expect(converted[0]?.content).toEqual([
+    { type: 'reasoning', text: 'Inspect the current app. Then validate the change.' },
+  ])
 })

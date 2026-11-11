@@ -14,7 +14,11 @@ import {
 } from '@atoms-demo/ui/composites/assistant-thread'
 import { useMemo } from 'react'
 import { z } from 'zod'
-import { type ConversationMessage, toAssistantMessages } from '../features/assistant/messages'
+import {
+  type ConversationMessage,
+  groupExecutionMessages,
+  toAssistantMessages,
+} from '../features/assistant/messages'
 
 const convertMessage = (message: ThreadMessageLike) => message
 
@@ -45,7 +49,7 @@ export function ChatPane({
 }) {
   const { t } = useI18n()
   const converted = useMemo(
-    () => toAssistantMessages(messages, activity, runStatus),
+    () => groupExecutionMessages(toAssistantMessages(messages, activity, runStatus)),
     [messages, activity, runStatus],
   )
   const schema = z

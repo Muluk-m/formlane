@@ -302,9 +302,15 @@ export function ProjectPage() {
       setBanner(String(data.message ?? t('atoms.streamError')))
     }
     if (
-      ['tool_start', 'tool_end', 'validation', 'repair', 'agent_start', 'agent_end'].includes(
-        event.type,
-      )
+      [
+        'tool_start',
+        'tool_end',
+        'validation',
+        'repair',
+        'agent_start',
+        'agent_end',
+        'reasoning_summary',
+      ].includes(event.type)
     ) {
       setActivity((current) => [...current, event])
     }
@@ -687,6 +693,13 @@ export function ProjectPage() {
             tab={tab}
             device={device}
             running={running}
+            phaseLabel={
+              running
+                ? Object.values(activeAgents)
+                    .map((name) => t('ui.assistant.agentWorking', { name }))
+                    .join(' · ') || t(`atoms.runStatus.${run?.status ?? 'queued'}`)
+                : undefined
+            }
             staleLabel={
               viewing
                 ? `${t('atoms.viewing')} · ${t('atoms.versionLabel', { number: viewing.number })}`

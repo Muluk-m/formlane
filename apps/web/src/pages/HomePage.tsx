@@ -18,9 +18,15 @@ import {
   AlertDialogTitle,
 } from '@atoms-demo/ui/components/alert-dialog'
 import { Badge } from '@atoms-demo/ui/components/badge'
-import { Button } from '@atoms-demo/ui/components/button'
-import { Card, CardContent } from '@atoms-demo/ui/components/card'
 import { Spinner } from '@atoms-demo/ui/components/spinner'
+import {
+  AssistantHomeBrowserNote,
+  AssistantHomeIntro,
+  AssistantHomeProjectCard,
+  AssistantHomeProjectsHeading,
+  AssistantHomeProjectsState,
+  AssistantHomeSuggestions,
+} from '@atoms-demo/ui/composites/assistant-home'
 import { AssistantComposer } from '@atoms-demo/ui/composites/assistant-thread'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
@@ -85,22 +91,20 @@ export function HomePage() {
   const error = create.error ?? projects.error ?? health.error
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <main className="mx-auto max-w-5xl px-4 py-10 sm:px-8 sm:py-16">
+      <main className="mx-auto max-w-6xl px-4 pt-12 pb-8 sm:px-8 sm:pt-20 sm:pb-12">
         <ThreadPrimitive.Root className="mx-auto max-w-3xl">
-          <p className="text-xs font-medium tracking-widest text-link">{t('atoms.kicker')}</p>
-          <h1 className="mt-3 max-w-3xl text-display">{t('atoms.hero')}</h1>
-          <p className="mt-4 max-w-2xl text-base text-muted-foreground">{t('atoms.sub')}</p>
+          <AssistantHomeIntro />
           {health.data && !health.data.mock && !health.data.hasKey && (
-            <p role="status" className="mt-4 rounded-lg border bg-card p-3">
+            <p role="status" className="mt-6 rounded-lg border bg-card p-3">
               {t('atoms.noKey')}
             </p>
           )}
           {health.data?.mock && (
-            <Badge variant="secondary" className="mt-4">
+            <Badge variant="secondary" className="mt-6">
               {t('atoms.mockPill')}
             </Badge>
           )}
-          <div className="mt-8">
+          <div className="mt-8 sm:mt-10">
             <AssistantComposer mode="idea" disabled={create.isPending} />
           </div>
           {error && (
@@ -108,96 +112,52 @@ export function HomePage() {
               {error.message || t('atoms.requestError')}
             </p>
           )}
-          <section className="mt-5">
-            <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              {t('atoms.examples')}
-            </h2>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              {(['one', 'two', 'three', 'four'] as const).map((key, index) => (
-                <ThreadPrimitive.Suggestion
-                  key={key}
-                  prompt={t(`atoms.examplesList.${key}.prompt`)}
-                  send={false}
-                  disabled={create.isPending}
-                  data-testid={`example-${index}`}
-                  render={
-                    <Button
-                      variant="outline"
-                      className="h-auto flex-col items-start whitespace-normal p-4 text-left"
-                    />
-                  }
-                >
-                  <span className="font-semibold">{t(`atoms.examplesList.${key}.title`)}</span>
-                  <span className="text-sm font-normal text-muted-foreground">
-                    {t(`atoms.examplesList.${key}.prompt`)}
-                  </span>
-                </ThreadPrimitive.Suggestion>
-              ))}
-            </div>
-          </section>
+          <div className="mt-5">
+            <AssistantHomeSuggestions disabled={create.isPending} />
+          </div>
         </ThreadPrimitive.Root>
-        <section id="projects" className="mt-10">
-          <h2 className="text-xl font-semibold">{t('atoms.projects')}</h2>
+        <section id="projects" className="mx-auto mt-16 max-w-5xl sm:mt-20">
+          <AssistantHomeProjectsHeading />
           {projects.isPending && (
-            <p role="status" className="mt-3 flex items-center gap-2 text-muted-foreground">
-              <Spinner />
-              {t('ui.spinner.loading')}
-            </p>
+            <div className="mt-5">
+              <AssistantHomeProjectsState loading />
+            </div>
           )}
           {projects.data?.projects.length === 0 && (
-            <p className="mt-3 text-muted-foreground">{t('atoms.empty')}</p>
+            <div className="mt-5">
+              <AssistantHomeProjectsState />
+            </div>
           )}
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {projects.data?.projects.map((project) => (
-              <Card key={project.id}>
-                <CardContent>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <Button
-                        variant="link"
-                        nativeButton={false}
-                        className="h-auto whitespace-normal p-0 text-left text-lg font-semibold"
-                        render={
-                          <Link
-                            to="/project/$id"
-                            params={{ id: project.id }}
-                            data-testid="project-link"
-                          />
-                        }
-                      >
-                        {project.title}
-                      </Button>
-                      <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
-                        {project.idea}
-                      </p>
-                    </div>
-                    {project.publishedSlug && (
-                      <Badge variant="secondary">{t('atoms.published')}</Badge>
-                    )}
-                  </div>
-                  <div className="mt-4 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <span>
-                      {t('atoms.versionCount', { count: project.versionCount ?? 0 })} ·{' '}
-                      {relativeTime(project.updatedAt, locale)}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive"
-                      onClick={() => {
-                        remove.reset()
-                        setDeleting(project)
-                      }}
-                    >
-                      {t('atoms.delete')}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+              <AssistantHomeProjectCard
+                key={project.id}
+                title={project.title}
+                idea={project.idea}
+                status={project.status}
+                hasSavedVersion={Boolean(project.currentVersionId)}
+                published={Boolean(project.publishedSlug)}
+                versionLabel={
+                  project.versionCount === undefined
+                    ? undefined
+                    : t('atoms.versionCount', { count: project.versionCount })
+                }
+                updatedAt={project.updatedAt}
+                updatedLabel={relativeTime(project.updatedAt, locale)}
+                link={
+                  <Link to="/project/$id" params={{ id: project.id }} data-testid="project-link" />
+                }
+                onDelete={() => {
+                  remove.reset()
+                  setDeleting(project)
+                }}
+              />
             ))}
           </div>
         </section>
-        <p className="mt-10 text-sm text-muted-foreground">{t('atoms.noAccount')}</p>
+        <div className="mx-auto mt-8 max-w-2xl sm:mt-10">
+          <AssistantHomeBrowserNote />
+        </div>
         <AlertDialog
           open={Boolean(deleting)}
           onOpenChange={(open) => {
