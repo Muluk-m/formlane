@@ -73,7 +73,13 @@ export function HomePage() {
             : (parsed.error.issues[0]?.message ?? t('atoms.ideaRequired')),
         )
       }
-      await create.mutateAsync({ idea: parsed.data })
+      try {
+        await create.mutateAsync({ idea: parsed.data })
+      } catch (error) {
+        throw new MessageNotSentError(
+          error instanceof Error ? error.message : t('atoms.requestError'),
+        )
+      }
     },
   })
   const error = create.error ?? projects.error ?? health.error

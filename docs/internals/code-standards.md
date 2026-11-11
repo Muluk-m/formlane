@@ -22,7 +22,7 @@ Provider/browser execution belongs in `apps/executor`, outside the API Worker an
 
 TanStack Router owns routes; TanStack Query/oRPC helpers own CRUD server state. Centralize query options and invalidation rather than calling a hand-written REST client from every component. SSE observes persisted run events and resumes by sequence cursor; it does not own producer execution.
 
-Use shared Base UI primitives/composites and variants, not native replacement controls or local appearance overrides. Use Skyline tokens and Hugeicons at 1.5 stroke width. All visible text and accessible names come from the single catalog. Forms use React Hook Form/Zod with server errors retained and understandable.
+Use shared Base UI primitives/composites and variants, not native replacement controls or local appearance overrides. Agent and conversation surfaces use assistant-ui through shared composites. Use Skyline tokens and Hugeicons at 1.5 stroke width. All visible text and accessible names come from the single catalog. Validate input with Zod, retain drafts on failed submission, and keep server errors understandable.
 
 Generated HTML is untrusted. Maintain the sandbox and explicit viewed/current/published version distinctions. An error must not clear user input or the last complete preview.
 

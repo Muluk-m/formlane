@@ -21,7 +21,7 @@ Packages never depend on applications. The web imports contract types from contr
 
 ## API and query boundary
 
-CRUD is contract-first oRPC: Zod schemas and procedure metadata are shared; the server implements that contract and the web uses `createORPCClient`, `OpenAPILink`, and `createTanstackQueryUtils`. TanStack Query owns request caching/invalidation and Router owns navigation. React Hook Form/Zod owns editable form state and client validation, without duplicating server authority.
+CRUD is contract-first oRPC: Zod schemas and procedure metadata are shared; the server implements that contract and the web uses `createORPCClient`, `OpenAPILink`, and `createTanstackQueryUtils`. TanStack Query owns request caching/invalidation and Router owns navigation. assistant-ui owns conversation drafts and submission; Zod validates input without duplicating server authority.
 
 Generation and follow-up requests start durable runs and return run identity. The browser observes a separate owned run-event SSE endpoint, replaying from `after` or `Last-Event-ID`. Disconnect aborts only observation. Downloads and `/p/:slug` remain HTTP document endpoints, not a second generic CRUD client.
 
