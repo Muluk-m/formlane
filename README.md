@@ -1,6 +1,6 @@
 # Formlane
 
-Describe an app in a sentence and watch an AI product team build it. Mike uses OpenAI Agents SDK manager decision tools to delegate scoped work: Emma defines requirements, Bob designs the structure, Alex implements and repairs the HTML app, and David independently validates it. Follow-ups preserve the current app and use the same validation gate.
+Describe an app in a sentence and watch an AI product team build it. Mike delegates scoped work through OpenAI Agents SDK: Emma defines requirements, Bob selects a project template, Alex implements and builds the source files, and David independently validates the result. Follow-ups edit the current source snapshot and repeat the same acceptance gate.
 
 This is a recreation of the core [atoms.dev](https://atoms.dev/) loop: team conversation, interactive preview, and a published link. There is no registered account system. Projects belong to an anonymous browser identity.
 
@@ -16,11 +16,11 @@ The screenshots show the deployed interface and a persisted real-provider counte
 - English/Chinese interface, example prompts, and this browser's project list.
 - assistant-ui conversations, streaming Markdown, grouped execution traces, actual delegation tasks, per-tool outcomes, review summaries, and runtime-owned prompt composers.
 - Resizable conversation/preview workspace on desktop; full-height conversation and preview switching on mobile.
-- Sandboxed interactive preview, a syntax-highlighted `index.html` source view with live draft streaming, and desktop/mobile preview sizes.
-- Follow-up revisions with the current HTML in context.
+- Sandboxed interactive preview, a selectable syntax-highlighted file tree with live file drafts and build results, and desktop/mobile preview sizes.
+- Demand-selected Vanilla + Vite or React + TypeScript + Vite projects, with follow-up revisions against the current source tree.
 - Version history, historical preview, and restoring a saved result as current.
 - Publish a saved result at `/p/:slug`, republish the same link, or unpublish it.
-- Remix a project with its conversation and versions; download generated `index.html`.
+- Remix the current or inspected historical version; download its complete runnable source as a ZIP.
 - Cancel a durable run without replacing the last complete result; disconnect and reconnect without cancelling execution.
 
 ## Source architecture
@@ -33,7 +33,7 @@ The repository adopts the engineering and Skyline design baseline of the read-on
 | `apps/server`                              | Hono control-plane Worker, oRPC contracts, D1 runs/events/checkpoints, executor lease API            |
 | `apps/executor`                            | Node 24, OpenAI Agents SDK manager/specialists, native Playwright, remote checkpoint recovery on GCP |
 | `packages/contracts`                       | Shared oRPC/Zod contract consumed by the server and typed web client                                 |
-| `packages/atoms-core` (`@atoms-demo/core`) | Runtime-independent types, HTML/text parsing, and prompts                                            |
+| `packages/atoms-core` (`@atoms-demo/core`) | Runtime-independent types, project templates, source validation and hashing, HTML/text helpers       |
 | `packages/ui`                              | assistant-ui conversation composites, shadcn base-nova / Base UI controls, Hugeicons, Skyline tokens |
 | `packages/i18n`                            | The single English/Chinese message catalog and locale helpers                                        |
 
@@ -56,7 +56,7 @@ The assistant-ui external runtime observes existing persisted messages and SSE e
 
 ## Durable, real-provider execution
 
-OpenAI Agents SDK 0.21 runs the configured compatible Chat Completions model in the Node 24 executor on GCP. Mike's schema-validated delegation decision and each specialist's tool loop have separate immutable D1 checkpoints. Specialists have role-scoped tools: Alex can read, write, precisely edit, update acceptance checks and validate; David can read, update checks, validate and record review; planning agents can read. HTML edits preserve checks and invalidate prior validation/review. Browser failures return concrete evidence for repair, not a successful saved version.
+OpenAI Agents SDK 0.21 runs the configured compatible Chat Completions model in the Node 24 executor on GCP. Mike's delegation decisions and specialist tool loops have separate immutable D1 checkpoints. Bob initializes the appropriate template and records the reason; Alex reads, writes, edits and deletes files, builds the project, updates acceptance checks and validates the preview. David independently reads source and validates the current build before review. Source changes invalidate the build, browser report and review together; failed builds expose repair evidence while the last saved preview remains visible.
 
 Completion requires a passing real-browser report for the current artifact hash and David's explicit acceptance. Native Playwright validates an opaque iframe in fresh browser contexts, with restrictive CSP and HTTP/WebSocket traffic blocked. Chromium runs sandboxed with a credential-stripped environment. Declarative checks support click/fill/press/reload, text containment, exact value/count/attribute assertions and viewport overflow checks, not arbitrary model JavaScript in the privileged executor.
 
@@ -97,12 +97,13 @@ Agent compute runs on the user-approved GCP VM `formlane-agent`, with Node 24 an
 
 ## Limits and behavior worth knowing
 
-- Generated apps are self-contained frontend HTML, not provisioned backends, authentication systems, or databases.
+- Generated projects are frontend applications, with fixed template dependencies and a trusted compiler. They do not provision backends, authentication systems or databases. Source files are bounded to 64 files and 256 KiB; compiled previews are bounded to 512 KiB. Custom package scripts, dependency installation and model-provided build plugins are not executed by the service.
 - Real-provider latency remains significant: the verified market build took 10 minutes 29 seconds. Runs exceeding the 15-minute deadline fail without replacing the previous saved version.
-- Project data and saved HTML persist in D1; generated-app interactive state does not. Generated apps use in-memory state inside the opaque-origin preview rather than relying on browser storage.
+- Project data, immutable source snapshots and their compiled previews persist in D1; generated-app interactive state does not. Generated apps use in-memory state inside the opaque-origin preview rather than relying on browser storage.
 - D1 checkpoints resume durable orchestration, not an interrupted provider token stream. In-flight specialist calls may replay after lease reclaim or a crash.
 - Historical preview, current version, and published version are distinct. Restoring changes the current result, not the public link; publish again to update that link.
 - Anonymous identity is a demo ownership boundary, not a substitute for production authentication.
 - No GitHub export, visual editor, or multi-model race is claimed.
+- Downloaded projects run with `pnpm install` and `pnpm dev`; `pnpm build` produces a standalone Vite build. React projects also provide `pnpm typecheck`. Preview builds support local JS/TS/JSX/TSX, CSS, JSON and SVG modules plus the template's React browser imports. Use relative imports; custom Vite configuration and server-side modules are outside the preview compiler contract.
 
 [Documentation index](docs/README.md) · [Product terminology](CONTEXT.md) · [Full design system](DESIGN.md) · [Agent entry point](AGENTS.md)
