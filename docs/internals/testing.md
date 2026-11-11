@@ -26,6 +26,8 @@ Test at the lowest boundary where a regression would fail. Extend an existing ca
 
 Inject time where possible; avoid sleeps and polling as substitutes for deterministic state. Intercepted provider HTTP is not real-provider acceptance. Runtime-sensitive verification must target the relevant runtime: Wrangler/workerd for the API/D1 control plane, Node 24 and native Chromium for executor behavior.
 
+Executor browser regression tests require Chromium. CI installs it with `pnpm --filter @atoms-demo/executor exec playwright install --with-deps chromium`. Run the focused checks with `pnpm --filter @atoms-demo/executor test src/validator.browser.test.ts`; an existing sandbox-capable browser can be selected with `CHROMIUM_EXECUTABLE_PATH`. The regression exercises containment, exact non-text matching, fresh check state, and real DOM interactions. It must run under a non-root account without disabling the Chromium sandbox.
+
 ## Visual and end-to-end evidence
 
 Visual changes need before/after browser screenshots, not markup-only tests. Inspect Base UI orientation, dialogs/focus, loading/status icons, narrow layouts, and the white/sky/black token treatment. Generated output may intentionally use a different theme.

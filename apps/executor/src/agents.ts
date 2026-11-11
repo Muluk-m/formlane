@@ -1,12 +1,13 @@
 import { Agent, Runner, tool } from '@openai/agents-core'
 import { OpenAIProvider } from '@openai/agents-openai'
 import { z } from 'zod'
+
 import type { ExecutorConfig } from './config'
 import type { DurableExecutor, HarnessContext, HarnessResult } from './types'
 import {
   artifactHash,
   type BrowserCheck,
-  browserCheckSchema,
+  browserChecksSchema,
   type ValidationReport,
   validateArtifact,
 } from './validator'
@@ -61,7 +62,7 @@ export async function executeHarness(
   }
   const history: { role: string; task: string; result: string }[] = []
   try {
-    for (let turn = 0; turn < 14; turn++) {
+    for (let turn = 0; turn < 8; turn++) {
       signal.throwIfAborted()
       const action = await durable.run(`manager-${turn}`, async () => {
         await emit('agent_start', { id: 'mike', name: 'Mike' })
@@ -77,7 +78,7 @@ export async function executeHarness(
           model,
           toolUseBehavior: 'stop_on_first_tool',
           modelSettings: { toolChoice: 'required', parallelToolCalls: false },
-          instructions: `You manage a real application build. Choose ONE specialist tool per turn based on results. Emma defines acceptance criteria; Bob designs architecture; Alex writes or repairs the app with tools; David independently validates interactions and reviews requirements. Never complete until the latest browser report passes and David accepts it. If tests fail, delegate repair to Alex with exact failures, then David again. Initial work needs Emma and Bob before Alex; followups preserve existing behavior. Do not blindly repeat successful work. At most 14 delegations. Tools return a durable dispatch receipt; the next turn contains the actual specialist result.`,
+          instructions: `You manage a real application build. Choose ONE specialist tool per turn within eight delegations. Emma defines scope once, Bob designs architecture once, Alex implements and validates, and David independently reviews. Alex returns immediately after validation; failed reports are concrete evidence for a targeted repair delegation. Never repeat Emma or Bob. Delegate Alex at most twice in total. If the current artifact has a passing report, delegate David instead of rewriting HTML. Missing test coverage belongs to David. After a repair, David must review the repaired artifact again. Complete as soon as the current report passes and review accepts. Tools return durable dispatch receipts; use the next turn for the selected result.`,
           tools: [
             choose('emma', 'Delegate product requirements and acceptance criteria'),
             choose('bob', 'Delegate architecture planning'),
@@ -101,7 +102,7 @@ export async function executeHarness(
               review: workspace.review,
             },
           }),
-          { maxTurns: 3, signal },
+          { maxTurns: 2, signal },
         )
         const decision = actionSchema.parse(JSON.parse(result.finalOutput ?? '{}'))
         await emit('agent_end', { id: 'mike', name: 'Mike' })
@@ -174,7 +175,7 @@ export async function executeHarness(
             'Write the complete index.html candidate and behavioral acceptance checks. Does not publish or mark complete.',
           parameters: z.object({
             html: z.string().min(80).max(180000),
-            checks: z.array(browserCheckSchema).min(2).max(6),
+            checks: browserChecksSchema,
           }),
           execute: async ({ html, checks }) => {
             signal.throwIfAborted()
@@ -201,10 +202,39 @@ export async function executeHarness(
             }
           },
         })
+        const setChecks = tool({
+          name: 'set_acceptance_checks',
+          description:
+            'Replace browser acceptance checks without modifying HTML or its hash. Clears prior validation and review; run validate_preview afterward.',
+          parameters: z.object({ checks: browserChecksSchema }),
+          execute: async ({ checks }) => {
+            signal.throwIfAborted()
+            await emit('tool_start', {
+              id: `${stepName}:checks`,
+              name: 'set_acceptance_checks',
+              agent: role,
+            })
+            current.checks = checks
+            current.report = null
+            current.review = null
+            const output = {
+              revision: current.revision,
+              checks: checks.length,
+              message: 'Checks replaced; HTML unchanged. Run validate_preview before review.',
+            }
+            await emit('tool_end', {
+              id: `${stepName}:checks`,
+              name: 'set_acceptance_checks',
+              agent: role,
+              output,
+            })
+            return output
+          },
+        })
         const validate = tool({
           name: 'validate_preview',
           description:
-            'Execute real isolated browser actions and exact assertions against the current candidate. Returns genuine failures for repair.',
+            'Execute real isolated browser actions and assertions against the current candidate. Text assertions require containment; other assertions require exact equality. Returns genuine failures for repair.',
           parameters: z.object({}),
           execute: async () => {
             signal.throwIfAborted()
@@ -240,30 +270,39 @@ export async function executeHarness(
             return { accepted, findings }
           },
         })
+        const checkInstructions =
+          'Use 2–8 checks, at most 12 actions and 8 total assertions per check. Every selector must be a complete valid CSS selector; quote attribute values with double quotes, e.g. input[data-favorites-only="true"], never leave an attribute selector open. Each check starts with fresh page state and an optional viewport (width 375–1440, height 640–1200; default 1280x720). Actions: click(selector, null), fill(selector, string), press(selector, schema-enumerated key), reload(body, null). Reload resets in-memory state inside the opaque iframe. Put exact assertions in assertions; legacy assertion remains supported and counts toward the same limit. Kinds: text (expected is contained in selected text), value, count, attribute (supply attribute name; missing attributes do not equal empty strings), no-horizontal-overflow (selector body, expected "true"; fixed document-width check). expected is always a string; attribute is null or omitted for other kinds. Keep independent QA coverage compact: combine related assertions in one check, then call validate_preview immediately. Do not replace checks repeatedly after a passing report.'
         if (role === 'alex' && current.report && !current.report.valid)
           await emit('repair', { attempt: current.revision + 1, issues: current.report.issues })
         const instructions =
           role === 'emma'
-            ? 'You are the product agent. Read workspace, define precise scope and at least two observable interaction acceptance criteria. Answer concisely in the user language.'
+            ? 'You are the product agent. Read workspace. Define only the requested scope and 2–8 observable acceptance criteria, including requested interactions. Combine related outcomes; do not invent extra requirements, features, persistence, or visual constraints. Answer concisely in the user language.'
             : role === 'bob'
-              ? 'You are the architect. Read workspace and product brief, choose a self-contained HTML/CSS/JS structure with in-memory state for an opaque iframe. No external network, storage, backend, CDN or secrets. Define testable semantic selectors. Answer concisely.'
+              ? 'You are the architect. Read workspace and product brief, choose a self-contained HTML/CSS/JS structure with in-memory state for an opaque iframe. No external network, storage, backend, CDN or secrets. Define testable semantic selectors. Stay under 250 words; no HTML, implementation, or test-code dumps.'
               : role === 'alex'
-                ? 'You are the implementation agent. Read workspace. Implement the requested self-contained app, or repair the exact reported defects preserving unrelated behavior. Use write_artifact for FULL HTML; no code fences as a substitute. Provide 2-6 meaningful browser checks. Each check has fresh page state, whitelisted click/fill/press/reload steps, then exact text/value/count assertion. click uses a selector and null value; fill uses a selector and string value; press uses a selector and one allowed key: Enter, Escape, Tab, Space, Backspace, Delete, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, End, PageUp, PageDown. reload uses selector body and null value to reload the same artifact inside its opaque iframe, resetting in-memory state. Include at least one real state-changing interaction. No external resources, fetch, browser storage, cookies or parent access. Fits sandbox allow-scripts allow-forms. After writing, call validate_preview and repair tool-reported failures before finishing. Do not claim success if checks fail. Prefer compact semantic markup and clear polished layout.'
-                : 'You are an independent QA agent. Read workspace and user requirements. Call validate_preview to get actual browser evidence. Checks support click/fill/press/reload with exact text/value/count assertions; press supports Enter and other schema-enumerated keys, and reload reloads the same artifact inside its opaque iframe, resetting in-memory state. Assess whether the checks verify requested user behavior, not tautologies. Call record_review accepted true only if current checks pass and app meets brief. Otherwise give concrete repair instructions and record_review false. Never invent a passing report.'
+                ? `You are the implementation agent. Read workspace. Implement the requested self-contained app, or repair exact reported app defects preserving unrelated behavior. Use write_artifact for FULL HTML and checks; no code fences as a substitute. ${checkInstructions} Use set_acceptance_checks for malformed-check corrections without rewriting working HTML. Call validate_preview after writing or correcting checks. That tool ends this delegation and returns its evidence to the manager, who can request a targeted repair if needed. No external resources, fetch, browser storage, cookies or parent access. Fits sandbox allow-scripts allow-forms. Prefer compact semantic markup and clear polished layout.`
+                : `You are an independent QA agent. Read workspace and user requirements. ${checkInstructions} Assess whether checks cover requested behavior, not tautologies. When coverage is insufficient, create your own complete check set with set_acceptance_checks, then run validate_preview yourself; do not ask Alex for fake code edits or HTML rewrites to add tests. Call validate_preview for actual browser evidence and record_review accepted true only if the current checks pass and the app meets the requested brief. Distinguish tool limitations or missing coverage from actual app defects. Request Alex repairs only for concrete app defects with evidence. Record_review false for unresolved defects or coverage gaps; never invent passing evidence or unrequested requirements.`
         const specialist = new Agent({
           name: roles[role],
           model,
           instructions,
+          toolUseBehavior: {
+            stopAtToolNames:
+              role === 'alex' ? ['validate_preview'] : role === 'david' ? ['record_review'] : [],
+          },
           tools:
             role === 'alex'
-              ? [read, write, validate]
+              ? [read, write, setChecks, validate]
               : role === 'david'
-                ? [read, validate, accept]
+                ? [read, setChecks, validate, accept]
                 : [read],
-          modelSettings: { parallelToolCalls: false },
+          modelSettings: {
+            parallelToolCalls: false,
+            ...(role === 'alex' || role === 'david' ? { toolChoice: 'required' as const } : {}),
+          },
         })
         const stream = await runner.run(specialist, action.task, {
-          maxTurns: role === 'alex' ? 10 : 6,
+          maxTurns: 6,
           signal,
           stream: true,
         })
