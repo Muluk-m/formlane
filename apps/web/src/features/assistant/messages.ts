@@ -29,7 +29,13 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function failed(data: RunEvent['data']) {
   const output = isObject(data.output) ? data.output : undefined
-  return Boolean(data.error || output?.error) || data.valid === false || output?.valid === false
+  return (
+    Boolean(data.error || output?.error) ||
+    data.valid === false ||
+    output?.valid === false ||
+    data.ok === false ||
+    output?.ok === false
+  )
 }
 
 function identity(event: RunEvent): string | undefined {
@@ -62,7 +68,11 @@ function pairActivity(events: readonly RunEvent[]): Activity[] {
       const isStart = event.type === 'tool_start' || event.type === 'agent_start'
       const isEnd = event.type === 'tool_end' || event.type === 'agent_end'
       if (!isStart && !isEnd) {
-        if (event.type === 'validation' || event.type === 'repair') {
+        if (
+          event.type === 'validation' ||
+          event.type === 'repair' ||
+          event.type === 'build_result'
+        ) {
           activities.push({ start: event })
         }
         continue
@@ -110,8 +120,8 @@ function activityMessage(activity: Activity, runStatus: Run['status'] | null): T
 
   if (isTool && typeof start.data.name === 'string') {
     const input = start.data.input
-    // Use only the emitted input/output. Workspace HTML belongs to the code
-    // stream, and missing tool arguments must not be reconstructed from it.
+    // Use only the emitted input/output. Project source belongs to the files
+    // surface, and missing tool arguments must not be reconstructed from it.
     const argsText = JSON.stringify(input === undefined ? {} : isObject(input) ? input : { input })
     return {
       id,

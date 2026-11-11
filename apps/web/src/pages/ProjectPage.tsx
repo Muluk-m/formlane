@@ -4,6 +4,7 @@ import {
   runSchema,
 } from '@atoms-demo/contracts'
 import { slugify } from '@atoms-demo/core/html'
+import type { ProjectSource } from '@atoms-demo/core/project'
 import type { AppVersion, Project } from '@atoms-demo/core/types'
 import { useI18n } from '@atoms-demo/i18n/react'
 import { Button } from '@atoms-demo/ui/components/button'
@@ -39,6 +40,7 @@ import {
   unpublishProjectMutation,
 } from '../features/projects/mutations'
 import { projectQuery, projectsQuery, versionQuery } from '../features/projects/queries'
+import { projectWorkspace, reduceProjectEvent } from '../features/projects/workspace'
 import { healthQuery as healthQueryOptions } from '../features/session/queries'
 import {
   cancelRun,
@@ -70,7 +72,8 @@ export function ProjectPage() {
   const [messages, setMessages] = useState<ConversationMessage[]>([])
   const [versions, setVersions] = useState<AppVersion[]>([])
   const [html, setHtml] = useState('')
-  const [code, setCode] = useState('')
+  const [source, setSource] = useState<ProjectSource | null>(null)
+  const [workspace, setWorkspace] = useState(() => projectWorkspace(null))
   const [banner, setBanner] = useState<string | null>(null)
   const [run, setRun] = useState<HarnessRun | null>(null)
   const [starting, setStarting] = useState(false)
@@ -86,7 +89,9 @@ export function ProjectPage() {
   const [mobilePanel, setMobilePanel] = useState<'chat' | 'preview'>('chat')
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [viewing, setViewing] = useState<(AppVersion & { html: string }) | null>(null)
+  const [viewing, setViewing] = useState<
+    (AppVersion & { html: string; source: ProjectSource }) | null
+  >(null)
   const [share, setShare] = useState<{ slug: string; url: string; versionId: string } | null>(null)
   const [copied, setCopied] = useState(false)
   const health = healthQuery.data
@@ -99,7 +104,7 @@ export function ProjectPage() {
   const reconciliationPending = useRef(false)
   const subscription = useRef<AbortController | null>(null)
 
-  async function refresh(fence?: { runId: string; signal: AbortSignal }) {
+  async function refresh(fence?: { runId: string; signal: AbortSignal }, resetWorkspace = true) {
     const detail = await client.fetchQuery({ ...projectQuery(id), staleTime: 0 })
     if (
       !mounted.current ||
@@ -113,7 +118,9 @@ export function ProjectPage() {
     setMessages(detail.messages)
     setVersions(detail.versions)
     setHtml(detail.html ?? '')
-    setCode(detail.html ?? '')
+    setSource(detail.source)
+    if (resetWorkspace)
+      setWorkspace((current) => ({ ...projectWorkspace(detail.source), build: current.build }))
     await client.invalidateQueries({ queryKey: projectsQuery.queryKey })
     return true
   }
@@ -125,8 +132,9 @@ export function ProjectPage() {
     setMessages(detail.messages)
     setVersions(detail.versions)
     setHtml(detail.html ?? '')
-    setCode(detail.html ?? '')
-  }, [detailQuery.data, running, starting, reconciling])
+    setSource(detail.source)
+    if (!run) setWorkspace(projectWorkspace(detail.source))
+  }, [detailQuery.data, running, starting, reconciling, run])
 
   useEffect(() => {
     const media = window.matchMedia('(min-width: 860px)')
@@ -154,6 +162,7 @@ export function ProjectPage() {
       if (!mounted.current) return
       setActivity([])
       setActiveAgents({})
+      setWorkspace(projectWorkspace(source))
       setRun(receipt)
       if (content)
         setMessages((current) => [
@@ -222,7 +231,8 @@ export function ProjectPage() {
         setReconciling(true)
         setActiveAgents({})
         setStopping(false)
-        void refresh({ runId: state.id, signal })
+        setWorkspace((current) => ({ ...current, activePath: null }))
+        void refresh({ runId: state.id, signal }, state.status === 'completed')
           .then((applied) => {
             if (!applied || signal.aborted || subscription.current?.signal !== signal) return
             reconciliationPending.current = false
@@ -273,12 +283,18 @@ export function ProjectPage() {
             : message,
         ),
       )
-    } else if (event.type === 'code_start') {
-      setCode('')
-    } else if (event.type === 'code_reset') {
-      setCode(String(data.text ?? ''))
-    } else if (event.type === 'code') {
-      setCode((current) => current + String(data.text ?? ''))
+    } else if (
+      [
+        'project_reset',
+        'project_initialized',
+        'file_start',
+        'file_delta',
+        'file_saved',
+        'file_deleted',
+        'build_result',
+      ].includes(event.type)
+    ) {
+      setWorkspace((current) => reduceProjectEvent(current, event))
     } else if (event.type === 'version') {
       const version: AppVersion = {
         id: String(data.id),
@@ -289,10 +305,6 @@ export function ProjectPage() {
       setVersions((current) =>
         current.some((item) => item.id === version.id) ? current : [...current, version],
       )
-      if (typeof data.html === 'string') {
-        setHtml(data.html)
-        setCode(data.html)
-      }
       setViewing(null)
     } else if (event.type === 'title' && typeof data.title === 'string') {
       const title = data.title
@@ -306,6 +318,7 @@ export function ProjectPage() {
         'tool_start',
         'tool_end',
         'validation',
+        'build_result',
         'repair',
         'agent_start',
         'agent_end',
@@ -398,7 +411,7 @@ export function ProjectPage() {
     try {
       const current = await latestRun(id)
       if (!mounted.current) return
-      await refresh()
+      await refresh(undefined, !current || current.status === 'completed')
       if (!mounted.current) return
       setRun(current)
       reconciliationPending.current = false
@@ -440,7 +453,8 @@ export function ProjectPage() {
   async function restore(versionId: string) {
     const result = await restoreMutation.mutateAsync({ id, versionId })
     setHtml(result.html)
-    setCode(result.html)
+    setSource(result.source)
+    setWorkspace(projectWorkspace(result.source))
     setViewing(null)
     await refresh()
   }
@@ -467,7 +481,7 @@ export function ProjectPage() {
   }
 
   async function remix() {
-    const { project: copy } = await remixMutation.mutateAsync({ id })
+    const { project: copy } = await remixMutation.mutateAsync({ id, versionId: viewing?.id })
     await client.invalidateQueries({ queryKey: projectsQuery.queryKey })
     await navigate({ to: '/project/$id', params: { id: copy.id } })
   }
@@ -504,7 +518,7 @@ export function ProjectPage() {
     )
 
   const displayHtml = viewing?.html ?? html
-  const displayCode = viewing?.html ?? code
+  const displaySource = viewing?.source ?? workspace.source
   const projectError = run ? null : project.error
   const publishedCurrent = Boolean(
     project.publishedSlug && project.publishedVersionId === project.currentVersionId,
@@ -561,7 +575,7 @@ export function ProjectPage() {
               void act(() =>
                 downloadProject(
                   id,
-                  `${slugify(project.title)}-v${viewing?.number ?? versions.find((version) => version.id === project.currentVersionId)?.number ?? 1}.html`,
+                  `${slugify(project.title)}-v${viewing?.number ?? versions.find((version) => version.id === project.currentVersionId)?.number ?? 1}.zip`,
                   viewing?.id,
                 ),
               )
@@ -689,7 +703,11 @@ export function ProjectPage() {
         <div className="min-h-0 min-w-0 flex-1" hidden={!wide && mobilePanel !== 'preview'}>
           <Stage
             html={displayHtml}
-            code={displayCode}
+            source={displaySource}
+            drafts={viewing ? {} : workspace.drafts}
+            activePath={viewing ? null : workspace.activePath}
+            draft={!viewing && workspace.dirty}
+            build={viewing ? null : workspace.build}
             tab={tab}
             device={device}
             running={running}

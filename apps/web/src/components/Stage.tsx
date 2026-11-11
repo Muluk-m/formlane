@@ -1,14 +1,20 @@
+import type { ProjectSource } from '@atoms-demo/core/project'
 import { useI18n } from '@atoms-demo/i18n/react'
 import { Button } from '@atoms-demo/ui/components/button'
 import { ButtonGroup } from '@atoms-demo/ui/components/button-group'
 import { CodeSurface } from '@atoms-demo/ui/composites/code-surface'
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import type { ProjectBuild } from '../features/projects/workspace'
 import { formatBytes } from '../lib/format'
-import { highlightHtml } from '../lib/highlight'
+import { highlightSource, sourceLanguage } from '../lib/highlight'
 
 export function Stage({
   html,
-  code,
+  source,
+  drafts,
+  activePath,
+  draft,
+  build,
   tab,
   device,
   running,
@@ -19,7 +25,11 @@ export function Stage({
   onBack,
 }: {
   html: string
-  code: string
+  source: ProjectSource | null
+  drafts: Record<string, string>
+  activePath: string | null
+  draft: boolean
+  build: ProjectBuild | null
   tab: 'preview' | 'code'
   device: 'desktop' | 'mobile'
   running: boolean
@@ -30,8 +40,25 @@ export function Stage({
   onBack: () => void
 }) {
   const { t, locale } = useI18n()
+  const [selection, setSelection] = useState<string | null>(null)
+  const [copyError, setCopyError] = useState(false)
+  const paths = useMemo(
+    () => [...new Set([...Object.keys(source?.files ?? {}), ...Object.keys(drafts)])].sort(),
+    [source, drafts],
+  )
+  const selectedPath = selection && paths.includes(selection) ? selection : (paths[0] ?? null)
+  const code = selectedPath ? (drafts[selectedPath] ?? source?.files[selectedPath] ?? '') : ''
+  const language = sourceLanguage(selectedPath ?? '')
   const sizeLabel = useMemo(() => formatBytes(new Blob([code]).size, locale), [code, locale])
-  const draft = !staleLabel && code !== html
+  const templateLabel = source ? t(`atoms.files.templates.${source.template}`) : undefined
+  async function copyFile() {
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopyError(false)
+    } catch {
+      setCopyError(true)
+    }
+  }
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-surface-sunken">
       <div className="flex flex-wrap items-center justify-between gap-2 p-3">
@@ -83,8 +110,35 @@ export function Stage({
           </Button>
         </div>
       )}
+      {templateLabel && (
+        <p className="mx-3 mb-2 text-xs text-muted-foreground">
+          {t('atoms.files.template', { template: templateLabel })}
+        </p>
+      )}
+      {build && (
+        <div
+          role={build.ok ? 'status' : 'alert'}
+          className={`mx-3 mb-2 max-h-32 shrink-0 overflow-auto rounded-lg p-2 text-xs ${build.ok ? 'bg-success-bg text-success' : 'bg-danger-bg text-destructive'}`}
+        >
+          <p>{t(build.ok ? 'atoms.files.buildPassed' : 'atoms.files.buildFailed')}</p>
+          {build.issues.length > 0 && (
+            <ul className="mt-1 list-disc space-y-1 pl-4">
+              {[...new Set(build.issues)].map((issue) => (
+                <li key={issue} className="break-words">
+                  {issue}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {copyError && (
+        <p role="alert" className="mx-3 mb-2 text-xs text-destructive">
+          {t('atoms.files.copyFailed')}
+        </p>
+      )}
       <div className="min-h-0 flex-1 px-3 pb-3">
-        {tab === 'preview' ? (
+        <div hidden={tab !== 'preview'} className="h-full">
           <div className="flex h-full items-stretch justify-center">
             {html ? (
               <PreviewFrame key={html} html={html} device={device} />
@@ -94,24 +148,31 @@ export function Stage({
               </div>
             )}
           </div>
-        ) : (
+        </div>
+        <div hidden={tab !== 'code'} className="h-full">
           <CodeSurface
-            hasCode={Boolean(code)}
+            paths={paths}
+            selectedPath={selectedPath}
+            activePath={activePath}
+            language={t(`atoms.files.languages.${language}`)}
+            templateLabel={templateLabel}
+            onSelect={setSelection}
+            onCopy={() => void copyFile()}
             running={running && !staleLabel}
             draft={draft}
             phaseLabel={phaseLabel}
             sizeLabel={sizeLabel}
           >
-            {code && <CodeBlock code={code} />}
+            {selectedPath && <CodeBlock code={code} path={selectedPath} />}
           </CodeSurface>
-        )}
+        </div>
       </div>
     </section>
   )
 }
-function CodeBlock({ code }: { code: string }) {
+function CodeBlock({ code, path }: { code: string; path: string }) {
   const deferredCode = useDeferredValue(code)
-  const pretty = useMemo(() => highlightHtml(deferredCode), [deferredCode])
+  const pretty = useMemo(() => highlightSource(deferredCode, path), [deferredCode, path])
   return (
     <pre className="code-sheet min-h-full w-max min-w-full overflow-visible!">
       {pretty.map((line) => (
