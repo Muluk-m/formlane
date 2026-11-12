@@ -305,6 +305,8 @@
     "deleteTitle": "删除项目？",
     "deleteConfirm": "确定删除「{title}」？此操作无法撤销。",
     "chat": "团队对话",
+    "hideChat": "收起对话",
+    "showChat": "展开对话",
     "savedVersion": "版本 {number} 已保存",
     "previewTitle": "应用预览",
     "previewAddress": "实时预览",
