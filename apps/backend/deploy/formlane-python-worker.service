@@ -1,5 +1,5 @@
 [Unit]
-Description=Formlane staged CrewAI executor
+Description=Formlane CrewAI worker
 Wants=network-online.target
 After=network-online.target postgresql.service
 
@@ -10,7 +10,7 @@ Group=formlane
 WorkingDirectory=/opt/formlane/python-backend/current/apps/backend
 Environment=HOME=/var/lib/formlane/python
 Environment=PYTHONDONTWRITEBYTECODE=1
-EnvironmentFile=/etc/formlane/backend-stage.env
+EnvironmentFile=/etc/formlane/backend.env
 ExecStart=/opt/formlane/python-backend/current/apps/backend/.venv/bin/python -m formlane.worker
 Restart=on-failure
 RestartSec=3s

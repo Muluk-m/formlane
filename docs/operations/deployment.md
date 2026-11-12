@@ -2,7 +2,7 @@
 
 ## Current rollout status
 
-**The Python API is staged; final production cutover has not happened.** Production activation remains blocked by final real-model acceptance and a fresh write-fenced import. `deploy/environments.json` records the new HTTPS origins with `backendReady: false`. A reachable API, populated stage database or passing rehearsal does not open that gate.
+**The Python API is staged; final production cutover has not happened.** Real-model acceptance has passed. Production activation still requires a fresh write-fenced import and final routing verification. `deploy/environments.json` records the new HTTPS origins with `backendReady: false`.
 
 | Resource                      | Current identity / boundary                                                                   |
 | ----------------------------- | --------------------------------------------------------------------------------------------- |
@@ -39,7 +39,7 @@ The exact six-table rehearsal import and hash verification passed with:
 
 The importer preserves canonical row/source/HTML hashes, ownership/pointers, message tie ordering, cursors and checkpoints. For pre-0006 exports only, absent ancestry is explicitly normalized from the recorded originating same-project run and retained previous version; unknown roots stay null. This policy is recorded in the manifest, rather than silently inferring version-number ancestry. Empty-target import and `--verify-only` were exercised. Counts describe that rehearsal snapshot and must be replaced by final export evidence at cutover.
 
-Initial targeted Python checks reported **139/144 passing**, followed by **76 passing in the affected set**. A subsequent real-model run found a check-hash acceptance-gate regression; the integration owner is fixing it. These results are not a full final pass and do not establish production completion. The release owner must record final code identity, real-model run/version evidence, final import manifest and deployed browser acceptance before changing rollout status.
+Final targeted verification passed: **144 Python tests**, **19 compiler tests**, **37 client message tests**, client/compiler typechecks and the static frontend build. Real-model run `f43bd63c-6186-4d0c-96c3-213afc238c0f` saved v1; follow-up `d8cff470-6f81-4d5c-af6e-a2c6eed8f48d` saved v2. Browser reload reconnected to the same running task (cursor 62 → 67). Independent review may use different checks from implementation validation, while both remain tied to the exact source/build. Browser Undo, frozen v1 publication during v2 generation, exact source ZIP, restore, remix, cancellation preserving v2, unpublication, cross-owner denial and allowed/denied CORS passed. These are stage acceptance results; final import and deployed browser evidence remain required.
 
 ## Static Pages Python API cutover
 
