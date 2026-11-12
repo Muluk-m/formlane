@@ -27,6 +27,7 @@ export interface ChatMessage {
 
 export interface AppVersion {
   id: string
+  parentVersionId: string | null
   number: number
   prompt: string
   createdAt: number

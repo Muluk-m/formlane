@@ -24,6 +24,8 @@ The server repository/service boundary uses `db/schema.ts`. Preserve migration h
 
 A built, browser-validated and independently accepted generation atomically saves immutable source plus its compiled preview and updates current. A failed generation leaves the previous complete current version intact. Restore selects both parts of a saved version as current; it does not rewrite that version or change the published pointer. Republish deliberately updates the public pointer. Unpublish clears public access without deleting private history.
 
+Undo selects the current version's recorded generation parent directly, without a confirmation dialog. It does not use version-number order: generating v4 after restoring v1 from v3 makes v1 the undo target. The parent is saved atomically with completion and retained across reloads. Remix maps parent IDs into its own copied history. Migration `0006_version_ancestry.sql` recovers ancestry from retained originating runs; legacy copies without such records have no inferred undo target and remain accessible through manual history restore. The toolbar keeps Undo visible and disables it when no parent is available or a conflicting operation is active.
+
 Remix creates independent project/message/version identities and selects the requested historical version, or current version when omitted. It must not share mutable pointers with the source or accidentally inherit public ownership. Download returns the complete source ZIP for the requested authorized saved version. Public links expose only its frozen compiled preview, never its private conversation or source API.
 
 ## D1 implementation constraints

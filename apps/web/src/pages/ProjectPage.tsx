@@ -48,6 +48,7 @@ import {
   ArrowDown01Icon,
   Clock01Icon,
   MoreHorizontalIcon,
+  UndoIcon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -121,7 +122,7 @@ export function ProjectPage() {
   const [restoreTarget, setRestoreTarget] = useState<AppVersion | null>(null)
   const [historyAction, setHistoryAction] = useState<{
     id: string
-    kind: 'preview' | 'restore'
+    kind: 'preview' | 'restore' | 'undo'
   } | null>(null)
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [viewing, setViewing] = useState<
@@ -132,6 +133,7 @@ export function ProjectPage() {
   const [split, setSplit] = useState(() => Number(localStorage.getItem('atoms-split')) || 420)
   const [wide, setWide] = useState(() => window.matchMedia('(min-width: 860px)').matches)
   const startPending = useRef(false)
+  const undoPending = useRef(false)
   const cursorRef = useRef({ runId: '', sequence: 0 })
   const mounted = useRef(true)
   const retryRequest = useRef<string | undefined>(undefined)
@@ -192,7 +194,8 @@ export function ProjectPage() {
   }, [])
 
   async function begin(content?: string) {
-    if (startPending.current || running || reconciliationPending.current) return
+    if (startPending.current || undoPending.current || running || reconciliationPending.current)
+      return
     startPending.current = true
     retryRequest.current = content
     setStarting(true)
@@ -339,6 +342,7 @@ export function ProjectPage() {
     } else if (event.type === 'version') {
       const version: AppVersion = {
         id: String(data.id),
+        parentVersionId: typeof data.parentVersionId === 'string' ? data.parentVersionId : null,
         number: Number(data.number),
         prompt: String(data.prompt ?? ''),
         createdAt: Number(data.createdAt),
@@ -497,7 +501,9 @@ export function ProjectPage() {
   }
 
   async function restore(versionId: string) {
+    historySelection.current++
     const result = await restoreMutation.mutateAsync({ id, versionId })
+    setProject(result.project)
     setHtml(result.html)
     setSource(result.source)
     setWorkspace(projectWorkspace(result.source))
@@ -506,7 +512,7 @@ export function ProjectPage() {
   }
 
   async function selectHistoryVersion(versionId: string, kind: 'preview' | 'restore') {
-    if (historyAction) return
+    if (historyAction || undoPending.current) return
     const selection = ++historySelection.current
     setHistoryAction({ id: versionId, kind })
     setHistoryError(null)
@@ -523,6 +529,28 @@ export function ProjectPage() {
       }
     } finally {
       setHistoryAction(null)
+    }
+  }
+
+  async function undoVersionChange() {
+    if (
+      undoPending.current ||
+      busy ||
+      running ||
+      stopping ||
+      project?.status === 'generating' ||
+      historyAction ||
+      !undoVersion
+    )
+      return
+    undoPending.current = true
+    setHistoryAction({ id: undoVersion.id, kind: 'undo' })
+    setHistoryError(null)
+    try {
+      await restore(undoVersion.id)
+    } finally {
+      undoPending.current = false
+      if (mounted.current) setHistoryAction(null)
     }
   }
 
@@ -599,12 +627,15 @@ export function ProjectPage() {
     starting ||
     loadingRun ||
     reconciling ||
+    historyAction?.kind === 'undo' ||
     restoreMutation.isPending ||
     publishMutation.isPending ||
     unpublishMutation.isPending ||
     remixMutation.isPending
   const selectedVersion =
     viewing ?? versions.find((version) => version.id === project.currentVersionId)
+  const currentVersion = versions.find((version) => version.id === project.currentVersionId)
+  const undoVersion = versions.find((version) => version.id === currentVersion?.parentVersionId)
   return (
     <div className="flex h-[calc(100dvh-3rem)] min-h-0 flex-col bg-background">
       <header className="flex shrink-0 flex-wrap items-center gap-3 border-b px-4 py-3">
@@ -620,6 +651,32 @@ export function ProjectPage() {
         </div>
         {(busy || starting || stopping) && <Spinner />}
         <div className="flex flex-wrap gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="undo-version"
+            disabled={
+              !undoVersion ||
+              busy ||
+              running ||
+              stopping ||
+              project.status === 'generating' ||
+              Boolean(historyAction)
+            }
+            title={
+              undoVersion
+                ? t('atoms.versionReview.undoToVersion', { number: undoVersion.number })
+                : t('atoms.versionReview.nothingToUndo')
+            }
+            onClick={() => void act(undoVersionChange)}
+          >
+            {historyAction?.kind === 'undo' ? (
+              <Spinner />
+            ) : (
+              <HugeiconsIcon icon={UndoIcon} size={16} strokeWidth={1.5} />
+            )}
+            {t('atoms.versionReview.undo')}
+          </Button>
           <Button
             ref={historyButton}
             variant={historyOpen ? 'secondary' : 'ghost'}
