@@ -115,13 +115,16 @@ export function ChatPane({
           ) : null
         }}
         status={
-          run && (
+          run ? (
             <AssistantRunStatus
               label={stopping ? t('atoms.stopping') : t(`atoms.runStatus.${run.status}`)}
               state={run.status}
               agents={agents}
-              note={running ? t('atoms.durableRun') : undefined}
             />
+          ) : (
+            <h2 className="flex min-h-12 shrink-0 items-center px-6 text-xs font-medium">
+              {t('atoms.chat')}
+            </h2>
           )
         }
       />

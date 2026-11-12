@@ -330,6 +330,29 @@ Keep title tracking and a maximum weight of 600. Right-align numeric columns and
 - On wide screens, maintain the resizable chat/preview split. On narrow screens, keep the prompt and selected preview usable rather than squeezing both panels below readable widths. The inherited 1024px desktop table baseline is not a minimum width for the entire Atoms application.
 - 1280px and 1440px are useful desktop review widths. Dense tables scroll horizontally instead of compressing columns. Desktop/mobile preview controls describe the generated app's viewport, not the outer application breakpoint.
 
+### Project workspace — approved light split (A)
+
+The project route uses the selected light-split design instead of the inherited sky-wash header. Keep a single 64px project bar, a collapsed project navigation rail, an approximately 30% conversation pane, and a white rounded preview panel. The split remains resizable; hiding conversation expands preview without unmounting the draft or history. Narrow screens retain the conversation/preview switch. Home and public output retain their existing appearance.
+
+The project theme overrides semantic tokens centrally in `packages/ui/src/styles/globals.css`, activated while `data-workspace="project"` is present. This is an approved exception to Skyline's black-only ordinary actions; it applies to the project route and its portalled controls, not the brand mark or generated HTML.
+
+| Project token | Value | Purpose |
+| --- | --- | --- |
+| `background`, `sidebar` | `#F7F7F9` | Quiet continuous workspace and navigation |
+| `foreground`, `sidebar-foreground` | `#27282C` | Main interface text |
+| `primary`, `ring`, `sidebar-ring` | `#7661AD` | Main actions and focus |
+| `primary-foreground` | `#FFFFFF` | Text on main actions |
+| `secondary`, `muted` | `#EBEAF0` | User bubbles and subdued surfaces |
+| `secondary-foreground`, `accent-foreground` | `#27282C` | Text on subdued surfaces |
+| `muted-foreground` | `#6E6E7B` | Accessible secondary text |
+| `accent`, `sidebar-accent` | `#EEEBF6` | Selection and hover |
+| `sidebar-accent-foreground`, `link` | `#6B579E` | Selected navigation and links |
+| `border`, `sidebar-border` | `#E5E5EC` | Subtle separators |
+| `input` | `#DEDEE6` | Composer and input boundary |
+| `surface-sunken` | `#F0F1F5` | Preview surround |
+
+Cards, popovers, semantic statuses, and the brand keep their base tokens. The conversation is transparent over the workspace, with inset white composition and result surfaces. Execution details stay collapsed behind a lightweight summary. Status text reflects actual run state; do not add simulated saved labels, avatars, model pickers, or collaboration controls.
+
 ### Agent conversations
 
 Use assistant-ui for all agent and conversation surfaces, including the landing prompt and suggestions, streaming messages, Markdown, tool calls/results, status, and send/stop controls. Shared conversation composites live in `packages/ui`; their external runtime adapts the existing durable run store. Keep the Skyline palette and Hugeicons rather than introducing registry demo colors or another icon family.
