@@ -2,6 +2,16 @@
 
 ## Current production status
 
+### Pending workspace review release
+
+Local verification of the version-review revision passed against the real API: selectable source baselines, historical preview, restoration and reload, retained composer drafts, desktop/375px layouts, focus restoration, and a delayed historical response that cannot overwrite the selected saved result. Source comparisons and conversation screenshots are linked from the README. These checks do not establish production deployment of this revision.
+
+An isolated real-provider replay used the exact ten-file source and original `title 优化一下` request from failed run `6dbbb2e8-d8a8-47a1-8121-8848eb57a3ef`. It completed in 140.655 seconds with nine checkpoints; the final implementation and independent review each passed three native browser checks. Only `index.html` and `src/App.tsx` changed. The replay used no control-plane writes and did not update the user's project or any version pointer. Accepted source hash: `8b296fa69a7d65f7d205ab54ba4f8fef9977158241651b010094718c9fb85852`.
+
+Focused contract, executor classification, safe-error mapping, D1 failure/replay, conversation adapter, source-diff and catalog checks passed. D1 checks cover `provider` and `step_limit`, public error sanitization, event replay and preservation of saved/current/published versions. Relevant package typechecks and web/executor/Worker dry-run builds passed. The new error code uses the existing unconstrained SQLite TEXT column and needs no migration.
+
+### Prior deployed releases
+
 Cloudflare remains the presentation/control plane in **Maqiqian0316@gmail.com's Account**, verified as `252fba810f75c0370e5aa7200abc8f80`. The site is https://formlane-9dp.pages.dev. Pages `formlane` calls Worker `formlane-api` through service binding `API`; D1 remains `atoms-demo`. Apply the additive durable migrations, including `0004_executor_leases.sql` for leases and immutable checkpoints. The Worker no longer executes agents or requires Workflow/browser bindings.
 
 The user-approved compute target is GCP VM `formlane-agent`, zone `us-central1-c`, project `roibest-internal-apps`, account `maqiqian@roibest.com`. It runs Node 24, OpenAI Agents SDK and native Playwright under non-root systemd user `formlane`, with application files at `/opt/formlane/executor`. It polls the Cloudflare control plane and exposes no public application port.

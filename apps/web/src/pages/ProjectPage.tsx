@@ -7,9 +7,24 @@ import { slugify } from '@atoms-demo/core/html'
 import type { ProjectSource } from '@atoms-demo/core/project'
 import type { AppVersion, Project } from '@atoms-demo/core/types'
 import { useI18n } from '@atoms-demo/i18n/react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@atoms-demo/ui/components/alert-dialog'
 import { Badge } from '@atoms-demo/ui/components/badge'
 import { Button } from '@atoms-demo/ui/components/button'
 import { ButtonGroup } from '@atoms-demo/ui/components/button-group'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@atoms-demo/ui/components/collapsible'
 import {
   Dialog,
   DialogContent,
@@ -18,10 +33,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@atoms-demo/ui/components/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@atoms-demo/ui/components/dropdown-menu'
 import { Input } from '@atoms-demo/ui/components/input'
 import { ExternalLink } from '@atoms-demo/ui/components/link'
 import { Spinner } from '@atoms-demo/ui/components/spinner'
-import { Clock01Icon, RefreshIcon, ViewIcon } from '@hugeicons/core-free-icons'
+import {
+  Alert02Icon,
+  ArrowDown01Icon,
+  Clock01Icon,
+  MoreHorizontalIcon,
+} from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
@@ -35,6 +62,8 @@ import {
 } from 'react'
 import { ChatPane } from '../components/ChatPane'
 import { Stage } from '../components/Stage'
+import { VersionChanges } from '../components/VersionChanges'
+import { VersionHistory } from '../components/VersionHistory'
 import type { ConversationMessage } from '../features/assistant/messages'
 import {
   publishProjectMutation,
@@ -44,7 +73,6 @@ import {
 } from '../features/projects/mutations'
 import { projectQuery, projectsQuery, versionQuery } from '../features/projects/queries'
 import { projectWorkspace, reduceProjectEvent } from '../features/projects/workspace'
-import { healthQuery as healthQueryOptions } from '../features/session/queries'
 import {
   cancelRun,
   downloadProject,
@@ -53,7 +81,6 @@ import {
   startRun,
   streamRunEvents,
 } from '../lib/api'
-import { relativeTime } from '../lib/format'
 
 function isActiveRun(run: HarnessRun | null) {
   return run?.status === 'queued' || run?.status === 'running'
@@ -63,10 +90,9 @@ export function ProjectPage() {
   const { id } = useParams({ from: '/project/$id' })
   const { autostart } = useSearch({ from: '/project/$id' })
   const navigate = useNavigate()
-  const { t, locale } = useI18n()
+  const { t } = useI18n()
   const client = useQueryClient()
   const detailQuery = useQuery(projectQuery(id))
-  const healthQuery = useQuery(healthQueryOptions)
   const restoreMutation = useMutation(restoreVersionMutation)
   const publishMutation = useMutation(publishProjectMutation)
   const unpublishMutation = useMutation(unpublishProjectMutation)
@@ -88,11 +114,11 @@ export function ProjectPage() {
   const [activity, setActivity] = useState<HarnessEvent[]>([])
   const [activeAgents, setActiveAgents] = useState<Record<string, string>>({})
   const running = isActiveRun(run)
-  const [tab, setTab] = useState<'preview' | 'code'>('preview')
+  const [tab, setTab] = useState<'preview' | 'code' | 'changes'>('preview')
   const [mobilePanel, setMobilePanel] = useState<'chat' | 'preview'>('chat')
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [expandedVersion, setExpandedVersion] = useState<string | null>(null)
+  const [restoreTarget, setRestoreTarget] = useState<AppVersion | null>(null)
   const [historyAction, setHistoryAction] = useState<{
     id: string
     kind: 'preview' | 'restore'
@@ -103,7 +129,6 @@ export function ProjectPage() {
   >(null)
   const [share, setShare] = useState<{ slug: string; url: string; versionId: string } | null>(null)
   const [copied, setCopied] = useState(false)
-  const health = healthQuery.data
   const [split, setSplit] = useState(() => Number(localStorage.getItem('atoms-split')) || 420)
   const [wide, setWide] = useState(() => window.matchMedia('(min-width: 860px)').matches)
   const startPending = useRef(false)
@@ -112,6 +137,13 @@ export function ProjectPage() {
   const retryRequest = useRef<string | undefined>(undefined)
   const reconciliationPending = useRef(false)
   const subscription = useRef<AbortController | null>(null)
+  const historySelection = useRef(0)
+  const historyButton = useRef<HTMLButtonElement>(null)
+
+  function selectCurrentVersion() {
+    historySelection.current++
+    setViewing(null)
+  }
 
   async function refresh(fence?: { runId: string; signal: AbortSignal }, resetWorkspace = true) {
     const detail = await client.fetchQuery({ ...projectQuery(id), staleTime: 0 })
@@ -165,7 +197,7 @@ export function ProjectPage() {
     retryRequest.current = content
     setStarting(true)
     setBanner(null)
-    setViewing(null)
+    selectCurrentVersion()
     try {
       const receipt = await startRun(id, !project?.currentVersionId, content)
       if (!mounted.current) return
@@ -314,7 +346,7 @@ export function ProjectPage() {
       setVersions((current) =>
         current.some((item) => item.id === version.id) ? current : [...current, version],
       )
-      setViewing(null)
+      selectCurrentVersion()
     } else if (event.type === 'title' && typeof data.title === 'string') {
       const title = data.title
       setProject((current) => (current ? { ...current, title } : current))
@@ -453,13 +485,14 @@ export function ProjectPage() {
     window.addEventListener('pointerup', up)
   }
 
-  async function openVersion(versionId: string) {
+  async function openVersion(versionId: string, selection: number) {
     if (versionId === project?.currentVersionId) setViewing(null)
     else {
       const { version } = await client.fetchQuery(versionQuery(id, versionId))
+      if (!mounted.current || selection !== historySelection.current) return
       setViewing(version)
     }
-    setTab('preview')
+    if (tab !== 'changes') setTab('preview')
     setMobilePanel('preview')
   }
 
@@ -468,20 +501,26 @@ export function ProjectPage() {
     setHtml(result.html)
     setSource(result.source)
     setWorkspace(projectWorkspace(result.source))
-    setViewing(null)
+    selectCurrentVersion()
     await refresh()
   }
 
   async function selectHistoryVersion(versionId: string, kind: 'preview' | 'restore') {
     if (historyAction) return
+    const selection = ++historySelection.current
     setHistoryAction({ id: versionId, kind })
     setHistoryError(null)
     try {
       if (kind === 'restore') await restore(versionId)
-      else await openVersion(versionId)
-      setHistoryOpen(false)
+      else await openVersion(versionId, selection)
+      if (kind === 'restore') setRestoreTarget(null)
     } catch (error) {
+      if (!mounted.current || (kind === 'preview' && selection !== historySelection.current)) return
       setHistoryError(error instanceof Error ? error.message : t('atoms.requestError'))
+      if (kind === 'preview') {
+        setHistoryOpen(true)
+        setMobilePanel('chat')
+      }
     } finally {
       setHistoryAction(null)
     }
@@ -564,54 +603,77 @@ export function ProjectPage() {
     publishMutation.isPending ||
     unpublishMutation.isPending ||
     remixMutation.isPending
+  const selectedVersion =
+    viewing ?? versions.find((version) => version.id === project.currentVersionId)
   return (
-    <div className="flex h-[calc(100dvh-3rem)] min-h-[36rem] flex-col bg-background">
-      <header className="flex flex-wrap items-center gap-3 border-b p-3">
-        <div className="min-w-0 flex-1 basis-full sm:basis-auto">
-          <h1 className="truncate text-lg font-semibold">{project.title}</h1>
+    <div className="flex h-[calc(100dvh-3rem)] min-h-0 flex-col bg-background">
+      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-sm font-semibold" title={project.title}>
+            {project.title}
+          </h1>
           <p className="truncate text-xs text-muted-foreground">
             {t('atoms.versionCount', { count: versions.length })}
-            {health?.mock
-              ? ` · ${t('atoms.mockPill')}`
-              : health
-                ? ` · ${t('atoms.livePill')} ${health.model}`
-                : ''}
+            {project.publishedVersionId &&
+              ` · ${t('atoms.versionReview.publishedVersion', { number: versions.find((version) => version.id === project.publishedVersionId)?.number ?? '—' })}`}
           </p>
         </div>
         {(busy || starting || stopping) && <Spinner />}
         <div className="flex flex-wrap gap-1.5">
           <Button
-            variant="outline"
+            ref={historyButton}
+            variant={historyOpen ? 'secondary' : 'ghost'}
             data-testid="history-button"
-            onClick={() => setHistoryOpen(true)}
+            size="sm"
+            aria-pressed={historyOpen}
+            onClick={() => {
+              setHistoryOpen(!historyOpen)
+              setMobilePanel('chat')
+            }}
           >
+            <HugeiconsIcon icon={Clock01Icon} size={16} strokeWidth={1.5} />
             {t('atoms.history')}
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t('atoms.versionReview.projectActions')}
+                  data-testid="project-actions"
+                />
+              }
+            >
+              <HugeiconsIcon icon={MoreHorizontalIcon} size={18} strokeWidth={1.5} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                data-testid="remix-button"
+                disabled={busy || running}
+                onClick={() => void act(remix)}
+              >
+                {t('atoms.remix')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                data-testid="download-button"
+                disabled={!project.currentVersionId}
+                onClick={() =>
+                  void act(() =>
+                    downloadProject(
+                      id,
+                      `${slugify(project.title)}-v${viewing?.number ?? versions.find((version) => version.id === project.currentVersionId)?.number ?? 1}.zip`,
+                      viewing?.id,
+                    ),
+                  )
+                }
+              >
+                {t('atoms.download')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
-            variant="outline"
-            data-testid="remix-button"
-            disabled={busy || running}
-            onClick={() => void act(remix)}
-          >
-            {t('atoms.remix')}
-          </Button>
-          <Button
-            variant="outline"
-            data-testid="download-button"
-            disabled={!project.currentVersionId}
-            onClick={() =>
-              void act(() =>
-                downloadProject(
-                  id,
-                  `${slugify(project.title)}-v${viewing?.number ?? versions.find((version) => version.id === project.currentVersionId)?.number ?? 1}.zip`,
-                  viewing?.id,
-                ),
-              )
-            }
-          >
-            {t('atoms.download')}
-          </Button>
-          <Button
+            size="sm"
             data-testid="publish-button"
             disabled={!project.currentVersionId || running || busy}
             onClick={() => void act(publish)}
@@ -627,24 +689,40 @@ export function ProjectPage() {
         connection !== 'connected') && (
         <div
           role="alert"
-          className="flex flex-wrap items-center justify-between gap-3 border-b bg-danger-bg px-4 py-2 text-sm"
+          className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b bg-warning-bg px-4 py-3 text-sm"
         >
-          <div>
-            <p>
-              {connection === 'reconnecting'
-                ? t('atoms.reconnecting')
-                : run?.status === 'failed'
-                  ? t(`atoms.runError.${run.errorCode ?? 'internal'}`)
-                  : run?.status === 'cancelled'
-                    ? t('atoms.runCancelled')
-                    : banner || projectError}
-            </p>
-            {run?.status === 'failed' && (run.error || banner) && (
-              <p className="break-words text-xs">{run.error || banner}</p>
-            )}
-            {!running && html && run?.status === 'failed' && (
-              <p className="text-xs">{t('atoms.previousVersionKept')}</p>
-            )}
+          <div className="flex min-w-0 flex-1 items-start gap-2">
+            <HugeiconsIcon
+              icon={Alert02Icon}
+              size={18}
+              strokeWidth={1.5}
+              className="mt-0.5 shrink-0 text-warning"
+            />
+            <div className="min-w-0 space-y-1">
+              <p>
+                {connection === 'reconnecting'
+                  ? t('atoms.reconnecting')
+                  : run?.status === 'failed'
+                    ? t(`atoms.runError.${run.errorCode ?? 'internal'}`)
+                    : run?.status === 'cancelled'
+                      ? t('atoms.runCancelled')
+                      : banner || projectError}
+              </p>
+              {run?.status === 'failed' && (run.error || banner) && (
+                <Collapsible className="text-xs text-muted-foreground">
+                  <CollapsibleTrigger
+                    render={
+                      <Button variant="link" size="sm" className="h-auto px-0 py-1 text-xs" />
+                    }
+                  >
+                    {t('ui.assistant.rawDetails')}
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <p className="mt-2 break-words">{run.error || banner}</p>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+            </div>
           </div>
           {connection === 'error' ? (
             <Button variant="outline" onClick={() => void reconnectRun()}>
@@ -666,7 +744,7 @@ export function ProjectPage() {
         </div>
       )}
       {!wide && (
-        <ButtonGroup className="m-3" aria-label={t('atoms.chat')}>
+        <ButtonGroup className="mx-3 my-2 shrink-0" aria-label={t('atoms.chat')}>
           <Button
             className="flex-1"
             variant={mobilePanel === 'chat' ? 'default' : 'outline'}
@@ -674,7 +752,7 @@ export function ProjectPage() {
             data-testid="workspace-chat"
             onClick={() => setMobilePanel('chat')}
           >
-            {t('atoms.chat')}
+            {historyOpen ? t('atoms.history') : t('atoms.chat')}
           </Button>
           <Button
             className="flex-1"
@@ -693,17 +771,53 @@ export function ProjectPage() {
           style={wide ? { width: split, maxWidth: '60%' } : { flex: 1 }}
           hidden={!wide && mobilePanel !== 'chat'}
         >
-          <ChatPane
-            messages={messages}
-            running={running}
-            disabled={busy || connection === 'error'}
-            stopping={stopping}
-            runStatus={run?.status ?? null}
-            activeAgents={activeAgents}
-            activity={activity}
-            onSend={(text) => void begin(text)}
-            onStop={() => void stop()}
-          />
+          <div className="h-full" hidden={!historyOpen}>
+            <VersionHistory
+              versions={versions}
+              currentId={project.currentVersionId}
+              selectedId={viewing?.id ?? project.currentVersionId}
+              publishedId={project.publishedVersionId}
+              loadingId={historyAction?.id ?? null}
+              error={historyError}
+              onSelect={(versionId) => void selectHistoryVersion(versionId, 'preview')}
+              onClose={() => {
+                setHistoryOpen(false)
+                historyButton.current?.focus()
+              }}
+            />
+          </div>
+          <div className="h-full" hidden={historyOpen}>
+            <ChatPane
+              messages={messages}
+              running={running}
+              disabled={busy || connection === 'error'}
+              stopping={stopping}
+              runStatus={run?.status ?? null}
+              activeAgents={activeAgents}
+              activity={activity}
+              onSend={(text) => void begin(text)}
+              onStop={() => void stop()}
+              savedVersion={
+                project.currentVersionId
+                  ? {
+                      number:
+                        versions.find((version) => version.id === project.currentVersionId)
+                          ?.number ?? 1,
+                      onPreview: () => {
+                        selectCurrentVersion()
+                        setTab('preview')
+                        setMobilePanel('preview')
+                      },
+                      onChanges: () => {
+                        selectCurrentVersion()
+                        setTab('changes')
+                        setMobilePanel('preview')
+                      },
+                    }
+                  : undefined
+              }
+            />
+          </div>
         </div>
         {wide && (
           <Button
@@ -753,134 +867,127 @@ export function ProjectPage() {
             }
             onTab={setTab}
             onDevice={setDevice}
-            onBack={() => setViewing(null)}
+            onBack={selectCurrentVersion}
+            onRestore={
+              viewing
+                ? () => {
+                    setHistoryError(null)
+                    setRestoreTarget(viewing)
+                  }
+                : undefined
+            }
+            restoreDisabled={busy || running || Boolean(historyAction)}
+            versionControl={
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      data-testid="version-picker"
+                      disabled={!versions.length || Boolean(historyAction)}
+                    />
+                  }
+                >
+                  {historyAction ? (
+                    <Spinner />
+                  ) : (
+                    <span className="font-mono text-xs">
+                      {t('atoms.versionReview.shortVersion', {
+                        number:
+                          viewing?.number ??
+                          versions.find((version) => version.id === project.currentVersionId)
+                            ?.number ??
+                          '—',
+                      })}
+                    </span>
+                  )}
+                  <span className="text-xs text-muted-foreground">
+                    {t(viewing ? 'atoms.versionReview.historical' : 'atoms.current')}
+                  </span>
+                  <HugeiconsIcon icon={ArrowDown01Icon} size={14} strokeWidth={1.5} />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {[...versions]
+                    .sort((a, b) => b.number - a.number)
+                    .map((version) => (
+                      <DropdownMenuItem
+                        key={version.id}
+                        onClick={() => void selectHistoryVersion(version.id, 'preview')}
+                      >
+                        {t('atoms.versionLabel', { number: version.number })}
+                        {version.id === project.currentVersionId && (
+                          <Badge variant="secondary">{t('atoms.current')}</Badge>
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setHistoryOpen(true)
+                      setMobilePanel('chat')
+                    }}
+                  >
+                    {t('atoms.historyTitle')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            }
+            changes={
+              selectedVersion ? (
+                <VersionChanges
+                  key={viewing?.id ?? project.currentVersionId}
+                  projectId={id}
+                  version={selectedVersion}
+                  versions={versions}
+                  active={tab === 'changes'}
+                />
+              ) : (
+                <div className="grid h-full place-items-center p-6 text-sm text-muted-foreground">
+                  {t('atoms.historyEmpty')}
+                </div>
+              )
+            }
           />
         </div>
       </div>
-      <Dialog
-        open={historyOpen}
+      <AlertDialog
+        open={Boolean(restoreTarget)}
         onOpenChange={(open) => {
-          setHistoryOpen(open)
-          if (!open) setHistoryError(null)
+          if (!open && !historyAction) setRestoreTarget(null)
         }}
       >
-        <DialogContent
-          showCloseButton={false}
-          className="flex max-h-[85dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
-          data-testid="version-drawer"
-        >
-          <DialogHeader className="shrink-0 border-b px-5 py-4">
-            <div className="flex items-center justify-between gap-3">
-              <DialogTitle className="flex items-center gap-2">
-                <HugeiconsIcon icon={Clock01Icon} size={18} strokeWidth={1.5} />
-                {t('atoms.historyTitle')}
-              </DialogTitle>
-              <Badge variant="secondary">
-                {t('atoms.versionCount', { count: versions.length })}
-              </Badge>
-            </div>
-            <DialogDescription>{t('atoms.historyNote')}</DialogDescription>
-          </DialogHeader>
-          <ul
-            className="min-h-0 overflow-y-auto overscroll-contain divide-y"
-            aria-label={t('atoms.historyTitle')}
-          >
-            {versions.length === 0 && (
-              <li className="px-5 py-10 text-center text-sm text-muted-foreground">
-                {t('atoms.historyEmpty')}
-              </li>
-            )}
-            {[...versions].reverse().map((version) => (
-              <li key={version.id} className="space-y-3 px-5 py-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-semibold">
-                    {t('atoms.versionLabel', { number: version.number })}
-                  </span>
-                  {version.id === project.currentVersionId && (
-                    <Badge variant="secondary">{t('atoms.current')}</Badge>
-                  )}
-                  <time
-                    className="ml-auto text-xs text-muted-foreground"
-                    dateTime={new Date(version.createdAt).toISOString()}
-                    title={new Date(version.createdAt).toLocaleString(locale, {
-                      timeZoneName: 'short',
-                    })}
-                  >
-                    {relativeTime(version.createdAt, locale)}
-                  </time>
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  <p
-                    id={`version-prompt-${version.id}`}
-                    className={
-                      expandedVersion === version.id ? 'break-words' : 'line-clamp-2 break-words'
-                    }
-                  >
-                    {version.prompt}
-                  </p>
-                  <Button
-                    variant="link"
-                    size="sm"
-                    className="h-auto px-0 py-1 text-xs text-link"
-                    aria-expanded={expandedVersion === version.id}
-                    aria-controls={`version-prompt-${version.id}`}
-                    onClick={() =>
-                      setExpandedVersion(expandedVersion === version.id ? null : version.id)
-                    }
-                  >
-                    {t(
-                      expandedVersion === version.id
-                        ? 'atoms.historyCollapse'
-                        : 'atoms.historyExpand',
-                    )}
-                  </Button>
-                </div>
-                <div className="flex items-center justify-end gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={Boolean(historyAction)}
-                    data-testid={`preview-${version.number}`}
-                    onClick={() => void selectHistoryVersion(version.id, 'preview')}
-                  >
-                    {historyAction?.id === version.id && historyAction.kind === 'preview' ? (
-                      <Spinner />
-                    ) : (
-                      <HugeiconsIcon icon={ViewIcon} size={16} strokeWidth={1.5} />
-                    )}
-                    {t('atoms.preview')}
-                  </Button>
-                  {version.id !== project.currentVersionId && (
-                    <Button
-                      size="sm"
-                      disabled={running || busy || Boolean(historyAction)}
-                      data-testid={`restore-${version.number}`}
-                      onClick={() => void selectHistoryVersion(version.id, 'restore')}
-                    >
-                      {historyAction?.id === version.id && historyAction.kind === 'restore' ? (
-                        <Spinner />
-                      ) : (
-                        <HugeiconsIcon icon={RefreshIcon} size={16} strokeWidth={1.5} />
-                      )}
-                      {t('atoms.restore')}
-                    </Button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('atoms.versionReview.restoreTitle', { number: restoreTarget?.number ?? '' })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('atoms.versionReview.restoreDescription')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
           {historyError && (
-            <p role="alert" className="shrink-0 border-t px-5 py-3 text-sm text-destructive">
+            <p role="alert" className="text-sm text-destructive">
               {historyError}
             </p>
           )}
-          <DialogFooter className="m-0 shrink-0 flex-row justify-end bg-background px-5 py-3">
-            <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(false)}>
-              {t('atoms.close')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={Boolean(historyAction)}>
+              {t('common.cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={running || busy || Boolean(historyAction)}
+              data-testid="confirm-restore"
+              onClick={() => {
+                if (restoreTarget) void selectHistoryVersion(restoreTarget.id, 'restore')
+              }}
+            >
+              {historyAction && <Spinner />}
+              {t('atoms.restore')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog
         open={Boolean(share)}
         onOpenChange={(open) => {

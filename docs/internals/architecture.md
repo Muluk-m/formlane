@@ -38,6 +38,10 @@ Execution is real-provider only, with visible errors for missing credentials. Ch
 
 File drafts are observed at the SDK boundary while `write_file` arguments arrive. The incremental JSON reader emits `file_start` and `file_delta`; only the fully parsed, schema-validated tool call updates accepted working source through `file_saved`. Template initialization and checkpoint replay restore the complete source tree through `project_initialized` and `project_reset`. Source edits invalidate build evidence. The UI keeps partial drafts, working source and saved preview separate, and never treats a draft as a saved version.
 
+Independent review reads current and immutable saved files together through `read_review_files`. The workspace lists exact added, modified, removed and unchanged paths; unchanged files need no second baseline comparison. The bounded QA turn budget accommodates one paired inspection per path plus evidence work, while the persisted fifteen-minute deadline remains authoritative. Source contents stay in the model/tool boundary; persisted tool events contain only path/status metadata. A review step-limit failure remains an unfinished validation, never an accepted version.
+
+SDK turn exhaustion has the distinct `step_limit` error code. The control plane selects a fixed safe public message from this code; arbitrary executor messages never become public failure text. The code survives persisted snapshots and SSE replay without changing the current or published version.
+
 The trusted executor compiler reads an in-memory project tree and installed template dependencies. It never evaluates model-authored package scripts, build configuration or plugins. Local modules and CSS are bundled into the isolated preview; source remains a real downloadable Vite project. Build failures remain repairable tool results. The fixed template manifests trade arbitrary dependency installation for repeatable execution without granting generated code host authority.
 
 Only explicitly public provider reasoning-summary events become `reasoning_summary` records. The configured Chat Completions provider has no supported public summary, so the interface shows actual delegation tasks and tool evidence without synthesizing reasoning or exposing raw model reasoning.
@@ -47,6 +51,8 @@ Only explicitly public provider reasoning-summary events become `reasoning_summa
 Read [data-model.md](data-model.md) for pointer and ownership invariants. Local schema setup is an explicit migration step; requests do not auto-create tables. D1/SQLite behavior must be respected instead of importing row-lock or transaction assumptions from the reference PostgreSQL application.
 
 Preview HTML is untrusted and sandboxed. Public HTML is served only through publication. Current, viewed, and published versions are separate concepts; browser state must not accidentally collapse them.
+
+Version inspection uses immutable source snapshots from the existing ownership-checked API. The Changes view labels both compared versions and lets the user choose a baseline; its initial comparison is the preceding numbered version, not a claim about the run's original parent after restoration. The bounded line diff retains exact source/newline content and falls back to an explicitly labeled replacement for large edits. Inspection never moves the current or published pointer. Restore confirms the target and preserves later history; it continues to select the current pointer rather than adopting v0's new-version-on-restore persistence semantics.
 
 Project/chat/code/version persistence in D1 does not persist the generated application's interactive runtime state. The opaque-origin preview cannot rely on browser storage; generated apps use in-memory state for the preview session.
 
