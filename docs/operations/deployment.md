@@ -2,7 +2,7 @@
 
 ## Current rollout status
 
-**The Python API is staged; final production cutover has not happened.** Real-model acceptance has passed. Production activation still requires a fresh write-fenced import and final routing verification. `deploy/environments.json` records the new HTTPS origins with `backendReady: false`.
+**Python/PostgreSQL is now the production authority.** Static Pages deployment `f574dabe` serves release `01b2c3b`; the final fenced import passed before activation. `backendReady` is true. Deployed real-model acceptance and final CI are in progress.
 
 | Resource                      | Current identity / boundary                                                                   |
 | ----------------------------- | --------------------------------------------------------------------------------------------- |
@@ -14,8 +14,8 @@
 | Existing VM                   | `formlane-agent`, zone `us-central1-c`                                                        |
 | Backend release               | `/opt/formlane/python-backend/current`                                                        |
 | systemd services              | `formlane-python-api`, `formlane-python-worker`, non-root user `formlane`                     |
-| Current service environment   | Private `/etc/formlane/backend-stage.env`; **stage**, not final production                    |
-| Databases                     | Isolated `formlane_stage`, `formlane_test`, and final `formlane` (currently empty)            |
+| Current service environment   | Private `/etc/formlane/backend.env`; production database `formlane`                           |
+| Databases                     | Production `formlane`; isolated `formlane_stage` and `formlane_test` retained                 |
 | Public ingress                | Caddy 2.11.9 on 80/443; only these web ingress ports are open                                 |
 | Private listeners             | FastAPI `127.0.0.1:8090`; PostgreSQL loopback port 5432                                       |
 | Provider                      | `grok-4.7` at `https://sub2api.qiliangjia.org/v1`; secrets only in private server environment |
@@ -24,22 +24,26 @@ Caddy automatically obtains and renews Let's Encrypt **short-lived IP certificat
 
 The [API](../../apps/backend/deploy/formlane-python-api.service) and [worker](../../apps/backend/deploy/formlane-python-worker.service) units share the intended private environment and release. The API serves HTTP; the worker claims PostgreSQL leases and executes native CrewAI. The [compiler](../../apps/compiler/) is a bounded credential-stripped Node subprocess, not a second business server. Keep sandboxed Chromium under the non-root service identity. Provider/database credentials must never enter Pages, Vite variables, generated content or logs.
 
-### Evidence available before final cutover
+### Final cutover evidence
 
-The exact six-table rehearsal import and hash verification passed with:
+The final six-table export was taken after all 53 legacy runs were terminal, the Node executor was stopped/disabled and Worker mutations/cron were fenced. Empty-production import and independent `--verify-only` both passed:
 
 | Table           |  Rows |
 | --------------- | ----: |
-| projects        |    17 |
-| messages        |   280 |
-| versions        |    21 |
-| runs            |    49 |
-| run_events      | 4,067 |
-| run_checkpoints |   321 |
+| projects        |    20 |
+| messages        |   322 |
+| versions        |    27 |
+| runs            |    53 |
+| run_events      | 4,593 |
+| run_checkpoints |   357 |
 
-The importer preserves canonical row/source/HTML hashes, ownership/pointers, message tie ordering, cursors and checkpoints. For pre-0006 exports only, absent ancestry is explicitly normalized from the recorded originating same-project run and retained previous version; unknown roots stay null. This policy is recorded in the manifest, rather than silently inferring version-number ancestry. Empty-target import and `--verify-only` were exercised. Counts describe that rehearsal snapshot and must be replaced by final export evidence at cutover.
+The private snapshot and exact count/row/source/HTML-hash manifest are `/var/lib/formlane/backups/final-cutover-20261112.sql` and `final-cutover-20261112-manifest.json`. Message-order SHA-256 is `907d5e5fd83d394cc88804a4ccad4af95aa05ad3679d00d8b628959f0012d4de`. The importer also verified ownership/pointers, event cursors and checkpoints. Explicit ancestry was preserved; the recorded pre-0006 normalization policy applies only when the column is absent. These counts describe the immutable cutover snapshot, before new PostgreSQL writes.
 
 Final targeted verification passed: **144 Python tests**, **19 compiler tests**, **37 client message tests**, client/compiler typechecks and the static frontend build. Real-model run `f43bd63c-6186-4d0c-96c3-213afc238c0f` saved v1; follow-up `d8cff470-6f81-4d5c-af6e-a2c6eed8f48d` saved v2. Browser reload reconnected to the same running task (cursor 62 → 67). Independent review may use different checks from implementation validation, while both remain tied to the exact source/build. Browser Undo, frozen v1 publication during v2 generation, exact source ZIP, restore, remix, cancellation preserving v2, unpublication, cross-owner denial and allowed/denied CORS passed. These are stage acceptance results; final import and deployed browser evidence remain required.
+
+The pre-cutover browser retained all four existing owned projects and draft `80601bf4-b494-4723-8a90-45dddfe6eb47`. Its GET/POST/DELETE requests preserved the owner header and body through redirects. Legacy Worker `2ad2ebc5-87f6-4016-8f70-e1b82a7acf00` now only redirects API/public URLs; it has no D1 binding or scheduled work. Previous Worker `0fe9b4c0-c5c5-44b6-bd9f-c9f2413bed3c` and Pages `cfe7d89e-08d3-4654-a502-7e4c040bca0d` are recovery artifacts, not writable fallback authorities.
+
+CI uses a per-run password only for its isolated loopback PostgreSQL container. No production secret is committed. Use released action tags, and pass the verified Cloudflare account through `CLOUDFLARE_ACCOUNT_ID`: Pages rejects `account_id` in its Wrangler configuration.
 
 ## Static Pages Python API cutover
 
