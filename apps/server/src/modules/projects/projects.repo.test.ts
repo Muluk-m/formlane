@@ -642,6 +642,68 @@ describe('durable generation persistence on real D1', () => {
     expect((await runs.listRunEvents(db, active.id, 0)).at(-1)?.data.status).toBe('cancelled')
   })
 
+  it('preserves actual generation ancestry through restore, backfill, and remix', async () => {
+    const first = await create()
+    const firstLease = await claim()
+    await runs.completeRun(db, first.id, firstLease.lease_token, result, 3)
+    const second = await create(4)
+    const secondLease = await claim(4)
+    await runs.completeRun(db, second.id, secondLease.lease_token, result, 5)
+    await projects.publishProject(db, projectId, ownerId, 'ancestry', 5)
+    await projects.restoreVersion(db, {
+      projectId,
+      ownerId,
+      versionId: first.id,
+      messageId: crypto.randomUUID(),
+      now: 6,
+    })
+    const branch = await create(7)
+    const branchLease = await claim(7)
+    await runs.completeRun(db, branch.id, branchLease.lease_token, result, 8)
+    const expected = expect.arrayContaining([
+      expect.objectContaining({ id: branch.id, parentVersionId: first.id }),
+      expect.objectContaining({ id: second.id, parentVersionId: first.id }),
+      expect.objectContaining({ id: first.id, parentVersionId: null }),
+    ])
+    expect(await projects.listVersions(db, projectId)).toEqual(expected)
+    const events = await runs.listRunEvents(db, branch.id, 0)
+    expect(events.find((event) => event.type === 'version')?.data.parentVersionId).toBe(first.id)
+
+    // Simulate saved rows predating the ancestry column, then run the real backfill.
+    await db.update(schema.versions).set({ parent_version_id: null })
+    const migration = await readFile(
+      new URL('../../../migrations/0006_version_ancestry.sql', import.meta.url),
+      'utf8',
+    )
+    await applyMigration(binding, migration.split('--> statement-breakpoint').slice(1).join(';'))
+    expect(await projects.listVersions(db, projectId)).toEqual(expected)
+
+    const remix = await projects.remixProject(db, projectId, ownerId)
+    if (!remix) throw new Error('Expected an independent project.')
+    const copies = await projects.listVersions(db, remix.id)
+    const root = copies.find((version) => version.number === 1)
+    const copiedBranch = copies.find((version) => version.id === remix.currentVersionId)
+    expect(root?.parentVersionId).toBeNull()
+    expect(copiedBranch?.parentVersionId).toBe(root?.id)
+    expect(copies.find((version) => version.number === 2)?.parentVersionId).toBe(root?.id)
+    expect(root?.id).not.toBe(first.id)
+
+    const saved = await projects.getVersion(db, projectId, branch.id)
+    if (!saved?.parentVersionId) throw new Error('Expected the recorded base version.')
+    await projects.restoreVersion(db, {
+      projectId,
+      ownerId,
+      versionId: saved.parentVersionId,
+      messageId: crypto.randomUUID(),
+      now: 9,
+    })
+    expect(await projects.getProject(db, projectId, ownerId)).toMatchObject({
+      current_version_id: first.id,
+      published_version_id: second.id,
+    })
+    expect(await projects.listVersions(db, projectId)).toEqual(expected)
+  })
+
   it('remixes saved history and deletes run events with a project', async () => {
     const run = await create()
     const leased = await claim()
@@ -689,7 +751,8 @@ describe('saved project sources', () => {
         )
         .bind(id, projectId, number, html, `Request ${number}`, number)
         .run()
-    await applyMigration(legacy, await readFile(`${directory}/0005_project_sources.sql`, 'utf8'))
+    for (const name of names.filter((name) => name >= '0005_project_sources.sql'))
+      await applyMigration(legacy, await readFile(`${directory}/${name}`, 'utf8'))
     const migrated = drizzle(legacy, { schema })
     expect(await projects.getVersion(migrated, projectId, 'legacy-one')).toMatchObject({
       id: 'legacy-one',

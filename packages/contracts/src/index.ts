@@ -40,6 +40,7 @@ export const messageSchema = z.object({
 })
 export const versionSchema = z.object({
   id: z.uuid(),
+  parentVersionId: z.uuid().nullable(),
   number: z.number().int().positive(),
   prompt: z.string(),
   createdAt: z.number(),
