@@ -532,3 +532,44 @@ it('keeps step-limit failures in terminal execution details without losing the d
     ],
   })
 })
+
+it('keeps saved results at their original turn while the next version is running', () => {
+  const versions = [
+    { id: 'version-1', parentVersionId: null, number: 1, prompt: 'Build', createdAt: 200 },
+  ]
+  const messages: ConversationMessage[] = [
+    { id: 'follow-up', role: 'user', agent: null, content: 'Make it blue', createdAt: 300 },
+  ]
+  const activity = [event(1, 'tool_start', toolData, secondRun, 400)]
+  const grouped = groupExecutionMessages(
+    toAssistantMessages(messages, activity, 'running', versions),
+  )
+
+  expect(grouped.map((message) => message.id)).toEqual([
+    'version:version-1',
+    'follow-up',
+    `execution:activity:${secondRun}:1`,
+  ])
+  expect(grouped[0]).toMatchObject({
+    status: { type: 'complete', reason: 'stop' },
+    metadata: { custom: { kind: 'saved-version', versionId: 'version-1' } },
+  })
+  expect(grouped[2]?.status).toEqual({ type: 'running' })
+
+  const saved = [
+    ...versions,
+    {
+      id: 'version-2',
+      parentVersionId: 'version-1',
+      number: 2,
+      prompt: 'Make it blue',
+      createdAt: 600,
+    },
+  ]
+  const replay = groupExecutionMessages(toAssistantMessages(messages, [], 'completed', saved))
+  expect(replay.map((message) => message.id)).toEqual([
+    'version:version-1',
+    'follow-up',
+    'version:version-2',
+  ])
+})

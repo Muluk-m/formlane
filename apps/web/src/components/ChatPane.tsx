@@ -5,7 +5,7 @@ import {
   useExternalStoreRuntime,
 } from '@assistant-ui/react'
 import type { RunEvent as HarnessEvent, Run as HarnessRun } from '@atoms-demo/contracts'
-import { AGENT_ORDER, type AgentId } from '@atoms-demo/core/types'
+import { AGENT_ORDER, type AgentId, type AppVersion } from '@atoms-demo/core/types'
 import { useI18n } from '@atoms-demo/i18n/react'
 import {
   type AssistantIdentity,
@@ -35,7 +35,8 @@ export function ChatPane({
   runStatus,
   activeAgents,
   activity,
-  savedVersion,
+  versions,
+  onOpenVersion,
   onSend,
   onStop,
 }: {
@@ -46,14 +47,15 @@ export function ChatPane({
   runStatus: HarnessRun['status'] | null
   activeAgents: Record<string, string>
   activity: HarnessEvent[]
-  savedVersion?: { number: number; onPreview: () => void; onChanges: () => void }
+  versions: AppVersion[]
+  onOpenVersion: (versionId: string, mode: 'preview' | 'changes') => void
   onSend: (text: string) => void
   onStop: () => void
 }) {
   const { t } = useI18n()
   const converted = useMemo(
-    () => groupExecutionMessages(toAssistantMessages(messages, activity, runStatus)),
-    [messages, activity, runStatus],
+    () => groupExecutionMessages(toAssistantMessages(messages, activity, runStatus, versions)),
+    [messages, activity, runStatus, versions],
   )
   const schema = z
     .string()
@@ -102,7 +104,16 @@ export function ChatPane({
         resolveAgent={resolveAgent}
         disabled={disabled}
         stopping={stopping}
-        artifact={savedVersion && <AssistantSavedVersion {...savedVersion} />}
+        renderSavedVersion={(versionId) => {
+          const version = versions.find((item) => item.id === versionId)
+          return version ? (
+            <AssistantSavedVersion
+              number={version.number}
+              onPreview={() => onOpenVersion(versionId, 'preview')}
+              onChanges={() => onOpenVersion(versionId, 'changes')}
+            />
+          ) : null
+        }}
         status={
           runStatus && (
             <AssistantRunStatus

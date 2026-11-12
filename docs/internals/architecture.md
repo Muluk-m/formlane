@@ -54,6 +54,8 @@ Preview HTML is untrusted and sandboxed. Public HTML is served only through publ
 
 Version inspection uses immutable source snapshots from the existing ownership-checked API. The Changes view labels both compared versions and lets the user choose a baseline; its initial comparison is the preceding numbered version, not a claim about the run's original parent after restoration. The bounded line diff retains exact source/newline content and falls back to an explicitly labeled replacement for large edits. Inspection never moves the current or published pointer. Restore confirms the target and preserves later history; it continues to select the current pointer rather than adopting v0's new-version-on-restore persistence semantics.
 
+Saved-result cards are immutable conversation milestones, ordered by each version's saved timestamp. They must stay before subsequent requests instead of following the latest execution as a transcript footer. Their preview and comparison actions inspect that exact version; neither a new run nor restoring the current pointer relocates an earlier milestone.
+
 Project/chat/code/version persistence in D1 does not persist the generated application's interactive runtime state. The opaque-origin preview cannot rely on browser storage; generated apps use in-memory state for the preview session.
 
 ## Inheritance scope

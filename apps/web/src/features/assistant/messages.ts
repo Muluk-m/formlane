@@ -1,6 +1,6 @@
 import type { MessageStatus, ThreadMessageLike } from '@assistant-ui/react'
 import type { Run, RunEvent } from '@atoms-demo/contracts'
-import type { ChatMessage } from '@atoms-demo/core/types'
+import type { AppVersion, ChatMessage } from '@atoms-demo/core/types'
 
 export type ConversationMessage = Omit<ChatMessage, 'agent'> & {
   agent: string | null
@@ -188,6 +188,7 @@ export function toAssistantMessages(
   messages: readonly ConversationMessage[],
   activity: readonly RunEvent[],
   runStatus: Run['status'] | null,
+  versions: readonly AppVersion[] = [],
 ): ThreadMessageLike[] {
   const converted: ThreadMessageLike[] = messages.map((message) => {
     const terminal =
@@ -274,6 +275,17 @@ export function toAssistantMessages(
         runId: first.runId,
         custom: { kind: 'reasoning', agent: first.data.agent },
       },
+    })
+  }
+
+  for (const version of versions) {
+    converted.push({
+      id: `version:${version.id}`,
+      role: 'assistant',
+      createdAt: new Date(version.createdAt),
+      status: complete,
+      metadata: { custom: { kind: 'saved-version', versionId: version.id } },
+      content: [{ type: 'data', name: 'saved-version', data: { id: version.id } }],
     })
   }
 

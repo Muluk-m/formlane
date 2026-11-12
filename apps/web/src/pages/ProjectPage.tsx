@@ -489,14 +489,14 @@ export function ProjectPage() {
     window.addEventListener('pointerup', up)
   }
 
-  async function openVersion(versionId: string, selection: number) {
+  async function openVersion(versionId: string, selection: number, mode: 'preview' | 'changes') {
     if (versionId === project?.currentVersionId) setViewing(null)
     else {
       const { version } = await client.fetchQuery(versionQuery(id, versionId))
       if (!mounted.current || selection !== historySelection.current) return
       setViewing(version)
     }
-    if (tab !== 'changes') setTab('preview')
+    setTab(mode)
     setMobilePanel('preview')
   }
 
@@ -511,14 +511,18 @@ export function ProjectPage() {
     await refresh()
   }
 
-  async function selectHistoryVersion(versionId: string, kind: 'preview' | 'restore') {
+  async function selectHistoryVersion(
+    versionId: string,
+    kind: 'preview' | 'restore',
+    mode: 'preview' | 'changes' = tab === 'changes' ? 'changes' : 'preview',
+  ) {
     if (historyAction || undoPending.current) return
     const selection = ++historySelection.current
     setHistoryAction({ id: versionId, kind })
     setHistoryError(null)
     try {
       if (kind === 'restore') await restore(versionId)
-      else await openVersion(versionId, selection)
+      else await openVersion(versionId, selection, mode)
       if (kind === 'restore') setRestoreTarget(null)
     } catch (error) {
       if (!mounted.current || (kind === 'preview' && selection !== historySelection.current)) return
@@ -854,24 +858,9 @@ export function ProjectPage() {
               activity={activity}
               onSend={(text) => void begin(text)}
               onStop={() => void stop()}
-              savedVersion={
-                project.currentVersionId
-                  ? {
-                      number:
-                        versions.find((version) => version.id === project.currentVersionId)
-                          ?.number ?? 1,
-                      onPreview: () => {
-                        selectCurrentVersion()
-                        setTab('preview')
-                        setMobilePanel('preview')
-                      },
-                      onChanges: () => {
-                        selectCurrentVersion()
-                        setTab('changes')
-                        setMobilePanel('preview')
-                      },
-                    }
-                  : undefined
+              versions={versions}
+              onOpenVersion={(versionId, mode) =>
+                void selectHistoryVersion(versionId, 'preview', mode)
               }
             />
           </div>
