@@ -26,6 +26,7 @@ import { Spinner } from '#components/spinner'
 import {
   AssistantActivity,
   AssistantActivityIcon,
+  AssistantExecutionSummary,
   AssistantReasoning,
   AssistantStructuredOutput,
   AssistantToolCall,
@@ -53,21 +54,38 @@ export function MarkdownText() {
 
 function SystemText({ text }: TextMessagePartProps) {
   const { t } = useI18n()
-  const version = text.match(/^Saved version (\d+)\./)
+  const saved = text.match(/^Saved version (\d+)\./)
+  const restored = text.match(/^Restored version (\d+)\.$/)
+  const label = restored
+    ? t('ui.assistant.restoredVersion', { number: restored[1] ?? '' })
+    : saved
+      ? t('atoms.savedVersion', { number: saved[1] ?? '' })
+      : t('ui.assistant.systemDetails')
   return (
-    <p className="flex items-center justify-center gap-2 whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">
-      {version && (
+    <Collapsible className="min-w-0">
+      <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded-lg py-1 text-left text-xs leading-5 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+        {(saved || restored) && (
+          <HugeiconsIcon
+            icon={CheckmarkCircle02Icon}
+            strokeWidth={1.5}
+            className="size-4 shrink-0 text-success"
+            aria-hidden
+          />
+        )}
+        <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{label}</span>
         <HugeiconsIcon
-          icon={CheckmarkCircle02Icon}
+          icon={ArrowDown02Icon}
           strokeWidth={1.5}
-          className="size-4 shrink-0 text-success"
           aria-hidden
+          className="size-3.5 shrink-0 transition-transform group-aria-expanded:rotate-180 motion-reduce:transition-none"
         />
-      )}
-      <span className="min-w-0 [overflow-wrap:anywhere]">
-        {version ? t('atoms.savedVersion', { number: version[1] ?? '' }) : text}
-      </span>
-    </p>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <p className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-sunken p-3 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+          {text}
+        </p>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
@@ -110,12 +128,9 @@ function AssistantMessage({ resolveAgent }: { resolveAgent: AssistantAgentResolv
   if (custom.kind === 'execution') {
     return (
       <MessagePrimitive.Root className="min-w-0" data-testid="execution-message">
-        <Collapsible defaultOpen className="min-w-0 rounded-xl border border-border bg-card">
-          <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded-xl px-3 py-3 text-left outline-none hover:bg-surface-sunken/60 focus-visible:ring-2 focus-visible:ring-ring">
-            <AssistantActivityIcon tone={status?.type === 'running' ? 'running' : 'recorded'} />
-            <span className="flex-1 text-xs font-medium">
-              {t(status?.type === 'running' ? 'ui.assistant.executing' : 'ui.assistant.execution')}
-            </span>
+        <Collapsible className="min-w-0 rounded-xl border border-border bg-surface-sunken/30">
+          <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left outline-none hover:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-ring">
+            <AssistantExecutionSummary />
             <span className="text-xs tabular-nums text-muted-foreground">
               {t('ui.assistant.steps', { count: stepCount })}
             </span>
@@ -211,6 +226,41 @@ export function AssistantRunStatus({
       )}
       {note && <p className="text-xs leading-5 text-muted-foreground">{note}</p>}
     </div>
+  )
+}
+
+export function AssistantSavedVersion({
+  number,
+  onPreview,
+  onChanges,
+}: {
+  number: number
+  onPreview: () => void
+  onChanges: () => void
+}) {
+  const { t } = useI18n()
+  return (
+    <section
+      className="rounded-xl border border-border bg-card p-3 shadow-card"
+      aria-label={t('atoms.savedVersion', { number })}
+      data-testid="saved-result"
+    >
+      <div className="flex items-center gap-2">
+        <AssistantActivityIcon tone="complete" />
+        <span className="min-w-0 flex-1 text-sm font-medium">{t('ui.assistant.savedResult')}</span>
+        <span className="rounded-md bg-secondary px-2 py-1 text-xs tabular-nums text-secondary-foreground">
+          {t('ui.assistant.versionNumber', { number })}
+        </span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={onPreview}>
+          {t('atoms.preview')}
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onChanges}>
+          {t('ui.assistant.viewChanges')}
+        </Button>
+      </div>
+    </section>
   )
 }
 
@@ -328,11 +378,13 @@ export function AssistantThread({
   status,
   disabled,
   stopping,
+  artifact,
 }: {
   resolveAgent: AssistantAgentResolver
   status?: ReactNode
   disabled?: boolean
   stopping?: boolean
+  artifact?: ReactNode
 }) {
   const { t } = useI18n()
   return (
@@ -366,6 +418,7 @@ export function AssistantThread({
           <ThreadPrimitive.Messages>
             {() => <AssistantMessage resolveAgent={resolveAgent} />}
           </ThreadPrimitive.Messages>
+          {artifact}
         </div>
         <div className="pointer-events-none sticky bottom-0 mt-4 flex justify-center">
           <ThreadPrimitive.ScrollToBottom

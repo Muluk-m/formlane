@@ -29,7 +29,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const projects = useQuery(projectsQuery)
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={!pathname.startsWith('/project/')}>
       <Sidebar collapsible="icon">
         <SidebarHeader className="p-4 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-0">
           <Logo className="group-data-[collapsible=icon]:hidden" />
@@ -88,7 +88,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           <SidebarTrigger />
           <span className="text-sm text-muted-foreground">{t('atoms.workspace')}</span>
         </div>
-        <div className="landing-bg relative min-w-0 flex-1">{children}</div>
+        <div
+          className={`${pathname.startsWith('/project/') ? '' : 'landing-bg'} relative min-w-0 flex-1`}
+        >
+          {children}
+        </div>
       </SidebarInset>
     </SidebarProvider>
   )
