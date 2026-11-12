@@ -63,6 +63,8 @@ export const runSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),
   status: runStatusSchema,
+  attempt: z.number().int().positive().default(1),
+  resumable: z.boolean().default(false),
   request: z.string(),
   createdAt: z.number(),
   startedAt: z.number().nullable(),
@@ -74,6 +76,7 @@ export const runSchema = z.object({
 })
 export const runEventSchema = z.object({
   runId: z.uuid(),
+  attempt: z.number().int().positive().default(1),
   sequence: z.number().int().positive(),
   type: z.string(),
   data: z.record(z.string(), z.unknown()),

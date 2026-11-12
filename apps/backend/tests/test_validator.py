@@ -51,6 +51,12 @@ def validate(html, checks):
         {"kind": "click", "selector": "#save", "value": "Enter"},
         {"kind": "click", "selector": "#save"},
         {"kind": "fill", "selector": "#name", "value": None},
+        {"kind": "select", "selector": "#plan", "value": None},
+        {"kind": "select", "selector": "#plan", "value": 1},
+        {"kind": "select", "selector": "#plan", "value": ["pro"]},
+        {"kind": "select", "selector": "#plan", "value": {"label": "Pro"}},
+        {"kind": "select", "selector": "#plan", "value": "x" * 1001},
+        {"kind": "select", "selector": "#plan", "value": "😀" * 501},
     ],
 )
 def test_rejects_privileged_or_invalid_actions(action):
@@ -292,6 +298,86 @@ marker.addEventListener('keydown', event => { if (event.key === 'Enter' || event
     )
     assert report["issues"] == []
     assert report["valid"]
+
+
+@pytest.mark.parametrize("value", ["", "pro", "x" * 1000, "😀" * 500])
+def test_select_accepts_bounded_option_value_strings(value):
+    action = {"kind": "select", "selector": "#plan", "value": value}
+    normalized = validate_checks([check(actions=[action]), check()])
+    assert normalized[0]["actions"] == [action]
+
+
+def test_native_select_uses_option_values_and_dispatches_change_in_sandbox():
+    html = """<!doctype html><html><body>
+<select id="plan"><option value="">Choose</option><option value="other">pro</option><option value="pro">Professional</option></select>
+<output id="status">unchanged</output><output id="events"></output><output id="sandbox"></output>
+<script>
+const plan = document.querySelector('#plan');
+plan.addEventListener('input', () => { document.querySelector('#events').textContent += 'input;'; });
+plan.addEventListener('change', () => {
+  document.querySelector('#events').textContent += 'change;';
+  document.querySelector('#status').textContent = plan.value === 'pro' ? 'Professional selected' : 'Choose a plan';
+  try { parent.document.body; document.querySelector('#sandbox').textContent = 'exposed'; }
+  catch { document.querySelector('#sandbox').textContent = 'opaque'; }
+});
+</script></body></html>"""
+    report = validate(
+        html,
+        [
+            check(
+                name="select option value rather than matching label",
+                actions=[{"kind": "select", "selector": "#plan", "value": "pro"}],
+                assertions=[
+                    assertion("value", "#plan", "pro"),
+                    assertion(expected="Professional selected"),
+                    assertion(selector="#events", expected="input;change;"),
+                    assertion(selector="#sandbox", expected="opaque"),
+                ],
+            ),
+            check(
+                name="select empty placeholder value",
+                actions=[
+                    {"kind": "select", "selector": "#plan", "value": "pro"},
+                    {"kind": "select", "selector": "#plan", "value": ""},
+                ],
+                assertions=[
+                    assertion("value", "#plan", ""),
+                    assertion(expected="Choose a plan"),
+                    assertion(selector="#events", expected="input;change;input;change;"),
+                ],
+            ),
+            check(
+                name="selection does not leak into fresh context",
+                actions=[],
+                assertions=[assertion("value", "#plan", ""), assertion(expected="unchanged")],
+            ),
+        ],
+    )
+    assert report["issues"] == []
+    assert report["valid"]
+    assert all(item["passed"] for item in report["checks"])
+
+
+def test_fill_on_native_select_is_not_coerced_to_selection():
+    html = '<!doctype html><html><body><select id="plan"><option value="">Choose</option><option value="pro">Professional</option></select></body></html>'
+    report = validate(
+        html,
+        [
+            check(
+                name="fill remains invalid for select",
+                actions=[{"kind": "fill", "selector": "#plan", "value": "pro"}],
+                assertions=[assertion("value", "#plan", "pro")],
+            ),
+            check(
+                name="explicit select succeeds",
+                actions=[{"kind": "select", "selector": "#plan", "value": "pro"}],
+                assertions=[assertion("value", "#plan", "pro")],
+            ),
+        ],
+    )
+    assert not report["valid"]
+    assert [item["passed"] for item in report["checks"]] == [False, True]
+    assert "input" in report["checks"][0]["actual"]
 
 
 def test_runtime_errors_reject_an_otherwise_matching_document():

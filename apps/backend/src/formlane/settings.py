@@ -7,8 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str
-    openai_api_key: str = ""
+    database_url: str = Field(repr=False)
+    openai_api_key: str = Field(default="", repr=False)
     endpoint: str = "https://api.openai.com/v1"
     model: str = "gpt-4.1"
     allowed_origins: str = ""
@@ -20,6 +20,11 @@ class Settings(BaseSettings):
         default=None, validation_alias=AliasChoices("BROWSER_EXECUTABLE_PATH", "browser_executable")
     )
     worker_enabled: bool = True
+    dbos_system_schema: str = Field(default="dbos", pattern=r"^[a-z_][a-z0-9_]{0,62}$")
+
+    @property
+    def durable_database_url(self) -> str:
+        return self.database_url
 
     @field_validator("database_url")
     @classmethod

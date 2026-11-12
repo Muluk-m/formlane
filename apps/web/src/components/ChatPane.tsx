@@ -44,7 +44,7 @@ export function ChatPane({
   running: boolean
   disabled: boolean
   stopping: boolean
-  run: Pick<HarnessRun, 'id' | 'status'> | null
+  run: Pick<HarnessRun, 'id' | 'status' | 'attempt'> | null
   activeAgents: Record<string, string>
   activity: HarnessEvent[]
   versions: AppVersion[]

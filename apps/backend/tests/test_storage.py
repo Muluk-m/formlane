@@ -14,11 +14,18 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.engine import make_url
 
 from formlane.models import Run, RunCheckpoint, RunEvent
-from formlane.storage import LEASE_DURATION_MS, LeaseLost, Store, StoreError, timestamp
+from formlane.storage import (
+    LEASE_DURATION_MS,
+    RUN_BUDGET_MS,
+    LeaseLost,
+    Store,
+    StoreError,
+    timestamp,
+)
 
 
 @contextmanager
-def postgres_store():
+def postgres_store(revision="head"):
     database_url = os.environ.get("TEST_DATABASE_URL")
     if not database_url:
         pytest.fail(
@@ -41,7 +48,7 @@ def postgres_store():
         config = Config(str(Path(__file__).parents[1] / "alembic.ini"))
         with store.engine.begin() as connection:
             config.attributes["connection"] = connection
-            command.upgrade(config, "head")
+            command.upgrade(config, revision)
         yield store
     finally:
         store.close()
@@ -308,3 +315,226 @@ def test_heartbeat_caps_lease_at_deadline(pg_store, project, owner):
     with pg_store.sessions() as session:
         saved = session.get(Run, run["id"])
         assert saved.lease_expires_at == clock + 100 < clock + LEASE_DURATION_MS
+
+
+@pytest.mark.parametrize("terminal", ["failed", "cancelled"])
+def test_resume_preserves_checkpoint_source_history_and_fences_old_attempt(
+    pg_store, project, owner, result, terminal
+):
+    baseline = complete(pg_store, project, owner, result)
+    run = start(pg_store, project, owner, "Keep the saved app and add a counter")
+    checkpoint = pg_store.put_checkpoint(
+        run["id"], run["lease_token"], "source:committed", {"source": result["source"]}
+    )
+    assert pg_store.finish_run(run["id"], run["lease_token"], terminal, "provider", "secret")
+    before = pg_store.get_run(project["id"], owner, run["id"])
+    detail = pg_store.get_project(project["id"], owner)
+    history = pg_store.list_run_events(project["id"], owner, run["id"], 0)
+    assert before["attempt"] == 1 and before["resumable"]
+    clock = timestamp()
+    resumed = pg_store.resume_run(project["id"], owner, run["id"], now=clock)
+    assert resumed["id"] == before["id"]
+    assert resumed["createdAt"] == before["createdAt"]
+    assert resumed["startedAt"] == before["startedAt"]
+    assert resumed["request"] == before["request"]
+    assert resumed["status"] == "queued" and resumed["attempt"] == 2
+    assert resumed["cursor"] == before["cursor"] + 1
+    assert not resumed["resumable"]
+    assert resumed["error"] is resumed["errorCode"] is resumed["finishedAt"] is None
+    after = pg_store.get_project(project["id"], owner)
+    assert after["messages"] == detail["messages"]
+    assert after["source"] == detail["source"] == result["source"]
+    assert after["project"]["currentVersionId"] == baseline["id"]
+    assert not pg_store.heartbeat(run["id"], run["lease_token"])
+    assert not pg_store.complete_run(run["id"], run["lease_token"], result)
+    assert not pg_store.finish_run(run["id"], run["lease_token"], "failed", "provider", "late")
+    for operation in [
+        lambda: pg_store.check_authority(run["id"], run["lease_token"]),
+        lambda: pg_store.put_checkpoint(run["id"], run["lease_token"], "late", {}),
+        lambda: pg_store.append_event(run["id"], run["lease_token"], "late", "token", {}),
+    ]:
+        with pytest.raises(LeaseLost):
+            operation()
+    claimed = pg_store.claim_run("resumed-worker")
+    assert claimed["lease_token"] != run["lease_token"]
+    assert claimed["previous_version_id"] == baseline["id"]
+    assert claimed["attempt_started_at"] == clock
+    assert claimed["deadline_at"] == clock + RUN_BUDGET_MS
+    assert claimed["execution_version"] == run["execution_version"] == "dbos-v1"
+    assert (
+        pg_store.get_checkpoint(run["id"], claimed["lease_token"], "source:committed") == checkpoint
+    )
+    context = pg_store.harness_context(run["id"], claimed["lease_token"])
+    assert context["attempt"] == 2 and context["previousSource"] == result["source"]
+    assert pg_store.finish_run(run["id"], claimed["lease_token"], "failed", "validation", "secret")
+    events = pg_store.list_run_events(project["id"], owner, run["id"], 0)
+    assert events[: len(history)] == history
+    assert [event["sequence"] for event in events] == list(range(1, len(events) + 1))
+    assert [
+        (event["attempt"], event["data"]["attempt"], event["data"]["status"])
+        for event in events[-3:]
+    ] == [(2, 2, "queued"), (2, 2, "running"), (2, 2, "failed")]
+
+
+def test_concurrent_resume_grants_only_one_new_attempt_and_reclaim_keeps_deadline(
+    pg_store, project, owner
+):
+    run = start(pg_store, project, owner)
+    pg_store.cancel_run(project["id"], owner, run["id"])
+    clock = timestamp()
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        receipts = list(
+            pool.map(
+                lambda index: pg_store.resume_run(
+                    project["id"], owner, run["id"], now=clock + index
+                ),
+                range(4),
+            )
+        )
+    assert all(receipt == receipts[0] for receipt in receipts)
+    assert receipts[0]["attempt"] == 2
+    claimed = pg_store.claim_run("first-resumed-worker")
+    pg_store.resume_run(project["id"], owner, run["id"], now=clock + 10_000)
+    with pg_store.sessions.begin() as session:
+        persisted = session.get(Run, run["id"])
+        assert persisted.attempt == 2
+        assert persisted.deadline_at == claimed["deadline_at"]
+        persisted.lease_expires_at = timestamp() - 1
+    reclaimed = pg_store.claim_run("reclaimed-worker")
+    assert reclaimed["attempt"] == 2
+    assert reclaimed["deadline_at"] == claimed["deadline_at"]
+    assert reclaimed["attempt_started_at"] == claimed["attempt_started_at"]
+
+
+def test_new_run_and_version_selection_permanently_revoke_resume(pg_store, project, owner, result):
+    baseline = complete(pg_store, project, owner, result)
+    failed = start(pg_store, project, owner)
+    pg_store.cancel_run(project["id"], owner, failed["id"])
+    newer = pg_store.create_run(project["id"], owner, "Different request", now=failed["created_at"])
+    pg_store.cancel_run(project["id"], owner, newer["id"])
+    assert pg_store.get_run(project["id"], owner)["id"] == newer["id"]
+    assert not pg_store.get_run(project["id"], owner, failed["id"])["resumable"]
+    with pytest.raises(StoreError) as superseded:
+        pg_store.resume_run(project["id"], owner, failed["id"])
+    assert superseded.value.status == 409
+    # Even reselecting the same baseline is an explicit selection boundary.
+    pg_store.restore_version(project["id"], owner, baseline["id"])
+    assert not pg_store.get_run(project["id"], owner, newer["id"])["resumable"]
+    with pytest.raises(StoreError) as selected:
+        pg_store.resume_run(project["id"], owner, newer["id"])
+    assert selected.value.status == 409
+    with pytest.raises(StoreError) as completed:
+        pg_store.resume_run(project["id"], owner, baseline["id"])
+    assert completed.value.status == 409
+
+
+def test_resume_rolls_back_attempt_deadline_and_fence_when_event_commit_fails(
+    pg_store, project, owner, monkeypatch
+):
+    run = start(pg_store, project, owner)
+    pg_store.cancel_run(project["id"], owner, run["id"])
+    before = pg_store.get_run(project["id"], owner, run["id"])
+
+    def fail_event(*_args):
+        raise RuntimeError("event persistence unavailable")
+
+    monkeypatch.setattr(pg_store, "_state", fail_event)
+    with pytest.raises(RuntimeError, match="event persistence unavailable"):
+        pg_store.resume_run(project["id"], owner, run["id"])
+    assert pg_store.get_run(project["id"], owner, run["id"]) == before
+    with pg_store.sessions() as session:
+        persisted = session.get(Run, run["id"])
+        assert persisted.deadline_at == run["deadline_at"]
+        assert persisted.lease_token == run["lease_token"]
+        assert persisted.attempt_started_at == run["attempt_started_at"]
+
+
+def test_resume_rejects_baseline_mismatch_even_when_recovery_marker_is_present(
+    pg_store, project, owner, result
+):
+    baseline = complete(pg_store, project, owner, result)
+    run = start(pg_store, project, owner)
+    pg_store.cancel_run(project["id"], owner, run["id"])
+    with pg_store.engine.begin() as connection:
+        connection.execute(
+            text("UPDATE projects SET current_version_id = NULL WHERE id = :id"),
+            {"id": project["id"]},
+        )
+    with pytest.raises(StoreError) as changed:
+        pg_store.resume_run(project["id"], owner, run["id"])
+    assert changed.value.status == 409
+    with pg_store.sessions() as session:
+        assert session.get(Run, run["id"]).previous_version_id == baseline["id"]
+
+
+def test_incompatible_workflow_failure_cannot_be_resumed(pg_store, project, owner):
+    run = start(pg_store, project, owner)
+    assert not pg_store.fail_incompatible_run(run["id"], "stale-token")
+    assert pg_store.fail_incompatible_run(run["id"], run["lease_token"])
+    snapshot = pg_store.get_run(project["id"], owner, run["id"])
+    assert snapshot["status"] == "failed" and snapshot["errorCode"] == "internal"
+    assert not snapshot["resumable"]
+    assert (
+        snapshot["error"]
+        == "This run requires its original execution version and cannot resume on this deployment."
+    )
+    with pytest.raises(StoreError) as incompatible:
+        pg_store.resume_run(project["id"], owner, run["id"])
+    assert incompatible.value.status == 409
+    assert (
+        pg_store.list_run_events(project["id"], owner, run["id"], 0)[-1]["data"]["resumable"]
+        is False
+    )
+
+
+def test_recovery_migration_preserves_legacy_run_and_event_history(owner):
+    with postgres_store("0001_postgres") as store:
+        project_id, old_run, latest_run = str(uuid4()), str(uuid4()), str(uuid4())
+        clock = timestamp()
+        with store.engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO projects (id,owner_id,title,idea,status,created_at,updated_at) VALUES (:id,:owner,'Legacy','Legacy','error',:clock,:clock)"
+                ),
+                {"id": project_id, "owner": owner, "clock": clock},
+            )
+            for offset, run_id in enumerate([old_run, latest_run]):
+                connection.execute(
+                    text(
+                        "INSERT INTO runs (id,project_id,status,request,created_at,deadline_at,event_cursor) VALUES (:id,:project,'failed','Keep my source',:clock,:deadline,1)"
+                    ),
+                    {
+                        "id": run_id,
+                        "project": project_id,
+                        "clock": clock + offset,
+                        "deadline": clock + RUN_BUDGET_MS,
+                    },
+                )
+                connection.execute(
+                    text(
+                        "INSERT INTO run_events (run_id,sequence,event_key,type,data,created_at) VALUES (:id,1,'state:failed','run_state',CAST(:data AS jsonb),:clock)"
+                    ),
+                    {"id": run_id, "data": '{"status":"failed"}', "clock": clock},
+                )
+            connection.execute(
+                text(
+                    "INSERT INTO run_checkpoints (run_id,name,result,created_at) VALUES (:id,'legacy:source',CAST(:result AS jsonb),:clock)"
+                ),
+                {"id": latest_run, "result": '{"source":"retained"}', "clock": clock},
+            )
+        with store.engine.begin() as connection:
+            config = Config(str(Path(__file__).parents[1] / "alembic.ini"))
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        assert not store.get_run(project_id, owner, old_run)["resumable"]
+        migrated = store.get_run(project_id, owner, latest_run)
+        assert migrated["attempt"] == 1 and migrated["resumable"]
+        event = store.list_run_events(project_id, owner, latest_run, 0)[0]
+        assert event["attempt"] == 1 and event["data"] == {"status": "failed"}
+        resumed = store.resume_run(project_id, owner, latest_run)
+        assert resumed["cursor"] == 2 and resumed["attempt"] == 2
+        claimed = store.claim_run("legacy-recovery")
+        assert claimed["execution_version"] == "crew-v1"
+        assert store.get_checkpoint(latest_run, claimed["lease_token"], "legacy:source")[
+            "value"
+        ] == {"source": "retained"}

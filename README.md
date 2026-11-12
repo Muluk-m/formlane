@@ -2,9 +2,9 @@
 
 Describe an app and watch an AI product team build it. Mike delegates to Emma for requirements, Bob for template selection, Alex for implementation and David for independent validation. Follow-ups revise the current source and repeat the acceptance gate. This recreates the core [atoms.dev](https://atoms.dev/) loop: team conversation, interactive preview and a published link. Projects belong to an anonymous browser identity; there is no registered account system.
 
-The production architecture is **FastAPI + native CrewAI + PostgreSQL on the existing GCP VM**, with **static React on Cloudflare Pages** and an isolated Node compiler. The API runs at **https://136.65.182.87**. The write-fenced migration preserved all six business tables and existing anonymous ownership. [Deployment evidence and recovery](docs/operations/deployment.md) record the exact import, acceptance runs and release identities.
+The architecture is **FastAPI + native CrewAI + DBOS + PostgreSQL on the existing GCP VM**, with **static React on Cloudflare Pages** and an isolated Node compiler. [Deployment evidence and recovery](docs/operations/deployment.md) record the migration, acceptance runs and release identities.
 
-The frontend stays at [formlane-9dp.pages.dev](https://formlane-9dp.pages.dev), preserving existing anonymous browser ownership and shared links. Historical published examples include the [React counter](https://formlane-9dp.pages.dev/p/8tq3mrv54j) and [market app](https://formlane-9dp.pages.dev/p/7e2g3qqnnd).
+Open [formlane.nainma.online](https://formlane.nainma.online). The original [Pages hostname](https://formlane-9dp.pages.dev) remains available; anonymous ownership is local to each browser origin. Published examples include the [React counter](https://formlane.nainma.online/p/8tq3mrv54j) and [market app](https://formlane.nainma.online/p/7e2g3qqnnd), shown in an isolated full-screen viewer without navigating to the backend IP.
 
 ![Production workspace and history](docs/screenshots/python-cutover-desktop.png)
 ![Production mobile preview](docs/screenshots/python-cutover-mobile.png)
@@ -20,7 +20,7 @@ These production screenshots show release `f7dfcb3`, with saved v2 retained afte
 - Demand-selected Vanilla + Vite or React + TypeScript + Vite source projects; follow-ups preserve accepted behavior outside the requested change.
 - Version history, current/published markers, historical preview, selectable source comparisons, confirmed restore and ancestry-based Undo.
 - Publish, republish or unpublish a saved version at a stable link; remix a selected version and download complete runnable source.
-- Durable generation: tab closure does not cancel; reconnect replays events; explicit cancel preserves the last complete version.
+- Durable generation: tab closure does not cancel; reconnect replays events; Resume continues the same eligible run from committed model/tool results without posting the original request again.
 
 ## Architecture
 
@@ -33,11 +33,11 @@ These production screenshots show release `f7dfcb3`, with saved v2 retained afte
 | `packages/atoms-core`          | Runtime-independent TypeScript types, templates, source validation/hashing and helpers                   |
 | `packages/ui`, `packages/i18n` | Base UI/Hugeicons/Skyline controls, assistant-ui composites and the single bilingual catalog             |
 
-The API and worker share PostgreSQL's six business tables: projects, messages, versions, runs, run_events and run_checkpoints. Pages has no business Functions, Worker binding or database. The worker claims fenced leases and checkpoints native CrewAI work; SSE observes persisted events. Node owns no business endpoints or orchestration. See [architecture](docs/internals/architecture.md), [data model](docs/internals/data-model.md) and [ADRs](docs/adr/README.md).
+The API and worker share PostgreSQL business state; DBOS owns durable workflow/operation history in its separate schema. Pages has no business Functions, Worker binding or database. The worker enforces fenced leases around native CrewAI model/tool execution; SSE observes persisted attempt-tagged events. Node owns no business endpoints or orchestration. See [architecture](docs/internals/architecture.md), [data model](docs/internals/data-model.md) and [ADRs](docs/adr/README.md).
 
 A saved version requires a build for the current source, passing implementation checks, independent browser validation and David's explicit acceptance. Source/check changes invalidate affected evidence. Sandboxed Chromium validates opaque iframes with restricted networking and no provider/database credentials. Compiler subprocesses accept bounded virtual source without executing generated package scripts or plugins.
 
-Runs have a persisted **15-minute deadline**, a 60-second lease and a 10-second heartbeat. Cancellation fences late writes. Expired work can be reclaimed and completed checkpoints reused, but interrupted provider calls may repeat; billing is not exactly-once. Failures retain previous current and published versions.
+Each execution attempt has a persisted **15-minute deadline**, a 60-second lease and a 10-second heartbeat. Explicit Resume preserves run identity, source and committed results while granting a fresh attempt; automatic reclaim does not reset its deadline. Cancellation fences late writes. Interrupted operations without committed results may repeat, including provider billing. Completed, superseded and baseline-invalidated runs cannot resume; failures retain accepted versions.
 
 ## Development
 

@@ -13,33 +13,45 @@ import { ensureOwner } from './lib/api'
 import { HomePage } from './pages/HomePage'
 import { Missing } from './pages/Missing'
 import { ProjectPage } from './pages/ProjectPage'
+import { PublishedPage } from './pages/PublishedPage'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 15_000, retry: 1, refetchOnWindowFocus: false } },
 })
 const rootRoute = createRootRoute({
-  beforeLoad: async () => {
-    await ensureOwner()
-  },
-  component: () => (
-    <AppShell>
-      <Outlet />
-    </AppShell>
-  ),
+  component: Outlet,
   notFoundComponent: Missing,
   errorComponent: Missing,
 })
-const homeRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', component: HomePage })
+async function loadOwner() {
+  await ensureOwner()
+}
+const homeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/',
+  beforeLoad: loadOwner,
+  component: () => (
+    <AppShell>
+      <HomePage />
+    </AppShell>
+  ),
+})
 const projectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/project/$id',
+  beforeLoad: loadOwner,
   validateSearch: (search: Record<string, unknown>): { autostart?: boolean } => ({
     autostart: search.autostart === true || search.autostart === 'true' ? true : undefined,
   }),
   component: ProjectRoute,
 })
+const publishedRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/p/$slug',
+  component: PublishedRoute,
+})
 const router = createRouter({
-  routeTree: rootRoute.addChildren([homeRoute, projectRoute]),
+  routeTree: rootRoute.addChildren([homeRoute, projectRoute, publishedRoute]),
   defaultPreload: 'intent',
 })
 declare module '@tanstack/react-router' {
@@ -49,7 +61,15 @@ declare module '@tanstack/react-router' {
 }
 function ProjectRoute() {
   const { id } = useParams({ from: '/project/$id' })
-  return <ProjectPage key={id} />
+  return (
+    <AppShell>
+      <ProjectPage key={id} />
+    </AppShell>
+  )
+}
+function PublishedRoute() {
+  const { slug } = useParams({ from: '/p/$slug' })
+  return <PublishedPage key={slug} slug={slug} />
 }
 
 export function App() {
