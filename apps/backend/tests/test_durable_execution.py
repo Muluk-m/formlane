@@ -211,11 +211,13 @@ def _receive(connection):
 
 def _reclaim(store, job):
     with store.sessions.begin() as session:
-        session.get(Run, job["id"]).lease_expires_at = timestamp() - 1
+        saved = session.get(Run, job["id"])
+        progress_deadline = saved.deadline_at
+        saved.lease_expires_at = timestamp() - 1
     replacement = store.claim_run(str(uuid4()))
     assert replacement["id"] == job["id"]
     assert replacement["lease_token"] != job["lease_token"]
-    assert replacement["deadline_at"] == job["deadline_at"]
+    assert replacement["deadline_at"] == progress_deadline
     assert replacement["attempt"] == job["attempt"]
     return replacement
 
