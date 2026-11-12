@@ -12,5 +12,6 @@ These decisions adapt the reference engineering baseline to Atoms. Numbers retai
 | [0010](0010-server-on-workers.md)           | Cloudflare Worker with Drizzle D1, not PostgreSQL                                        |
 | [0011](0011-i18n-catalog.md)                | One English/Chinese catalog                                                              |
 | [0012](0012-durable-agent-harness.md)       | SDK delegation on GCP, native browser acceptance, D1 leases/checkpoints and event replay |
+| [0013](0013-python-postgres-services.md)    | Python API/CrewAI and PostgreSQL on GCP; separate static Pages cutover                   |
 
 Status in an ADR records a design decision, not proof of a successful build or release. New decisions use the next available number and state context, decision, consequences, and any superseded rule. Update stale decisions explicitly rather than copying a conflicting rule into another guide.

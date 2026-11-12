@@ -3,7 +3,8 @@
 //   pnpm check:changed            # against origin/main (falls back to HEAD)
 //   pnpm check:changed <base-ref>
 // Biome on changed files → typecheck of affected packages and their dependents →
-// tests beside changed files. Never the whole suite (that is CI / rmake).
+// tests beside changed files → Ruff and named Python tests for backend changes.
+// Never the whole suite (that is CI / rmake).
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, join, relative } from 'node:path'
@@ -36,9 +37,7 @@ const pkgDirs = ['apps', 'packages'].flatMap((d) =>
 )
 const pkgs = pkgDirs.map((dir) => {
   const json = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
-  const deps = Object.keys({ ...json.dependencies, ...json.devDependencies }).filter((n) =>
-    n.startsWith('@atoms-demo/'),
-  )
+  const deps = Object.keys({ ...json.dependencies, ...json.devDependencies })
   return { dir, name: json.name, deps, scripts: json.scripts ?? {} }
 })
 const owner = (file) => pkgs.find((p) => file.startsWith(`${p.dir}/`))
@@ -107,7 +106,45 @@ for (const p of pkgs.filter((x) => direct.has(x.name))) {
     run(`test ${p.name} (${tests.length} files)`, 'pnpm', ['--filter', p.name, 'test', ...tests])
 }
 
-if (changed.some((f) => f.startsWith('apps/server/src/db/schema/'))) {
-  console.info('\nSchema changed: run pnpm db:generate and commit the generated migrations.')
+const backendDir = 'apps/backend'
+const pythonFiles = changed
+  .filter((file) => file.startsWith(`${backendDir}/`) && file.endsWith('.py'))
+  .map((file) => relative(backendDir, file))
+if (pythonFiles.length > 0) {
+  run(`ruff (${pythonFiles.length} files)`, 'uv', [
+    'run',
+    '--directory',
+    backendDir,
+    'ruff',
+    'check',
+    ...pythonFiles,
+  ])
+  const pythonTests = [
+    ...new Set(
+      pythonFiles.flatMap((file) => {
+        if (/^tests\/test_[^/]+\.py$/.test(file)) return [file]
+        const module = file.match(/^src\/formlane\/([^/]+)\.py$/)
+        if (!module) return []
+        const testName = { app: 'api', import_d1: 'import' }[module[1]] ?? module[1]
+        const test = `tests/test_${testName}.py`
+        return existsSync(join(backendDir, test)) ? [test] : []
+      }),
+    ),
+  ]
+  if (pythonTests.length > 0) {
+    run(`pytest (${pythonTests.length} files)`, 'uv', [
+      'run',
+      '--directory',
+      backendDir,
+      'pytest',
+      ...pythonTests,
+    ])
+  }
+}
+
+if (changed.includes(`${backendDir}/src/formlane/models.py`)) {
+  console.info(
+    '\nSchema changed: run pnpm db:generate --message <description>, review the migration, and commit it.',
+  )
 }
 console.info('\ncheck:changed passed')

@@ -1,6 +1,6 @@
 # ADR 0009: Contract-first CRUD with explicit streaming endpoints
 
-Status: accepted, 2026-11-10.
+Status: accepted, 2026-11-10; Python backend compatibility clarified for the cutover.
 
 ## Context
 
@@ -8,9 +8,9 @@ The migration must genuinely consume a shared contract, not just install oRPC wh
 
 ## Decision
 
-`@atoms-demo/contracts` exports the oRPC contract and Zod boundary schemas. The server implements that contract. The browser uses `createORPCClient` with `OpenAPILink` and `createTanstackQueryUtils` for CRUD/query integration. Do not infer frontend API types from an application server import.
+`@atoms-demo/contracts` exports the oRPC contract and Zod boundary schemas. The browser uses `createORPCClient` with `OpenAPILink` and `createTanstackQueryUtils` for CRUD/query integration. FastAPI implements the compatible HTTP routes, JSON shapes and safe errors; Python does not import TypeScript schemas. Update both boundaries together and keep frontend types independent of server application imports.
 
-Keep explicit run-start, run-event SSE, cancellation, authenticated download and public `/p/:slug` endpoints where their semantics differ from ordinary CRUD. [ADR-0012](0012-durable-agent-harness.md) supersedes the original request-owned generation/chat streams: generation starts a durable run and SSE observes its persisted events. These transports are not an excuse to duplicate CRUD routing or schemas.
+Keep explicit run-start, run-event SSE, cancellation, authenticated download and public `/p/:slug` endpoints where semantics differ from ordinary CRUD. Generation starts a durable PostgreSQL run and SSE observes persisted events produced by the native CrewAI worker. The browser sends its unchanged `atoms_uid` capability as `x-owner-id` to the configured API origin; public links use the configured document origin. These transports do not justify a second CRUD client.
 
 ## Consequences
 

@@ -1,69 +1,53 @@
 # Architecture
 
-## System shape
+Formlane's replacement backend is FastAPI, native CrewAI and PostgreSQL on the existing GCP VM. Cloudflare Pages serves static React assets; Node remains only as an isolated trusted compiler. The HTTPS API is staged, and production activation remains gated by final acceptance and migration; see [deployment](../operations/deployment.md).
 
-Atoms Demo is a pnpm/Turbo monorepo with a React browser application, Hono Cloudflare control-plane Worker and Node 24 GCP executor. D1 stores ownership, conversation, versions, runs, events, leases and checkpoints through Drizzle. `apps/executor` runs OpenAI Agents SDK and native Playwright as a non-root systemd service. Generated apps have no provisioned backend. The earlier Workflows/browser-binding execution was superseded after the Free Worker CPU limit killed validation.
+## Boundaries
 
-```text
-apps/web ──────────► packages/ui ─────► packages/i18n
-   │                       └────────► Base UI / Hugeicons / Skyline
-   ├──────────────► packages/contracts ◄──────── apps/server
-   └──────────────► packages/atoms-core ◄─────── apps/server
-                                                  │
-                                             Drizzle / D1
-                                                  ▲
-apps/executor ── authenticated control-plane API ───┘
-   ├──────────────► OpenAI Agents SDK / provider
-   └──────────────► Native Playwright / Chromium
-```
+| Module                                        | Responsibility                                                                                 |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `apps/web`                                    | React/Vite, TanStack Router/Query, assistant-ui runtime, owned API and SSE transport           |
+| `apps/backend/src/formlane/app.py`            | FastAPI HTTP routes, ownership, CORS, safe error compatibility and public documents            |
+| `models.py`, `storage.py`, Alembic migrations | Six-table PostgreSQL authority, atomic state transitions, leases, events and checkpoints       |
+| `worker.py`, `agents.py`, `model_stream.py`   | Durable producer, native hierarchical CrewAI agents, real provider/tool streaming and recovery |
+| `validator.py`, `compiler.py`                 | Sandboxed browser validation and bounded subprocess compilation                                |
+| `apps/compiler`                               | Node compiler for in-memory project files and fixed template dependencies                      |
+| `packages/contracts`                          | oRPC/Zod browser contract; Python preserves its wire behavior                                  |
+| `packages/atoms-core`                         | Runtime-independent TypeScript types, templates, source validation/hashing and helpers         |
+| `packages/ui`, `packages/i18n`                | Shared accessible controls, Skyline styling and single bilingual catalog                       |
 
-Packages never depend on applications. The web imports contract types from contracts, not inferred server types. UI has no persistence dependency. Core contains runtime-independent helpers; `apps/executor` owns provider transport, SDK agents, tools and checkpoint orchestration. `apps/server` owns D1 persistence and authenticated lease/control-plane operations.
+Source paths in the backend rows are relative to [the backend package](../../apps/backend/). Python has native project/template/hash helpers in `project.py`; cross-runtime fixtures preserve compatibility with shared TypeScript. Packages never import applications. The compiler has no business HTTP server, database connection or orchestration authority.
 
-## API and query boundary
+## API and browser transport
 
-CRUD is contract-first oRPC: Zod schemas and procedure metadata are shared; the server implements that contract and the web uses `createORPCClient`, `OpenAPILink`, and `createTanstackQueryUtils`. TanStack Query owns request caching/invalidation and Router owns navigation. assistant-ui owns conversation drafts and submission; Zod validates input without duplicating server authority.
+The browser keeps its contract-derived oRPC client, OpenAPILink and TanStack query/mutation options. FastAPI implements compatible routes, JSON shapes and errors. API changes update both language boundaries together rather than importing server application types into web.
 
-Generation and follow-up requests start durable runs and return run identity. The browser observes a separate owned run-event SSE endpoint, replaying from `after` or `Last-Event-ID`. Disconnect aborts only observation. Downloads and `/p/:slug` remain HTTP document endpoints, not a second generic CRUD client.
+`apps/web/src/lib/api.ts` centralizes session bootstrap, requests, SSE and downloads. `VITE_API_ORIGIN` selects the direct API and `VITE_API_PUBLIC_ORIGIN` selects public documents. The existing `atoms_uid` localStorage capability travels as `x-owner-id`; new requests omit cookies and bootstrap must preserve the supplied owner. Backend CORS permits explicit approved origins and transition support for older credentialed clients.
 
-## Initial build and follow-up
+Pages contains static assets only. Temporary `/api/*` 307 redirects preserve methods/bodies for old loaded clients; `/p/*` 302 redirects preserve existing shared links. New clients call the API directly. Deep `/project/...` reloads retain SPA routing. Frontend origins are build-time public configuration, never secret/runtime bindings.
 
-1. An owned project queues a D1 run with an active-run fence and persisted 15-minute deadline. The VM polls `/internal/executor`, claims a 60-second lease and heartbeats every 10 seconds; no public VM application port is required.
-2. Mike selects a specialist through schema-validated SDK decision tools. Manager decisions and specialist turns have separate durable checkpoints. Emma defines scope, Bob architecture, Alex implementation/repair, and David independent review; this is not a fixed persona-completion pipeline.
-3. Specialists use role-scoped tools. Bob selects and initializes a demand-appropriate Vanilla or React + TypeScript template. Alex reads, writes, edits and deletes files, compiles the project and validates it; David reads source, validates the current build and records acceptance. Actual specialist results inform the next manager decision.
-4. Native Playwright validates each check in a fresh context and opaque iframe. Sandboxed Chromium receives no provider/control-plane credentials; restrictive CSP, HTTP/WebSocket blocking and disabled service workers/downloads isolate candidates. Restricted click/fill and exact text/value/count checks produce repair evidence, not arbitrary privileged executor JavaScript.
-5. A build bound to the current source hash, passing browser evidence for its artifact hash and explicit David acceptance permit an atomic source-plus-preview version commit. Failure, cancellation or deadline expiry preserves the last complete version.
-6. D1 events carry sequence cursors for browser replay. Cancellation fences writes and the executor aborts on loss of heartbeat authority. Expired leases can be reclaimed; immutable named checkpoint results resume completed steps, while interrupted calls may repeat. The UI refreshes saved state on completion. Publication remains explicit.
+## Durable execution and acceptance
 
-Execution is real-provider only, with visible errors for missing credentials. Checkpoints can replay in-flight specialist calls; event identities are idempotent, but provider billing is not exactly-once. [ADR-0012](../adr/0012-durable-agent-harness.md) defines the durable harness decision and its evidence limits.
+1. An owned request creates a PostgreSQL run with an active-run fence and persisted 15-minute deadline. The Python worker claims a 60-second lease and refreshes it every 10 seconds directly through the store.
+2. Native CrewAI uses a hierarchical Crew with Mike as manager and Emma, Bob, Alex and David as specialist Agents. Mike delegates based on actual results; model execution is not a handwritten persona pipeline. Completed agent steps and manager work are checkpointed for recovery.
+3. Bob selects Vanilla or React + TypeScript. Alex reads, writes, edits and deletes files, builds the candidate, defines checks and validates. David independently reads baseline/current files, validates and accepts or requests repair.
+4. Source edits invalidate stale build and acceptance evidence. Completion binds implementation validation, independent validation and explicit review to the current source, artifact and applicable check set. A successful build or an accepted stale report is insufficient.
+5. Native Playwright validates an opaque iframe in fresh browser contexts. Chromium stays sandboxed; subprocess environments omit provider/database credentials. CSP, HTTP/WebSocket blocking and disabled service workers/downloads contain generated content. Checks are bounded declarative operations and assertions, not arbitrary privileged JavaScript.
+6. An accepted candidate commits immutable source plus compiled HTML and ancestry atomically, updates current selection and completes the run. Failure, cancellation or deadline expiry preserves the previous complete version and publication.
+7. Persisted sequence-addressed SSE events replay after the last cursor. Disconnect does not cancel work. Cancel fences writes; lease loss aborts the producer. Reclaim reuses immutable completed checkpoints, while interrupted provider calls may repeat and be billed again.
 
-File drafts are observed at the SDK boundary while `write_file` arguments arrive. The incremental JSON reader emits `file_start` and `file_delta`; only the fully parsed, schema-validated tool call updates accepted working source through `file_saved`. Template initialization and checkpoint replay restore the complete source tree through `project_initialized` and `project_reset`. Source edits invalidate build evidence. The UI keeps partial drafts, working source and saved preview separate, and never treats a draft as a saved version.
+File argument streaming exposes draft starts/deltas without committing partially parsed files. Validated tool completion saves working source; initialization/replay restores complete source trees. UI drafts, current working files and saved previews remain distinct. Paired tool events deduplicate on replay; missing results stay unfinished after failure or cancellation. Only supported public reasoning summaries may be exposed; never synthesize reasoning or persist raw model reasoning.
 
-Independent review reads current and immutable saved files together through `read_review_files`. The workspace lists exact added, modified, removed and unchanged paths; unchanged files need no second baseline comparison. The bounded QA turn budget accommodates one paired inspection per path plus evidence work, while the persisted fifteen-minute deadline remains authoritative. Source contents stay in the model/tool boundary; persisted tool events contain only path/status metadata. A review step-limit failure remains an unfinished validation, never an accepted version.
+The compiler accepts virtual source and installed template dependencies. It does not execute generated package scripts, custom build plugins or dependency installs. Compiler time/output limits and process-group cancellation contain work. The downloadable ZIP remains a normal runnable Vite project.
 
-SDK turn exhaustion has the distinct `step_limit` error code. The control plane selects a fixed safe public message from this code; arbitrary executor messages never become public failure text. The code survives persisted snapshots and SSE replay without changing the current or published version.
+## Persistence and product constraints
 
-The trusted executor compiler reads an in-memory project tree and installed template dependencies. It never evaluates model-authored package scripts, build configuration or plugins. Local modules and CSS are bundled into the isolated preview; source remains a real downloadable Vite project. Build failures remain repairable tool results. The fixed template manifests trade arbitrary dependency installation for repeatable execution without granting generated code host authority.
+[Data model](data-model.md) defines all six business tables, migration/import fidelity and pointer semantics. Explicit Alembic migrations precede service use; neither startup nor requests bootstrap schema. PostgreSQL is the sole business authority after cutover, including durable execution. Legacy D1 is retained only as a fenced migration/rollback artifact.
 
-Only explicitly public provider reasoning-summary events become `reasoning_summary` records. The configured Chat Completions provider has no supported public summary, so the interface shows actual delegation tasks and tool evidence without synthesizing reasoning or exposing raw model reasoning.
+Current, viewed and published versions are separate. Restore preserves later history, Undo follows recorded ancestry, and remix maps ancestry to independent identities. The source comparison's initial baseline is the preceding numbered version; it is not a claim about the actual generation parent after restoration. Generated interactive state remains in memory inside the opaque preview, not in the project database.
 
 Execution indicators follow the explicitly observed run ID, never the timestamp of the latest received activity. A replacement run can be known before its first event arrives; earlier unfinished tools and pending text must remain interrupted during that gap and after terminal replay.
 
-## Persistence and public boundary
-
-Read [data-model.md](data-model.md) for pointer and ownership invariants. Local schema setup is an explicit migration step; requests do not auto-create tables. D1/SQLite behavior must be respected instead of importing row-lock or transaction assumptions from the reference PostgreSQL application.
-
-Preview HTML is untrusted and sandboxed. Public HTML is served only through publication. Current, viewed, and published versions are separate concepts; browser state must not accidentally collapse them.
-
-Version inspection uses immutable source snapshots from the existing ownership-checked API. The Changes view labels both compared versions and lets the user choose a baseline; its initial comparison is the preceding numbered version, not a claim about the run's original parent after restoration. The bounded line diff retains exact source/newline content and falls back to an explicitly labeled replacement for large edits. Inspection never moves the current or published pointer. Restore confirms the target and preserves later history; it continues to select the current pointer rather than adopting v0's new-version-on-restore persistence semantics.
-
 Saved-result cards are immutable conversation milestones, ordered by each version's saved timestamp. They must stay before subsequent requests instead of following the latest execution as a transcript footer. Their preview and comparison actions inspect that exact version; neither a new run nor restoring the current pointer relocates an earlier milestone.
 
-Project/chat/code/version persistence in D1 does not persist the generated application's interactive runtime state. The opaque-origin preview cannot rely on browser storage; generated apps use in-memory state for the preview session.
-
-## Inheritance scope
-
-Preserved: workspace/package boundaries, strict shared TypeScript, targeted tooling, contract-first API, TanStack query/router conventions, form validation, complete base-nova primitives, reusable composites, Hugeicons, full Skyline token frontmatter, catalog-backed copy, and progressive documentation.
-
-Adapted: Atoms-specific ownership, streaming observation, version history, publishing, core parsers, and D1 rather than PostgreSQL. The original fixed pipeline and local mock scaffold are historical origins only. Not inherited: unrelated business models, external account integrations, billing, or their deployment infrastructure. The source repository remains read-only.
-
-Release topology and account verification belong to [deployment](../operations/deployment.md). No existing hostname is implied to be a verified deployment of this architecture.
+Preserve the reference's package boundaries, strict TypeScript, contract-driven UI, Base UI/Hugeicons/Skyline, i18n and focused tooling. Its unrelated business models, billing and external integrations are outside Formlane. Historical Worker/D1/OpenAI Agents SDK implementation decisions remain explicitly marked in [ADRs](../adr/README.md).

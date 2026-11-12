@@ -1,115 +1,56 @@
 # Formlane
 
-Describe an app in a sentence and watch an AI product team build it. Mike delegates scoped work through OpenAI Agents SDK: Emma defines requirements, Bob selects a project template, Alex implements and builds the source files, and David independently validates the result. Follow-ups edit the current source snapshot and repeat the same acceptance gate.
+Describe an app and watch an AI product team build it. Mike delegates to Emma for requirements, Bob for template selection, Alex for implementation and David for independent validation. Follow-ups revise the current source and repeat the acceptance gate. This recreates the core [atoms.dev](https://atoms.dev/) loop: team conversation, interactive preview and a published link. Projects belong to an anonymous browser identity; there is no registered account system.
 
-This is a recreation of the core [atoms.dev](https://atoms.dev/) loop: team conversation, interactive preview, and a published link. There is no registered account system. Projects belong to an anonymous browser identity.
+The replacement architecture is **FastAPI + native CrewAI + PostgreSQL on the existing GCP VM**, with **static React on Cloudflare Pages** and an isolated Node compiler. The API at **https://136.65.182.87** is currently staged. **Final production cutover has not happened**; staging rehearsal and earlier release evidence are not production acceptance. [Deployment status and cutover](docs/operations/deployment.md) record the gate and remaining evidence.
 
-Try the [live workspace](https://formlane-9dp.pages.dev), the [published React counter](https://formlane-9dp.pages.dev/p/8tq3mrv54j), or the [published market example](https://formlane-9dp.pages.dev/p/7e2g3qqnnd).
+The frontend stays at [formlane-9dp.pages.dev](https://formlane-9dp.pages.dev), preserving existing anonymous browser ownership and shared links. Historical published examples include the [React counter](https://formlane-9dp.pages.dev/p/8tq3mrv54j) and [market app](https://formlane-9dp.pages.dev/p/7e2g3qqnnd).
 
 ![Idea workspace](docs/screenshots/home-redesign-desktop.png)
-![Execution trace and generated code](docs/screenshots/execution-redesign-desktop.png)
+![Version history and source comparison](docs/screenshots/workspace-history-diff.png)
 
-The screenshots show the deployed interface and a persisted real-provider counter project. See the [live draft before acceptance](docs/screenshots/live-draft-production.png), [mobile homepage](docs/screenshots/home-redesign-mobile.png), [mobile source view](docs/screenshots/code-redesign-mobile.png), and [published market example](docs/screenshots/real-market-desktop.png).
-
-The deployed multi-file workflow is shown in the [React source workspace](docs/screenshots/react-source-production.png) and [375px mobile source view](docs/screenshots/react-source-mobile-production.png).
-
-The version-review workspace adds a persistent history rail, selectable source comparisons and compact execution records: [deployed desktop history and diff](docs/screenshots/workspace-history-diff.png), [conversation and saved result](docs/screenshots/workspace-conversation.png), and [deployed mobile diff](docs/screenshots/workspace-diff-mobile.png). The conversation capture uses the same frontend with real persisted API data.
+These screenshots document earlier deployed product behavior, not acceptance of the Python cutover.
 
 ## Features
 
-- English/Chinese interface, example prompts, and this browser's project list.
-- assistant-ui conversations, streaming Markdown, grouped execution traces, actual delegation tasks, per-tool outcomes, review summaries, and runtime-owned prompt composers.
-- Resizable conversation/preview workspace on desktop; full-height conversation and preview switching on mobile.
-- Sandboxed interactive preview, a selectable syntax-highlighted file tree with live file drafts and build results, and desktop/mobile preview sizes.
-- Demand-selected Vanilla + Vite or React + TypeScript + Vite projects, with follow-up revisions against the current source tree.
-- Version history with current/published markers, historical preview, file-level source diffs with a selectable comparison baseline, and confirmed restoration without discarding later versions.
-- Publish a saved result at `/p/:slug`, republish the same link, or unpublish it.
-- Remix the current or inspected historical version; download its complete runnable source as a ZIP.
-- Cancel a durable run without replacing the last complete result; disconnect and reconnect without cancelling execution.
+- English/Chinese interface, example prompts and this browser's project list.
+- assistant-ui conversations with streaming Markdown, delegation tasks, grouped tool outcomes, review summaries and persistent prompt drafts.
+- Resizable desktop workspace and full-height mobile conversation/preview switching.
+- Sandboxed interactive preview, desktop/mobile sizes, selectable source files, live unsaved drafts and build results.
+- Demand-selected Vanilla + Vite or React + TypeScript + Vite source projects; follow-ups preserve accepted behavior outside the requested change.
+- Version history, current/published markers, historical preview, selectable source comparisons, confirmed restore and ancestry-based Undo.
+- Publish, republish or unpublish a saved version at a stable link; remix a selected version and download complete runnable source.
+- Durable generation: tab closure does not cancel; reconnect replays events; explicit cancel preserves the last complete version.
 
-## Source architecture
+## Architecture
 
-The repository adopts the engineering and Skyline design baseline of the read-only reference at `/Users/qiqian/Projects/Qlj/adcounter`, while retaining the Atoms product and D1 persistence. The working project is `/Users/qiqian/Projects/Self/atoms-demo`.
+| Workspace                      | Responsibility                                                                                           |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `apps/web`                     | React/Vite, TanStack Router/Query, assistant-ui and direct typed API transport                           |
+| `apps/backend`                 | FastAPI, PostgreSQL/SQLAlchemy, explicit Alembic migrations, durable native CrewAI worker and Playwright |
+| `apps/compiler`                | Isolated trusted Node compiler for virtual source and fixed template dependencies                        |
+| `packages/contracts`           | Shared oRPC/Zod wire contract consumed by the typed frontend and preserved by Python                     |
+| `packages/atoms-core`          | Runtime-independent TypeScript types, templates, source validation/hashing and helpers                   |
+| `packages/ui`, `packages/i18n` | Base UI/Hugeicons/Skyline controls, assistant-ui composites and the single bilingual catalog             |
 
-| Workspace                                  | Responsibility                                                                                       |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `apps/web`                                 | React/Vite, TanStack Router and Query, assistant-ui external runtimes, Zod, project orchestration    |
-| `apps/server`                              | Hono control-plane Worker, oRPC contracts, D1 runs/events/checkpoints, executor lease API            |
-| `apps/executor`                            | Node 24, OpenAI Agents SDK manager/specialists, native Playwright, remote checkpoint recovery on GCP |
-| `packages/contracts`                       | Shared oRPC/Zod contract consumed by the server and typed web client                                 |
-| `packages/atoms-core` (`@atoms-demo/core`) | Runtime-independent types, project templates, source validation and hashing, HTML/text helpers       |
-| `packages/ui`                              | assistant-ui conversation composites, shadcn base-nova / Base UI controls, Hugeicons, Skyline tokens |
-| `packages/i18n`                            | The single English/Chinese message catalog and locale helpers                                        |
+The API and worker share PostgreSQL's six business tables: projects, messages, versions, runs, run_events and run_checkpoints. Pages has no business Functions, Worker binding or database. The worker claims fenced leases and checkpoints native CrewAI work; SSE observes persisted events. Node owns no business endpoints or orchestration. See [architecture](docs/internals/architecture.md), [data model](docs/internals/data-model.md) and [ADRs](docs/adr/README.md).
 
-```mermaid
-flowchart LR
-  Web[React / TanStack workspace] -->|oRPC CRUD| API[Hono / oRPC Worker]
-  Web -->|Start run / observe persisted SSE events| API
-  API -->|Drizzle runs and event cursors| D1[(D1)]
-  Executor[GCP Node executor] -->|Bearer-authenticated polling and leases| API
-  Executor --> Manager[OpenAI Agents SDK manager and specialists]
-  Manager --> Provider[OpenAI-compatible provider]
-  Manager --> Browser[Native Playwright / sandboxed Chromium]
-  Web --> Preview[Sandboxed generated HTML]
-  API -->|Published version at /p/:slug| Public[Public visitor]
-```
+A saved version requires a build for the current source, passing implementation checks, independent browser validation and David's explicit acceptance. Source/check changes invalidate affected evidence. Sandboxed Chromium validates opaque iframes with restricted networking and no provider/database credentials. Compiler subprocesses accept bounded virtual source without executing generated package scripts or plugins.
 
-The contract is imported from `@atoms-demo/contracts`, not inferred by importing server code. CRUD uses the typed oRPC client; SSE observes persisted run events rather than owning model execution. Shared packages do not depend on applications. See [architecture](docs/internals/architecture.md) and [ADR-0012](docs/adr/0012-durable-agent-harness.md).
-
-The assistant-ui external runtime observes existing persisted messages and SSE events; it does not start a second agent backend. Tool invocations are paired by run and sequence, replayed events are deduplicated, and missing results remain unfinished after cancellation or failure. Completed structured agent output uses expandable data parts. Homepage suggestions, prompt drafts, send/stop controls, message rendering, and viewport scrolling use assistant-ui; the original D1 ownership and saved-version rules remain authoritative.
-
-## Durable, real-provider execution
-
-OpenAI Agents SDK 0.21 runs the configured compatible Chat Completions model in the Node 24 executor on GCP. Mike's delegation decisions and specialist tool loops have separate immutable D1 checkpoints. Bob initializes the appropriate template and records the reason; Alex reads, writes, edits and deletes files, builds the project, updates acceptance checks and validates the preview. David independently reads source and validates the current build before review. Source changes invalidate the build, browser report and review together; failed builds expose repair evidence while the last saved preview remains visible.
-
-Completion requires a passing real-browser report for the current artifact hash and David's explicit acceptance. Native Playwright validates an opaque iframe in fresh browser contexts, with restrictive CSP and HTTP/WebSocket traffic blocked. Chromium runs sandboxed with a credential-stripped environment. Declarative checks support click/fill/press/reload, text containment, exact value/count/attribute assertions and viewport overflow checks, not arbitrary model JavaScript in the privileged executor.
-
-D1 stores runs, sequence-addressed events, leases and checkpoints. The VM polls the bearer-authenticated control plane, holds a 60-second lease and heartbeats every 10 seconds. Reconnect replays browser events after the last cursor; closing a tab only closes observation. Each run has a persisted **15-minute deadline**. Cancellation fences writes; the executor aborts when its heartbeat loses authority. Expired leases can be reclaimed and saved checkpoints replayed after restart. Timeout, provider failure, validation failure and cancellation remain distinct; none replaces the prior complete version. In-flight model/tool calls may repeat, so provider billing is not exactly-once.
-
-Generation is real-only. A missing `OPENAI_API_KEY` fails visibly; there is no mock mode or fallback.
+Runs have a persisted **15-minute deadline**, a 60-second lease and a 10-second heartbeat. Cancellation fences late writes. Expired work can be reclaimed and completed checkpoints reused, but interrupted provider calls may repeat; billing is not exactly-once. Failures retain previous current and published versions.
 
 ## Development
 
-Use the Node and pnpm versions pinned in the root manifest; this is a **pnpm + Turbo monorepo**, not an npm single-package application. Remote changes require explicit authorization.
+Use the manifest-pinned Node/pnpm versions and Python 3.13 with uv. PostgreSQL is required; use a dedicated local database and explicit migrations. Provider credentials stay in private backend environment files.
 
-```sh
-pnpm install
-cp apps/server/.dev.vars.example apps/server/.dev.vars
-pnpm db:migrate
-pnpm dev
-```
+`pnpm dev` starts only the web frontend. `pnpm dev:api` starts FastAPI, `pnpm dev:worker` builds the compiler and starts the durable Python worker, and `pnpm db:migrate` applies Alembic. See [development](docs/operations/development.md) for setup, CORS, origin configuration and separate process commands; [testing](docs/internals/testing.md) describes authorized focused verification.
 
-The Vite UI uses the Worker API; `pnpm dev:web` and `pnpm dev:server` run them separately. The Worker owns D1 and `EXECUTOR_TOKEN`; model execution requires the separate executor, native Chromium and an HTTPS control-plane URL. Local UI startup alone does not prove end-to-end generation. See [development](docs/operations/development.md) for environment boundaries.
+## Deployment and limitations
 
-| Executor variable   | Meaning                                                 |
-| ------------------- | ------------------------------------------------------- |
-| `OPENAI_API_KEY`    | Required real-provider secret, held by the executor     |
-| `ENDPOINT`          | OpenAI-compatible API root                              |
-| `MODEL`             | Provider model name                                     |
-| `EXECUTOR_TOKEN`    | Shared bearer secret matching the API control plane     |
-| `CONTROL_PLANE_URL` | HTTPS API origin used for `/internal/executor` requests |
+The target API uses the reserved GCP address `formlane-api` in `us-central1` on the existing `formlane-agent` VM. Caddy terminates HTTPS on 443 and proxies to loopback FastAPI; PostgreSQL is loopback-only. Production remains gated on real-model acceptance and a final write-fenced six-table import. The provider remains `grok-4.7` at the existing compatible endpoint; secrets never enter frontend configuration. Exact accounts, service paths, staging databases and recovery rules are in [deployment](docs/operations/deployment.md).
 
-Use focused tests and package typechecks while developing; one integration owner coordinates full checks. See [development](docs/operations/development.md), [testing](docs/internals/testing.md), and [debugging](docs/operations/debugging.md).
+Generated projects are frontend applications with fixed template dependencies, bounded to 64 files/256 KiB of source and 512 KiB of compiled preview. The service does not provision generated backends, databases or authentication. Interactive state is in memory inside the opaque preview; saved source/history does not persist generated runtime state. Downloaded projects run with `pnpm install`, `pnpm dev` and `pnpm build`; React projects also support `pnpm typecheck`. The compiler supports local JS/TS/JSX/TSX, CSS, JSON and SVG with fixed React imports, not arbitrary server modules or custom Vite plugins.
 
-Current real-provider acceptance passed with Grok run/version `a89ff0f4-d116-4e85-80e0-b22de6a46412` in 629 seconds. Alex's eight browser checks and David's seven independent checks passed before saving. Hands-on production verification covered category filtering, detail/card data, synchronized favorites, empty intersections, Enter/Space activation, 375px layout, in-memory reset, saved-version reload, download integrity and anonymous publication. [CI](https://github.com/Muluk-m/formlane/actions/runs/43002293994) passed lint, typechecks, tests and builds. Browser response fixtures also verified that stale project errors cannot override the current run while actual run failures remain visible. See [deployment evidence](docs/operations/deployment.md) for run IDs and limits. Earlier runs exercised reconnect and cancellation; process-crash recovery is covered by lease/checkpoint invariants, not claimed as a live crash experiment.
+Anonymous identity is a demo ownership boundary. Current, viewed and published versions remain distinct; restoring or undoing does not republish. Real-model latency can be substantial, and deadline failures preserve prior results. No GitHub export, visual editor or multi-model race is claimed.
 
-Multi-file production acceptance passed on release `23c2fcdd2265`: real Grok generation saved a six-file React + TypeScript project, and a follow-up changed only `src/Counter.tsx` while preserving the first version. Both runs passed browser validation and independent review. Hands-on checks covered click/Space increments, reset, exact ZIP/source equality, saved-version restore, remix, frozen publication, reload, and mobile draft preservation. The downloaded project independently passed `pnpm build` and `pnpm typecheck`. [Release CI](https://github.com/Muluk-m/formlane/actions/runs/43062672465) passed; the published React counter above runs the accepted second version.
-
-## Deployment status
-
-Live site: **https://formlane-9dp.pages.dev**. Deployed to the verified **Maqiqian0316@gmail.com's Account** (`252fba810f75c0370e5aa7200abc8f80`) using Pages `formlane`, service-bound Worker `formlane-api`, and the existing project D1 database. The Formlane logo, homepage, same-origin API, and database-backed project listing were verified online.
-
-Agent compute runs on the user-approved GCP VM `formlane-agent`, with Node 24 and native Playwright under non-root systemd. The configured model is `grok-4.7` at `https://sub2api.qiliangjia.org/v1`; its key is in the root-owned mode-600 executor environment file, not frontend code. The requested `grok-build-4.7` name was unavailable; the provider's registered 4.7 model passed SDK probes and the market-app acceptance above. The Cloudflare Free CPU limit killed the earlier validator implementation, so Workflows/browser bindings were superseded without a billing upgrade. See [deployment](docs/operations/deployment.md) for accounts, cost approval, secret handling and evidence boundaries.
-
-## Limits and behavior worth knowing
-
-- Generated projects are frontend applications, with fixed template dependencies and a trusted compiler. They do not provision backends, authentication systems or databases. Source files are bounded to 64 files and 256 KiB; compiled previews are bounded to 512 KiB. Custom package scripts, dependency installation and model-provided build plugins are not executed by the service.
-- Real-provider latency remains significant: the verified market build took 10 minutes 29 seconds. Runs exceeding the 15-minute deadline fail without replacing the previous saved version.
-- Project data, immutable source snapshots and their compiled previews persist in D1; generated-app interactive state does not. Generated apps use in-memory state inside the opaque-origin preview rather than relying on browser storage.
-- D1 checkpoints resume durable orchestration, not an interrupted provider token stream. In-flight specialist calls may replay after lease reclaim or a crash.
-- Historical preview, current version, and published version are distinct. Restoring changes the current result, not the public link; publish again to update that link.
-- Anonymous identity is a demo ownership boundary, not a substitute for production authentication.
-- No GitHub export, visual editor, or multi-model race is claimed.
-- Downloaded projects run with `pnpm install` and `pnpm dev`; `pnpm build` produces a standalone Vite build. React projects also provide `pnpm typecheck`. Preview builds support local JS/TS/JSX/TSX, CSS, JSON and SVG modules plus the template's React browser imports. Use relative imports; custom Vite configuration and server-side modules are outside the preview compiler contract.
-
-[Documentation index](docs/README.md) · [Product terminology](CONTEXT.md) · [Full design system](DESIGN.md) · [Agent entry point](AGENTS.md)
+[Documentation](docs/README.md) · [Terminology](CONTEXT.md) · [Design system](DESIGN.md) · [Agent guidance](AGENTS.md)

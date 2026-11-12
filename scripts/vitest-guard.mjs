@@ -11,7 +11,7 @@ const isCI = Boolean(process.env.CI)
 if (args.includes('--print-help') || (!isCI && targets.length === 0)) {
   const msg = [
     'Name the relevant test files when running locally.',
-    '  pnpm --filter @atoms-demo/server test src/modules/projects/service.test.ts',
+    '  pnpm --filter @formlane/compiler test src/project-build.test.ts',
     '  pnpm --filter @atoms-demo/core test src/alex-stream.test.ts',
     'Run the full suite on the remote builder or CI:',
     "  rmake -c 'CI=true pnpm test'",

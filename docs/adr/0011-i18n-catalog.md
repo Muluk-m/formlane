@@ -8,9 +8,9 @@ Atoms already has bilingual behavior. Copied components and legacy dictionaries 
 
 ## Decision
 
-`packages/i18n` owns the English and Chinese catalogs, locale helpers, and React integration under `@atoms-demo/i18n`. Application copy, primitive defaults, status labels, agent descriptions, form errors, and accessible names use shared keys. `brand.name` is **Atoms Demo** in both locales. Use the configured default locale rather than establishing a second fallback convention.
+`packages/i18n` owns the English and Chinese catalogs, locale helpers, and React integration under `@atoms-demo/i18n`. Application copy, primitive defaults, status labels, agent descriptions, form errors, and accessible names use shared keys. `brand.name` is **Formlane** in both locales. Use the configured default locale rather than establishing a second fallback convention.
 
-Documentation, code explanations, and commit descriptions are English. Generated HTML follows the user's requested language and is not the application's translation catalog. Provider prompts remain domain/core behavior, not a second interface dictionary.
+Documentation, code explanations, and commit descriptions are English. Generated HTML follows the user's requested language and is not the application's translation catalog. Native CrewAI/provider prompts belong to backend behavior; fixed public API errors retain contract/catalog mapping rather than exposing arbitrary provider messages.
 
 ## Consequences
 
