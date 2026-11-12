@@ -13,7 +13,7 @@ The screenshots show the deployed interface and a persisted real-provider counte
 
 The deployed multi-file workflow is shown in the [React source workspace](docs/screenshots/react-source-production.png) and [375px mobile source view](docs/screenshots/react-source-mobile-production.png).
 
-The version-review workspace adds a persistent history rail, selectable source comparisons and compact execution records: [desktop history and diff](docs/screenshots/workspace-history-diff.png), [conversation and saved result](docs/screenshots/workspace-conversation.png), and [mobile diff](docs/screenshots/workspace-diff-mobile.png). These captures use the revised frontend with real persisted API data.
+The version-review workspace adds a persistent history rail, selectable source comparisons and compact execution records: [deployed desktop history and diff](docs/screenshots/workspace-history-diff.png), [conversation and saved result](docs/screenshots/workspace-conversation.png), and [deployed mobile diff](docs/screenshots/workspace-diff-mobile.png). The conversation capture uses the same frontend with real persisted API data.
 
 ## Features
 

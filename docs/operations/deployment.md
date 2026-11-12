@@ -2,9 +2,13 @@
 
 ## Current production status
 
-### Pending workspace review release
+### Workspace review release
 
-Local verification of the version-review revision passed against the real API: selectable source baselines, historical preview, restoration and reload, retained composer drafts, desktop/375px layouts, focus restoration, and a delayed historical response that cannot overwrite the selected saved result. Source comparisons and conversation screenshots are linked from the README. These checks do not establish production deployment of this revision.
+Release `b8af77af1bb2` merged in [PR #6](https://github.com/Muluk-m/formlane/pull/6) as `9eac92f5a5fe` after [CI](https://github.com/Muluk-m/formlane/actions/runs/43200579708) passed. The guarded deployment verified the designated personal account and deployed Pages `2f39b259` and Worker `ad185d7e-2e32-4751-888a-81dcd9075542`, with no migrations to apply. The canonical site's `/version.json` reports build `202611121830`, commit `b8af77af1bb2`. The non-root GCP executor is active at `/opt/formlane/releases/workspace-b8af77a`; the previous release remains available for rollback. The runtime remains OpenAI Agents SDK.
+
+Production run/version `6a95da7c-ac5a-4ee2-91ca-47b37b5e0f21` completed on isolated acceptance project `406b274e-e6ce-4886-a62a-b07b83fac69e`, saving version 6 for an ordinary title-only request. Hands-on checks observed 0 → 2 → 1 → 0 through increment, decrement and Reset. Restoring version 5 persisted across reload while all six versions remained available. The canonical site displayed multi-file comparisons; the exact Pages deployment passed desktop/375px source comparison and unsent-draft preservation without horizontal page overflow. No runtime errors were captured during generation, and the existing public market example returned HTTP 200. Updated [desktop](../screenshots/workspace-history-diff.png) and [mobile](../screenshots/workspace-diff-mobile.png) screenshots show the deployed version comparison.
+
+Pre-release browser verification also covered keyboard focus restoration, localized failure presentation and a delayed historical response that cannot overwrite the selected saved result. Those isolated fixtures were removed afterward and did not mutate server data.
 
 An isolated real-provider replay used the exact ten-file source and original `title 优化一下` request from failed run `6dbbb2e8-d8a8-47a1-8121-8848eb57a3ef`. It completed in 140.655 seconds with nine checkpoints; the final implementation and independent review each passed three native browser checks. Only `index.html` and `src/App.tsx` changed. The replay used no control-plane writes and did not update the user's project or any version pointer. Accepted source hash: `8b296fa69a7d65f7d205ab54ba4f8fef9977158241651b010094718c9fb85852`.
 
