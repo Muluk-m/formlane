@@ -22,6 +22,7 @@ const terminalNotices: Record<string, 'failed' | 'cancelled'> = {
   'Generation could not complete. Your previous version is unchanged. Please try again.': 'failed',
   'Generation exceeded its 15-minute execution budget. Your previous version is unchanged.':
     'failed',
+  'Generation made no progress for 15 minutes. Your previous version is unchanged.': 'failed',
   'The generated app did not pass validation after repair. Your previous version is unchanged.':
     'failed',
   'The agent reached its step limit before validation and review could finish. Your previous version is unchanged.':
