@@ -160,6 +160,9 @@
       "retryLoad": "Reload",
       "reloadPreview": "Reload preview",
       "projectActions": "Project actions",
+      "undo": "Undo",
+      "undoToVersion": "Undo to version {number}",
+      "nothingToUndo": "No earlier version to restore",
       "restoreTitle": "Restore version {number}?",
       "restoreDescription": "New changes will start from this version. Other versions remain available and your published app stays unchanged."
     },

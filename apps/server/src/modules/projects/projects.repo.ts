@@ -84,6 +84,7 @@ export async function listMessages(db: Db, projectId: string): Promise<ChatMessa
 }
 const versionFields = {
   id: versions.id,
+  parentVersionId: versions.parent_version_id,
   number: versions.number,
   prompt: versions.prompt,
   createdAt: versions.created_at,
@@ -221,7 +222,17 @@ export async function remixProject(db: Db, sourceId: string, ownerId: string, ve
   const selectedVersionId = versionId ?? source.current_version_id
   const selectedIndex = builds.findIndex((version) => version.id === selectedVersionId)
   if (selectedVersionId && selectedIndex < 0) return null
-  const copied = builds.map((version) => ({ ...version, id: crypto.randomUUID(), project_id: id }))
+  const copiedIds = new Map<string, string>()
+  const copied = builds.map((version) => {
+    const copiedId = crypto.randomUUID()
+    copiedIds.set(version.id, copiedId)
+    return { ...version, id: copiedId, project_id: id }
+  })
+  for (const version of copied) {
+    version.parent_version_id = version.parent_version_id
+      ? (copiedIds.get(version.parent_version_id) ?? null)
+      : null
+  }
   const current = copied[selectedIndex]?.id ?? null
   // Every statement in a D1 batch commits together, including large histories.
   const statements = [
