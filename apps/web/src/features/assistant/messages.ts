@@ -15,6 +15,20 @@ type Activity = {
 
 const complete: MessageStatus = { type: 'complete', reason: 'stop' }
 
+// Exact persisted server notices are execution evidence, not agent replies.
+const terminalNotices: Record<string, 'failed' | 'cancelled'> = {
+  'Generation could not complete. Your previous version is unchanged. Please try again.': 'failed',
+  'Generation exceeded its 15-minute execution budget. Your previous version is unchanged.':
+    'failed',
+  'The generated app did not pass validation after repair. Your previous version is unchanged.':
+    'failed',
+  'The agent reached its step limit before validation and review could finish. Your previous version is unchanged.':
+    'failed',
+  'The model provider could not complete this run. Check the provider configuration and try again.':
+    'failed',
+  'Generation cancelled.': 'cancelled',
+}
+
 function unfinishedStatus(status: Run['status'] | null): MessageStatus {
   if (status === 'queued' || status === 'running') return { type: 'running' }
   return {
@@ -33,6 +47,8 @@ function failed(data: RunEvent['data']) {
     Boolean(data.error || output?.error) ||
     data.valid === false ||
     output?.valid === false ||
+    data.accepted === false ||
+    output?.accepted === false ||
     data.ok === false ||
     output?.ok === false
   )
@@ -173,21 +189,50 @@ export function toAssistantMessages(
   activity: readonly RunEvent[],
   runStatus: Run['status'] | null,
 ): ThreadMessageLike[] {
-  const converted: ThreadMessageLike[] = messages.map((message) => ({
-    id: message.id,
-    role: message.role === 'agent' ? 'assistant' : message.role,
-    content: messageContent(message),
-    createdAt: new Date(message.createdAt),
-    ...(message.role === 'agent'
-      ? { status: message.pending ? unfinishedStatus(runStatus) : complete }
-      : {}),
-    metadata: {
-      custom: {
-        agent: message.agent,
-        ...(message.role === 'system' ? { kind: 'system' } : {}),
+  const converted: ThreadMessageLike[] = messages.map((message) => {
+    const terminal =
+      message.role === 'system' && Object.hasOwn(terminalNotices, message.content)
+        ? terminalNotices[message.content]
+        : undefined
+    if (terminal) {
+      const transition = activity.find(
+        (event) =>
+          event.type === 'run_state' &&
+          event.data.status === terminal &&
+          event.createdAt === message.createdAt,
+      )
+      return {
+        id: message.id,
+        role: 'assistant',
+        createdAt: new Date(message.createdAt),
+        status: unfinishedStatus(terminal),
+        metadata: { runId: transition?.runId, custom: { kind: 'activity', agent: null } },
+        content: [
+          {
+            type: 'data',
+            name: 'activity',
+            id: message.id,
+            data: { type: 'run_terminal', data: { status: terminal, error: message.content } },
+          },
+        ],
+      }
+    }
+    return {
+      id: message.id,
+      role: message.role === 'agent' ? 'assistant' : message.role,
+      content: messageContent(message),
+      createdAt: new Date(message.createdAt),
+      ...(message.role === 'agent'
+        ? { status: message.pending ? unfinishedStatus(runStatus) : complete }
+        : {}),
+      metadata: {
+        custom: {
+          agent: message.agent,
+          ...(message.role === 'system' ? { kind: 'system' } : {}),
+        },
       },
-    },
-  }))
+    }
+  })
 
   // The supplied status belongs to the currently observed run. Older runs can
   // have unfinished attempts, but must not inherit a later run's running state.
@@ -242,12 +287,23 @@ export function groupExecutionMessages(
 ): ThreadMessageLike[] {
   const grouped: ThreadMessageLike[] = []
   type Part = Exclude<ThreadMessageLike['content'], string>[number]
+  const priority = (status: MessageStatus | undefined) =>
+    status?.type === 'running'
+      ? 4
+      : status?.type === 'incomplete'
+        ? status.reason === 'error'
+          ? 3
+          : status.reason === 'cancelled'
+            ? 2
+            : 1
+        : 0
   let group:
     | {
         source: ThreadMessageLike
         parts: Part[]
         states: Record<string, { agent: unknown; status: MessageStatus | undefined }>
-        running: boolean
+        status: MessageStatus
+        focus?: { toolName?: string; agent?: string; type?: string }
       }
     | undefined
   const flush = () => {
@@ -256,10 +312,10 @@ export function groupExecutionMessages(
       ...group.source,
       id: `execution:${group.source.id}`,
       content: group.parts,
-      status: group.running ? { type: 'running' } : complete,
+      status: group.status,
       metadata: {
         ...group.source.metadata,
-        custom: { kind: 'execution', partStates: group.states },
+        custom: { kind: 'execution', partStates: group.states, focus: group.focus },
       },
     })
     group = undefined
@@ -295,13 +351,22 @@ export function groupExecutionMessages(
       continue
     }
     if (group && group.source.metadata?.runId !== message.metadata?.runId) flush()
-    group ??= { source: message, parts: [], states: {}, running: false }
-    group.running ||= message.status?.type === 'running'
+    group ??= { source: message, parts: [], states: {}, status: complete }
+    if (priority(message.status) > priority(group.status) && message.status)
+      group.status = message.status
     for (const part of parts) {
       group.parts.push(part)
       const key = part.type === 'tool-call' ? part.toolCallId : 'id' in part ? part.id : undefined
       if (key)
         group.states[key] = { agent: message.metadata?.custom?.agent, status: message.status }
+      if (message.status?.type === 'running') {
+        const agent = message.metadata?.custom?.agent
+        if (part.type === 'tool-call') {
+          group.focus = { toolName: part.toolName, ...(typeof agent === 'string' ? { agent } : {}) }
+        } else if (!group.focus?.toolName && part.type === 'data' && part.name === 'activity') {
+          group.focus = { type: part.data.type, ...(typeof agent === 'string' ? { agent } : {}) }
+        }
+      }
     }
   }
   flush()

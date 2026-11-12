@@ -1,9 +1,15 @@
 import type { ProjectSource } from '@atoms-demo/core/project'
 import { useI18n } from '@atoms-demo/i18n/react'
 import { Button } from '@atoms-demo/ui/components/button'
-import { ButtonGroup } from '@atoms-demo/ui/components/button-group'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@atoms-demo/ui/components/tabs'
 import { CodeSurface } from '@atoms-demo/ui/composites/code-surface'
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  ArrowReloadHorizontalIcon,
+  ComputerIcon,
+  SmartPhone01Icon,
+} from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { type ReactNode, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProjectBuild } from '../features/projects/workspace'
 import { formatBytes } from '../lib/format'
 import { highlightSource, sourceLanguage } from '../lib/highlight'
@@ -23,6 +29,10 @@ export function Stage({
   onTab,
   onDevice,
   onBack,
+  versionControl,
+  changes,
+  onRestore,
+  restoreDisabled,
 }: {
   html: string
   source: ProjectSource | null
@@ -30,18 +40,23 @@ export function Stage({
   activePath: string | null
   draft: boolean
   build: ProjectBuild | null
-  tab: 'preview' | 'code'
+  tab: 'preview' | 'code' | 'changes'
   device: 'desktop' | 'mobile'
   running: boolean
   staleLabel: string | null
   phaseLabel?: string
-  onTab: (tab: 'preview' | 'code') => void
+  onTab: (tab: 'preview' | 'code' | 'changes') => void
   onDevice: (device: 'desktop' | 'mobile') => void
   onBack: () => void
+  versionControl: ReactNode
+  changes: ReactNode
+  onRestore?: () => void
+  restoreDisabled?: boolean
 }) {
   const { t, locale } = useI18n()
   const [selection, setSelection] = useState<string | null>(null)
   const [copyError, setCopyError] = useState(false)
+  const [previewRevision, setPreviewRevision] = useState(0)
   const paths = useMemo(
     () => [...new Set([...Object.keys(source?.files ?? {}), ...Object.keys(drafts)])].sort(),
     [source, drafts],
@@ -60,62 +75,91 @@ export function Stage({
     }
   }
   return (
-    <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-surface-sunken">
-      <div className="flex flex-wrap items-center justify-between gap-2 p-3">
-        <ButtonGroup aria-label={t('atoms.preview')}>
-          <Button
-            data-testid="tab-preview"
-            variant={tab === 'preview' ? 'default' : 'outline'}
-            aria-pressed={tab === 'preview'}
-            onClick={() => onTab('preview')}
-          >
+    <Tabs
+      value={tab}
+      onValueChange={(value) => {
+        if (value === 'preview' || value === 'code' || value === 'changes') onTab(value)
+      }}
+      className="h-full min-h-0 min-w-0 flex-1 gap-0 bg-surface-sunken"
+    >
+      <div className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-background px-3 py-2">
+        <TabsList variant="line" aria-label={t('atoms.previewTitle')}>
+          <TabsTrigger value="preview" data-testid="tab-preview">
             {t('atoms.preview')}
+          </TabsTrigger>
+          <TabsTrigger value="code" data-testid="tab-code">
+            {t('atoms.code')}
+            {running && (
+              <span className="size-1.5 motion-safe:animate-pulse rounded-full bg-info" />
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="changes" data-testid="tab-changes">
+            {t('atoms.versionReview.changes')}
+          </TabsTrigger>
+        </TabsList>
+        {versionControl}
+      </div>
+      {tab === 'preview' && (
+        <div className="flex h-11 shrink-0 items-center gap-1 px-3">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            disabled={!html}
+            aria-label={t('atoms.versionReview.reloadPreview')}
+            title={t('atoms.versionReview.reloadPreview')}
+            onClick={() => setPreviewRevision((value) => value + 1)}
+          >
+            <HugeiconsIcon icon={ArrowReloadHorizontalIcon} size={16} strokeWidth={1.5} />
+          </Button>
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {t('atoms.previewAddress')}
+          </span>
+          <Button
+            size="icon-sm"
+            variant={device === 'desktop' ? 'secondary' : 'ghost'}
+            data-testid="device-desktop"
+            aria-label={t('atoms.desktop')}
+            title={t('atoms.desktop')}
+            aria-pressed={device === 'desktop'}
+            onClick={() => onDevice('desktop')}
+          >
+            <HugeiconsIcon icon={ComputerIcon} size={16} strokeWidth={1.5} />
           </Button>
           <Button
-            data-testid="tab-code"
-            variant={tab === 'code' ? 'default' : 'outline'}
-            aria-pressed={tab === 'code'}
-            onClick={() => onTab('code')}
+            size="icon-sm"
+            variant={device === 'mobile' ? 'secondary' : 'ghost'}
+            data-testid="device-mobile"
+            aria-label={t('atoms.mobile')}
+            title={t('atoms.mobile')}
+            aria-pressed={device === 'mobile'}
+            onClick={() => onDevice('mobile')}
           >
-            {t('atoms.code')}
-            {running && <span className="size-1.5 animate-pulse rounded-full bg-current" />}
-          </Button>
-        </ButtonGroup>
-        {tab === 'preview' && (
-          <ButtonGroup aria-label={t('atoms.previewTitle')}>
-            <Button
-              data-testid="device-desktop"
-              variant={device === 'desktop' ? 'default' : 'outline'}
-              aria-pressed={device === 'desktop'}
-              onClick={() => onDevice('desktop')}
-            >
-              {t('atoms.desktop')}
-            </Button>
-            <Button
-              data-testid="device-mobile"
-              variant={device === 'mobile' ? 'default' : 'outline'}
-              aria-pressed={device === 'mobile'}
-              onClick={() => onDevice('mobile')}
-            >
-              {t('atoms.mobile')}
-            </Button>
-          </ButtonGroup>
-        )}
-      </div>
-      {staleLabel && (
-        <div className="mx-3 mb-2 flex items-center justify-between gap-2 rounded-lg bg-card p-2 text-sm">
-          <span>{staleLabel}</span>
-          <Button variant="ghost" onClick={onBack} data-testid="back-current">
-            {t('atoms.backToCurrent')}
+            <HugeiconsIcon icon={SmartPhone01Icon} size={16} strokeWidth={1.5} />
           </Button>
         </div>
       )}
-      {templateLabel && (
-        <p className="mx-3 mb-2 text-xs text-muted-foreground">
-          {t('atoms.files.template', { template: templateLabel })}
-        </p>
+      {staleLabel && (
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-info-bg px-3 py-2 text-xs">
+          <span>{staleLabel}</span>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" onClick={onBack} data-testid="back-current">
+              {t('atoms.backToCurrent')}
+            </Button>
+            {onRestore && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={restoreDisabled}
+                onClick={onRestore}
+                data-testid="restore-viewed"
+              >
+                {t('atoms.restore')}
+              </Button>
+            )}
+          </div>
+        </div>
       )}
-      {build && (
+      {build && !build.ok && tab === 'code' && (
         <div
           role={build.ok ? 'status' : 'alert'}
           className={`mx-3 mb-2 max-h-32 shrink-0 overflow-auto rounded-lg p-2 text-xs ${build.ok ? 'bg-success-bg text-success' : 'bg-danger-bg text-destructive'}`}
@@ -137,19 +181,19 @@ export function Stage({
           {t('atoms.files.copyFailed')}
         </p>
       )}
-      <div className="min-h-0 flex-1 px-3 pb-3">
-        <div hidden={tab !== 'preview'} className="h-full">
+      <div className="min-h-0 flex-1 p-2 sm:p-3">
+        <TabsContent value="preview" keepMounted className="h-full min-h-0 data-[hidden]:hidden">
           <div className="flex h-full items-stretch justify-center">
             {html ? (
-              <PreviewFrame key={html} html={html} device={device} />
+              <PreviewFrame key={`${previewRevision}:${html}`} html={html} device={device} />
             ) : (
               <div className="grid h-full w-full place-items-center rounded-lg border border-dashed bg-card p-8 text-center text-muted-foreground">
                 <p className="max-w-sm">{t('atoms.emptyPreview')}</p>
               </div>
             )}
           </div>
-        </div>
-        <div hidden={tab !== 'code'} className="h-full">
+        </TabsContent>
+        <TabsContent value="code" keepMounted className="h-full min-h-0 data-[hidden]:hidden">
           <CodeSurface
             paths={paths}
             selectedPath={selectedPath}
@@ -165,9 +209,16 @@ export function Stage({
           >
             {selectedPath && <CodeBlock code={code} path={selectedPath} />}
           </CodeSurface>
-        </div>
+        </TabsContent>
+        <TabsContent
+          value="changes"
+          keepMounted
+          className="h-full min-h-0 overflow-hidden rounded-lg border bg-background data-[hidden]:hidden"
+        >
+          {changes}
+        </TabsContent>
       </div>
-    </section>
+    </Tabs>
   )
 }
 function CodeBlock({ code, path }: { code: string; path: string }) {
@@ -216,9 +267,6 @@ function PreviewFrame({ html, device }: { html: string; device: 'desktop' | 'mob
   }, [])
   return (
     <div className={`device ${device}`} data-testid="preview-frame">
-      <div className="flex h-8 shrink-0 items-center border-b bg-muted px-3 text-xs text-muted-foreground">
-        {t('atoms.previewAddress')}
-      </div>
       {failed && (
         <p role="alert" className="shrink-0 bg-danger-bg p-3 text-sm text-destructive">
           {t('atoms.previewError')}

@@ -32,6 +32,8 @@ const toolNames = {
   read_workspace: 'ui.assistant.tools.read_workspace',
   initialize_project: 'ui.assistant.tools.initialize_project',
   read_file: 'ui.assistant.tools.read_file',
+  read_previous_file: 'ui.assistant.tools.read_previous_file',
+  read_review_files: 'ui.assistant.tools.read_review_files',
   write_file: 'ui.assistant.tools.write_file',
   edit_file: 'ui.assistant.tools.edit_file',
   delete_file: 'ui.assistant.tools.delete_file',
@@ -127,6 +129,38 @@ export function AssistantActivityIcon({ tone }: { tone: ActivityTone }) {
   )
 }
 
+/** A compact summary uses observed activity only; delegation prompts stay in details. */
+export function AssistantExecutionSummary() {
+  const { t } = useI18n()
+  const status = useAuiState((s) => s.message.status)
+  const focus = useAuiState((s) => s.message.metadata.custom.focus) as
+    | { toolName?: string; agent?: string }
+    | undefined
+  const tone = statusTone(status)
+  const tool = focus?.toolName ?? (focus?.agent ? `delegate_${focus.agent}` : undefined)
+  const label =
+    tone === 'running' && tool
+      ? Object.hasOwn(toolNames, tool)
+        ? t(toolNames[tool as keyof typeof toolNames])
+        : tool.replace(/_/g, ' ')
+      : t(
+          `ui.assistant.executionStatus.${tone === 'waiting' || tone === 'recorded' ? 'incomplete' : tone}`,
+        )
+  return (
+    <>
+      <AssistantActivityIcon tone={tone} />
+      <span className="min-w-0 flex-1 text-xs font-medium">
+        <span className="block truncate">{label}</span>
+        {tone === 'running' && focus?.agent && (
+          <span className="mt-0.5 block truncate font-normal text-muted-foreground">
+            {focus.agent.charAt(0).toUpperCase() + focus.agent.slice(1)}
+          </span>
+        )}
+      </span>
+    </>
+  )
+}
+
 function ActivityRow({
   label,
   tone,
@@ -175,12 +209,7 @@ function ActivityRow({
       </div>
     )
   return (
-    <Collapsible
-      defaultOpen={tone === 'failed'}
-      className="min-w-0"
-      data-testid={testId}
-      data-status={tone}
-    >
+    <Collapsible defaultOpen={false} className="min-w-0" data-testid={testId} data-status={tone}>
       <CollapsibleTrigger className="group flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-left outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring">
         {heading}
         <HugeiconsIcon
@@ -191,7 +220,7 @@ function ActivityRow({
         />
       </CollapsibleTrigger>
       {summary && (
-        <p className="mb-2 ml-8 mr-3 line-clamp-3 break-words text-xs leading-5 text-muted-foreground">
+        <p className="mb-2 ml-8 mr-3 whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">
           {summary}
         </p>
       )}
@@ -348,14 +377,7 @@ export function AssistantToolCall({
   const label = Object.hasOwn(toolNames, toolName)
     ? t(toolNames[toolName as keyof typeof toolNames])
     : toolName.replace(/_/g, ' ')
-  const input =
-    isObject(args) && typeof args.input === 'string'
-      ? args.input
-      : isObject(args) && typeof args.task === 'string'
-        ? args.task
-        : isObject(args) && typeof args.path === 'string'
-          ? args.path
-          : undefined
+  const path = isObject(args) && typeof args.path === 'string' ? args.path : undefined
   const error = isObject(result) && typeof result.error === 'string' ? result.error : undefined
   const hasArgs = args !== undefined && (!isObject(args) || Object.keys(args).length > 0)
   return (
@@ -363,13 +385,13 @@ export function AssistantToolCall({
       label={label}
       actor={state.agent}
       tone={tone}
-      summary={error ?? input}
+      summary={error ?? path}
       testId="tool-call"
     >
       {hasArgs && (
         <section aria-label={t('ui.assistant.input')}>
           <h3 className="mb-2 font-medium text-muted-foreground">{t('ui.assistant.input')}</h3>
-          <DetailValue value={input ?? args} />
+          <DetailValue value={args} />
         </section>
       )}
       <section aria-label={t('ui.assistant.result')}>
@@ -394,7 +416,7 @@ export function AssistantToolCall({
 }
 
 type ActivityData = {
-  type: 'agent_start' | 'agent_end' | 'validation' | 'repair' | 'build_result'
+  type: 'agent_start' | 'agent_end' | 'validation' | 'repair' | 'build_result' | 'run_terminal'
   data: Record<string, unknown>
 }
 
@@ -403,6 +425,18 @@ export function AssistantActivity({ id, data: event }: DataMessagePartProps<Acti
   const { status } = useExecutionState(id)
   const detail = event.data
   const name = typeof detail.name === 'string' ? detail.name : t('ui.assistant.name')
+  if (event.type === 'run_terminal') {
+    const cancelled = detail.status === 'cancelled'
+    return (
+      <ActivityRow
+        label={t(cancelled ? 'atoms.runStatus.cancelled' : 'atoms.runStatus.failed')}
+        tone={cancelled ? 'cancelled' : 'failed'}
+        testId="terminal-activity"
+      >
+        <TechnicalDetails value={detail} />
+      </ActivityRow>
+    )
+  }
   if (event.type === 'agent_start' || event.type === 'agent_end') {
     const tone = statusTone(status)
     const label = t(
@@ -413,10 +447,9 @@ export function AssistantActivity({ id, data: event }: DataMessagePartProps<Acti
           : 'ui.assistant.agentInterrupted',
       { name },
     )
-    const task = typeof detail.task === 'string' ? detail.task : undefined
     return (
       <ActivityRow label={label} tone={tone} testId="agent-activity">
-        {task ? <p className="whitespace-pre-wrap break-words">{task}</p> : undefined}
+        <DetailValue value={detail} />
       </ActivityRow>
     )
   }

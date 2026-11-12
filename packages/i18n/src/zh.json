@@ -13,6 +13,18 @@
   },
   "ui": {
     "assistant": {
+      "systemDetails": "系统详情",
+      "restoredVersion": "已恢复版本 {number}",
+      "executionStatus": {
+        "running": "处理中",
+        "complete": "步骤已完成",
+        "failed": "部分步骤未通过",
+        "cancelled": "执行已取消",
+        "incomplete": "执行中断"
+      },
+      "savedResult": "已保存的成果",
+      "versionNumber": "版本 {number}",
+      "viewChanges": "变更",
       "name": "助手",
       "you": "你",
       "emptyTitle": "一起把想法做出来",
@@ -78,6 +90,7 @@
         "recorded": "已记录"
       },
       "tools": {
+        "read_review_files": "审阅文件改动",
         "read_workspace": "读取工作区",
         "initialize_project": "初始化项目",
         "read_file": "读取文件",
@@ -129,6 +142,52 @@
     "pending": "待接受"
   },
   "atoms": {
+    "versionReview": {
+      "changes": "改动",
+      "backToChat": "返回对话",
+      "shortVersion": "v{number}",
+      "publishedVersion": "已发布 v{number}",
+      "historical": "历史版本",
+      "historyHint": "选择版本，预览应用或查看改动。",
+      "compareWith": "比较基准",
+      "emptyBaseline": "空项目",
+      "savedOnly": "已保存的源码",
+      "loadFailed": "无法加载版本差异，已保存内容不受影响。",
+      "retryLoad": "重新加载",
+      "reloadPreview": "刷新预览",
+      "projectActions": "项目操作",
+      "restoreTitle": "恢复到版本 {number}？",
+      "restoreDescription": "后续修改将以此版本为起点。其他版本仍保留，已发布的页面不会改变。"
+    },
+    "diff": {
+      "title": "版本变更",
+      "to": " 至 ",
+      "filesChanged": "变更文件：{count}",
+      "changedFiles": "变更文件",
+      "added": "新增",
+      "removed": "删除",
+      "modified": "修改",
+      "additionCount": "新增行数：{count}",
+      "removalCount": "删除行数：{count}",
+      "unchanged": "源代码无变更",
+      "unchangedDescription": "这两个版本的文件与源代码完全相同。",
+      "coarse": "此处变更较大，以整段替换方式展示。所有源代码行均完整保留，行数统计包含被替换的整段内容。",
+      "collapseContext": "收起未变更行",
+      "emptyFile": "此文件为空，没有可显示的源代码行。",
+      "fileChanges": "{path} 的变更",
+      "unified": "统一源代码差异",
+      "before": "变更前",
+      "after": "变更后",
+      "source": "源代码",
+      "hideLines": "收起 {count} 行未变更内容",
+      "showLines": "展开 {count} 行未变更内容",
+      "pagination": "源代码变更分页",
+      "previous": "上一页",
+      "next": "下一页",
+      "page": "第 {current} / {total} 页",
+      "noNewline": "文件末尾无换行符",
+      "crlf": "CRLF"
+    },
     "landing": {
       "headline": "你的下一个应用",
       "headlineAccent": "从一个想法开始。",
@@ -289,6 +348,7 @@
       "timeout": "任务已达到时间限制。请重试这些指令，或缩小请求范围。",
       "provider": "模型服务商未能完成此次运行。请在服务恢复后重试。",
       "validation": "修复后的应用仍未通过验证。请修改指令或重试。",
+      "step_limit": "智能体达到步骤上限，验证和评审尚未完成。已保存的版本不受影响，可以重试。",
       "internal": "任务未能完成。已保存的内容不受影响，你可以重试。"
     },
     "kilobytes": "{count} KB"

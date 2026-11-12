@@ -4,6 +4,8 @@ Read before changing a related area. Entries distinguish observed migration mist
 
 ## This migration
 
+- **2026-11-12 — Independent QA exhausted sixteen turns while reading a ten-file application.** Run `6dbbb2e8-d8a8-47a1-8121-8848eb57a3ef` stopped after sixteen successful workspace/current/baseline reads, with 701 seconds still available. Pair current and immutable baseline source in one batched review tool, expose exact changed-file status, and size the bounded review budget to the file inventory plus validation/acceptance work. Keep fresh independent browser evidence mandatory. Framework replacement does not fix an undersized application-configured budget.
+
 - **2026-11-12 — A visual-only follow-up reverted an accepted feature.** The saved source used +2, but the manager repeated +1 from the original creation prompt and both implementation and QA followed it. On follow-ups, omit that obsolete prompt from active context, derive preserved behavior from the saved source, and give independent QA read access to the immutable baseline.
 
 - **2026-11-12 — Independent review accepted a corrected check set while completion lacked implementation evidence.** Manager context hid the implementation-validation stamp, so it repeatedly chose completion after David accepted. Expose the same unmet completion requirements to every role. Obtain Alex's validation on the unchanged build and then a fresh independent review; do not weaken the acceptance gate or rewrite correct application code to match an incorrect expectation.

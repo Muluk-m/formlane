@@ -1,3 +1,4 @@
+import type { RunErrorCode } from '@atoms-demo/contracts'
 import type { ProjectSource } from '@atoms-demo/core/project'
 import { sql } from 'drizzle-orm'
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
@@ -67,7 +68,7 @@ export const runs = sqliteTable(
     started_at: integer('started_at'),
     finished_at: integer('finished_at'),
     deadline_at: integer('deadline_at').notNull(),
-    error_code: text('error_code', { enum: ['timeout', 'provider', 'validation', 'internal'] }),
+    error_code: text('error_code').$type<RunErrorCode>(),
     error: text('error'),
     version_id: text('version_id'),
     lease_token: text('lease_token'),

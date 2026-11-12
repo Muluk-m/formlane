@@ -13,6 +13,18 @@
   },
   "ui": {
     "assistant": {
+      "systemDetails": "System details",
+      "restoredVersion": "Restored version {number}",
+      "executionStatus": {
+        "running": "Working",
+        "complete": "Steps completed",
+        "failed": "Steps need attention",
+        "cancelled": "Execution cancelled",
+        "incomplete": "Execution interrupted"
+      },
+      "savedResult": "Saved result",
+      "versionNumber": "Version {number}",
+      "viewChanges": "Changes",
       "name": "Assistant",
       "you": "You",
       "emptyTitle": "A space to build together",
@@ -78,6 +90,7 @@
         "recorded": "Recorded"
       },
       "tools": {
+        "read_review_files": "Review changed files",
         "read_workspace": "Read workspace",
         "initialize_project": "Initialize project",
         "read_file": "Read file",
@@ -133,6 +146,52 @@
     "pending": "Pending"
   },
   "atoms": {
+    "versionReview": {
+      "changes": "Changes",
+      "backToChat": "Back to conversation",
+      "shortVersion": "v{number}",
+      "publishedVersion": "Published v{number}",
+      "historical": "Historical",
+      "historyHint": "Select a version to preview it or inspect its changes.",
+      "compareWith": "Compare with",
+      "emptyBaseline": "Empty project",
+      "savedOnly": "Saved source",
+      "loadFailed": "Could not load version changes. Your saved work is unchanged.",
+      "retryLoad": "Reload",
+      "reloadPreview": "Reload preview",
+      "projectActions": "Project actions",
+      "restoreTitle": "Restore version {number}?",
+      "restoreDescription": "New changes will start from this version. Other versions remain available and your published app stays unchanged."
+    },
+    "diff": {
+      "title": "Version changes",
+      "to": " to ",
+      "filesChanged": "Changed files: {count}",
+      "changedFiles": "Changed files",
+      "added": "Added",
+      "removed": "Removed",
+      "modified": "Modified",
+      "additionCount": "Added lines: {count}",
+      "removalCount": "Removed lines: {count}",
+      "unchanged": "No source changes",
+      "unchangedDescription": "These versions contain the same files and source code.",
+      "coarse": "This large change is shown as a replacement. All source lines are preserved; counts include the replaced section.",
+      "collapseContext": "Collapse unchanged lines",
+      "emptyFile": "This file is empty. There are no source lines to display.",
+      "fileChanges": "Changes in {path}",
+      "unified": "Unified source changes",
+      "before": "Before",
+      "after": "After",
+      "source": "Source",
+      "hideLines": "Hide {count} unchanged lines",
+      "showLines": "Show {count} unchanged lines",
+      "pagination": "Source change pages",
+      "previous": "Previous",
+      "next": "Next",
+      "page": "Page {current} of {total}",
+      "noNewline": "No newline at end of file",
+      "crlf": "CRLF"
+    },
     "landing": {
       "headline": "Your next app",
       "headlineAccent": "starts with an idea.",
@@ -293,6 +352,7 @@
       "timeout": "The run reached its time limit. Retry these instructions or narrow the request.",
       "provider": "The model provider could not complete this run. Retry when the provider is available.",
       "validation": "The app did not pass validation after repair. Revise your instructions or retry.",
+      "step_limit": "The agent reached its step limit before validation and review finished. Your saved version is unchanged; you can retry.",
       "internal": "The run failed before completion. Your saved work is safe; you can retry."
     },
     "kilobytes": "{count} KB"

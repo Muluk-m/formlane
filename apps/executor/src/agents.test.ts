@@ -3,7 +3,7 @@ import {
   type ProjectSource,
   projectSourceHash,
 } from '@atoms-demo/core/project'
-import { type Model, type ModelResponse, Usage } from '@openai/agents-core'
+import { MaxTurnsExceededError, type Model, type ModelResponse, Usage } from '@openai/agents-core'
 import type * as OpenAIModule from '@openai/agents-openai'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { executeHarness } from './agents'
@@ -322,9 +322,7 @@ it('keeps the saved baseline available to review after working files change or d
       call('build_project'),
       call('validate_preview'),
       dispatch('david'),
-      call('read_previous_file', { path: 'src/feature.js' }),
-      call('read_file', { path: 'src/feature.js' }),
-      call('read_previous_file', { path: 'src/missing.js' }),
+      call('read_review_files', { paths: ['src/feature.js', 'src/missing.js'] }),
       call('validate_preview'),
       call('record_review', {
         accepted: false,
@@ -342,10 +340,10 @@ it('keeps the saved baseline available to review after working files change or d
   expect(result.source.files['src/feature.js']).toBe(original.files['src/feature.js'])
   expect(previous).toEqual(original)
   expect(JSON.stringify(run.modelInputs)).toContain('export const increment = 2')
-  expect(JSON.stringify(run.modelInputs)).toContain('File does not exist: src/feature.js')
-  expect(JSON.stringify(run.modelInputs)).toContain(
-    'File does not exist in the saved baseline: src/missing.js',
-  )
+  expect(JSON.stringify(run.modelInputs)).toContain('File does not exist: src/missing.js')
+  expect(outputs(run.events, 'read_review_files')).toMatchObject([
+    { files: [{ path: 'src/feature.js', status: 'deleted' }, { path: 'src/missing.js' }] },
+  ])
   expect(outputs(run.events, 'record_review')).toMatchObject([
     { accepted: false },
     { accepted: true },
@@ -523,6 +521,114 @@ it('recovers missing Alex evidence after David corrects expectations without cha
   )
   expect(run.managerInputs).toHaveLength(8)
   expect(run.queue).toHaveLength(0)
+})
+
+it('finishes independent revalidation after inspecting more than sixteen source files', async () => {
+  const previous = createProjectSource('vanilla')
+  for (let index = 0; index < 18; index++)
+    previous.files[`src/feature-${index}.js`] = `export const value = ${index}`
+  const paths = Object.keys(previous.files).sort()
+  execution.validate.mockResolvedValueOnce({
+    valid: false,
+    artifactHash: await artifactHash(preview),
+    issues: ['Invalid acceptance checks: at least two checks are required.'],
+    checks: [],
+  })
+  const run = harness(
+    [
+      dispatch('alex'),
+      call('write_file', { path: 'src/feature-0.js', content: 'export const value = 20' }),
+      call('build_project'),
+      call('validate_preview'),
+      dispatch('david'),
+      call('read_review_files', { paths: ['src/feature-0.js', 'src/feature-1.js'] }),
+      call('set_acceptance_checks', { checks }),
+      call('validate_preview'),
+      call('record_review', {
+        accepted: true,
+        findings: 'Requested change only; checks corrected.',
+      }),
+      dispatch('alex'),
+      call('validate_preview'),
+      dispatch('david'),
+      call('read_workspace'),
+      ...paths.map((path) => call('read_review_files', { paths: [path] })),
+      call('validate_preview'),
+      call('record_review', { accepted: true, findings: 'Baseline compared; fresh QA passed.' }),
+      dispatch('complete'),
+    ],
+    previous,
+  )
+  const result = await run.run()
+  expect(result.source.files['src/feature-0.js']).toBe('export const value = 20')
+  expect(previous.files['src/feature-0.js']).toBe('export const value = 0')
+  expect(execution.compile).toHaveBeenCalledOnce()
+  expect(execution.validate).toHaveBeenCalledTimes(4)
+  expect(outputs(run.events, 'read_workspace')[0]).toMatchObject({
+    sourceChanges: expect.arrayContaining([
+      { path: 'src/feature-0.js', status: 'modified' },
+      { path: 'src/feature-1.js', status: 'unchanged' },
+    ]),
+    validatedBy: 'alex',
+    review: null,
+    completion: { missing: ['david_validation', 'david_acceptance'] },
+  })
+  expect(outputs(run.events, 'read_review_files')[0]).toEqual({
+    revision: 1,
+    files: [
+      { path: 'src/feature-0.js', status: 'modified' },
+      { path: 'src/feature-1.js', status: 'unchanged' },
+    ],
+  })
+  expect(run.modelInputs).toContainEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        type: 'function_call_result',
+        name: 'read_review_files',
+        output: expect.objectContaining({
+          text: JSON.stringify({
+            revision: 1,
+            files: [
+              {
+                path: 'src/feature-0.js',
+                status: 'modified',
+                current: 'export const value = 20',
+                previous: 'export const value = 0',
+              },
+              {
+                path: 'src/feature-1.js',
+                status: 'unchanged',
+                current: 'export const value = 1',
+                previous: 'export const value = 1',
+              },
+            ],
+          }),
+        }),
+      }),
+    ]),
+  )
+  expect(outputs(run.events, 'record_review')).toMatchObject([
+    { completion: { ready: false, missing: ['alex_validation'] } },
+    { accepted: true, completion: { ready: true, missing: [] } },
+  ])
+  expect(run.checkpoints.has('project-v1-delegate-3-david')).toBe(true)
+  expect(run.queue).toHaveLength(0)
+})
+
+it('still bounds a reviewer that repeats reads without producing evidence', async () => {
+  const run = harness([
+    ...initialize(),
+    dispatch('alex'),
+    call('set_acceptance_checks', { checks }),
+    call('build_project'),
+    call('validate_preview'),
+    dispatch('david'),
+    ...Array.from({ length: 16 }, () => call('read_workspace')),
+  ])
+  await expect(run.run()).rejects.toBeInstanceOf(MaxTurnsExceededError)
+  expect(execution.validate).toHaveBeenCalledOnce()
+  expect(outputs(run.events, 'record_review')).toEqual([])
+  expect(run.checkpoints.has('project-v1-delegate-2-david')).toBe(false)
 })
 
 it('invalidates all acceptance evidence after a source edit even when the compiler emits identical HTML', async () => {
