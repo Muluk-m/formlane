@@ -511,6 +511,8 @@ Conversation drafts and submission use assistant-ui with Zod validation. Other e
 
 Body text needs at least 4.5:1 contrast. All actions work by keyboard and expose a visible ring. Dialog focus enters the appropriate control, Esc dismisses ordinary dialogs, and destructive confirmation defaults to Cancel. Status always has words, not color alone. Every list needs loading, empty, error, and populated states; failed generation must not erase an older preview.
 
+Version history uses a bounded, scrollable list with fixed header and footer. Each row separates its version number, current-version badge, timestamp, expandable request, and explicit Preview/Restore actions. Preview never changes the saved current version; Restore does. Keep restoration unavailable during generation, show progress on the action in flight, and retain failures inside the dialog so users can retry without losing context.
+
 ## Copy
 
 All interface text, including default primitive labels and accessible names, lives in the single English/Chinese catalog in `packages/i18n`. Documentation and code explanations are English. Use concise, professional action verbs: Publish, Restore, Download; avoid “Click to” and vague confirmation buttons. Use the product terminology in [CONTEXT.md](CONTEXT.md), not implementation details such as stream epochs or database bindings.
