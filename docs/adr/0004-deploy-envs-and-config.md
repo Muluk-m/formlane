@@ -8,9 +8,9 @@ A prior deployment used a wrong Cloudflare account, and initial account access d
 
 ## Decision
 
-The sole authorized Cloudflare target is **Maqiqian0316@gmail.com's Account**, verified as `252fba810f75c0370e5aa7200abc8f80`. Account/resource configuration lives in `deploy/environments.json`; unknown resource IDs stay unset. The Cloudflare guard must match ID and exact account name before cloud writes. The separately approved GCP executor identity and budget boundary are recorded in [ADR-0012](0012-durable-agent-harness.md) and [deployment](../operations/deployment.md); they do not change the Cloudflare target.
+The sole authorized Cloudflare target is **Maqiqian0316@gmail.com's Account**, verified as `252fba810f75c0370e5aa7200abc8f80`. Account/resource configuration lives in `deploy/environments.json`; unknown targets stay unset. The Cloudflare guard must match ID and exact account name before cloud writes. The separately approved GCP account/project/VM and reserved HTTPS API identity are recorded in [deployment](../operations/deployment.md); they do not change the Cloudflare target.
 
-Use the guarded root deployment command; its default inspection mode is not deployment. Remote migrations, secrets, and deployment each require authorization and verified resources. Local Wrangler/D1 development does not require adopting a wrong remote identity.
+Use the guarded root deployment command for static Pages; its default inspection mode does not deploy. Python services, PostgreSQL/Alembic, imports and secrets have their own authorized operational steps. Set `backendReady` only after accepted backend/data state, including final write-fenced import; readiness does not itself authorize deployment. Keep one writable database authority during activation and rollback.
 
 ## Consequences
 
