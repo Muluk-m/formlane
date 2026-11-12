@@ -1,4 +1,4 @@
-name: Checks
+name: JavaScript Checks
 
 on:
   pull_request:
@@ -23,8 +23,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
-      - run: /opt/google/chrome/chrome --version
       - run: pnpm test
-        env:
-          CHROMIUM_EXECUTABLE_PATH: /opt/google/chrome/chrome
       - run: pnpm build
+        env:
+          VITE_API_ORIGIN: http://localhost:8090
+          VITE_API_PUBLIC_ORIGIN: http://localhost:8090

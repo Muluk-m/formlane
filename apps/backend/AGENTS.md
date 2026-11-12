@@ -1,0 +1,13 @@
+# Python backend
+
+Read root guidance and [architecture](../../docs/internals/architecture.md) before changing boundaries.
+
+- FastAPI owns HTTP contracts and owner authorization; SQLAlchemy/PostgreSQL owns the six business tables. Update TypeScript contracts, Python models and consumers together, including safe public errors.
+- Apply schema changes through explicit Alembic migrations. API startup and requests check/use schema; they never create it. Use isolated test databases for destructive fixtures.
+- The durable worker claims PostgreSQL leases, checkpoints native CrewAI work and persists SSE events. Check lease authority and deadline at every write. Cancellation fences late results; reconnect only observes events.
+- Completion requires current source/artifact/check-set evidence, passing implementation validation, independent David validation and acceptance. Follow-ups use immutable current source as baseline; changes invalidate affected evidence.
+- Keep Node restricted to the virtual-source compiler in `apps/compiler`. Compiler and browser subprocesses receive stripped environments, bounded input/output and cancellation; generated scripts/plugins never run with host authority.
+- Keep Chromium sandboxed and previews opaque. Provider/database secrets stay in private backend environment files and out of logs, tool events and generated output.
+- For imports, preserve IDs, pointers, message order, event cursors and all six tables. Normalize absent legacy ancestry only from recorded originating runs. Import into an empty target or verify an exact existing snapshot; never merge snapshots.
+
+Read [development](../../docs/operations/development.md) for local commands, [testing](../../docs/internals/testing.md) for evidence boundaries, and [deployment](../../docs/operations/deployment.md) before migrations, service changes or cutover. Delegated editing does not authorize checks or remote actions.

@@ -2,36 +2,34 @@
 
 ## Scope and coordination
 
-One integration owner runs checks after shared edits land. Locally, use explicit relevant test files and package typechecks; avoid overlapping full builds, installations, suites, or watch processes. The guarded scripts enforce the configured execution policy. A delegated editing task does not imply permission to run checks.
+One integration owner runs authorized checks after shared edits land. Select explicit relevant test files and package typechecks; avoid overlapping installations, full builds, suites or watch processes. Delegated editing alone does not authorize verification. Test existence, historical screenshots and HTTP availability do not establish migrated production acceptance.
 
-Full verification belongs in the agreed CI/remote workflow or an explicitly authorized local run. No test result is claimed by this document. Historical screenshots and the existence of a test file are not evidence that the migrated build passes.
+## Behavior boundaries
 
-## Behavior worth testing
+| Boundary             | Required coverage                                                                                                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| API/ownership        | Contract-compatible JSON/errors; preserved owner header; private project/chat/version/download isolation; explicit allowed/denied CORS origins                                             |
+| Provider/CrewAI      | Native manager/specialist delegation, role-scoped tools, streaming, missing-key/provider failures and no mock fallback                                                                     |
+| PostgreSQL           | Explicit empty-database Alembic migration, constraints, atomic pointer/run transitions and concurrent lease fencing                                                                        |
+| Import               | All six tables; IDs/timestamps/pointers, source/HTML hashes, message order, event cursors, checkpoints, pre-0006 ancestry policy, exact repeat and divergent-target rejection, verify-only |
+| Generation           | Current-source build and check-set evidence; implementation and independent validation/review; repair, safe failure categories and prior-version preservation                              |
+| Durability           | Cursor replay/deduplication, disconnect without cancellation, explicit cancel, lease expiry/reclaim, immutable checkpoint replay, stale late-write rejection and persisted deadline        |
+| Source/compiler      | Cross-runtime source/hash fixtures, fixed templates, virtual imports, size/time/output bounds, stripped credentials and cancelled process cleanup                                          |
+| Browser isolation    | Native sandboxed Chromium, opaque iframe, network/WebSocket denial, declarative interaction/assertions and repair evidence                                                                 |
+| Versions/publication | Monotonic numbering, inspection without mutation, restore, ancestry-based Undo, independent remix, exact ZIP, frozen publication, republish and unpublish                                  |
+| UI                   | Query invalidation, draft retention, localized errors, keyboard/focus behavior, desktop/mobile layout and SPA reload                                                                       |
+| Static cutover       | Direct API origins, unchanged owner capability, old-client 307 method/body forwarding, public-link 302, SSE reconnect and origin-specific CORS                                             |
 
-| Boundary             | Cases                                                                                                                                               |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Core stream parsing  | Split fences, incomplete HTML, note/code separation, replacement deltas, complete-document extraction                                               |
-| Provider boundary    | Missing-key errors, real SDK tool delegation, visible provider failure, no mock fallback                                                            |
-| Ownership            | Another anonymous identity cannot read or mutate private project/chat/version/download data                                                         |
-| Generation lifecycle | Manager decisions, role-scoped tools, follow-up context, repair/review gate, persisted deadline, cancellation fences, previous-version preservation |
-| Versions             | Monotonic project-local numbering, historical inspection, restore, source-independent remix                                                         |
-| Publication          | Explicit version pin, republish same link, restore without republish, unpublish, missing/invalid slug                                               |
-| Database             | Migration from empty local D1, constraints, conditional/batched operations, schema consistency                                                      |
-| UI integration       | Query invalidation, field errors/input retention, navigation reload, accessible names, both locales                                                 |
-| Runtime              | workerd control-plane/D1 behavior; Node 24 provider aborts, non-root systemd, native Chromium sandbox and credential isolation                      |
-| Durable replay       | Cursor replay; lease expiry/reclaim; immutable checkpoint reuse after restart; stale-lease write rejection; bounded transient provider retry        |
-| Browser validation   | Real state-changing checks, current artifact hash, independent acceptance, isolated context/network denial, failed checks returning repair evidence |
+Use the lowest boundary that reproduces the behavior. Extend existing cases rather than mirroring implementation or asserting only mocked calls. Database behavior needs real PostgreSQL locks/transactions; SQLite is only an offline legacy-export decoder. Backend fixtures require `TEST_DATABASE_URL` and isolate schema state in a dedicated test database. Keep the remote `formlane_test` database separate from stage and production.
 
-Test at the lowest boundary where a regression would fail. Extend an existing case/table when possible. Avoid assertions that only prove a mock function was invoked, duplicate type-system guarantees, or freeze incidental copy. Use real local D1 for database semantics rather than a mocked repository that cannot reproduce them.
+Backend tests live in [apps/backend/tests](../../apps/backend/tests/); compiler tests in [apps/compiler/src](../../apps/compiler/src/); frontend/package tests remain alongside their modules. Use named pytest files from the backend environment and guarded named JavaScript tests. Inject time where possible; intercepted model HTTP is deterministic boundary coverage, not real-provider acceptance.
 
-Inject time where possible; avoid sleeps and polling as substitutes for deterministic state. Intercepted provider HTTP is not real-provider acceptance. Runtime-sensitive verification must target the relevant runtime: Wrangler/workerd for the API/D1 control plane, Node 24 and native Chromium for executor behavior.
+Browser tests require a sandbox-capable Chromium/Chrome compatible with Python Playwright. Select it through `BROWSER_EXECUTABLE_PATH` when needed. Preserve non-root execution and the sandbox; on Ubuntu, account for the host's AppArmor/user-namespace policy instead of adding `--no-sandbox`. Compiler and browser descendants must lose provider/database credentials and terminate on cancellation.
 
-Executor browser regression tests require a sandbox-capable Chromium installation. CI installs system Chrome with `pnpm --filter @atoms-demo/executor exec playwright install --with-deps chrome` and passes `CHROMIUM_EXECUTABLE_PATH=/opt/google/chrome/chrome` through Turbo. Ubuntu's AppArmor profile permits the standard Chrome binary to create user namespaces; the downloaded Playwright binary is not covered by that profile. See [Chromium's AppArmor guidance](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md). Run focused checks with `pnpm --filter @atoms-demo/executor test src/validator.browser.test.ts`, selecting an installed browser with `CHROMIUM_EXECUTABLE_PATH` if needed. The regression exercises containment, exact non-text matching, fresh check state, and real DOM interactions. Run as a non-root account with the Chromium sandbox enabled.
+## End-to-end evidence
 
-## Visual and end-to-end evidence
+A real-provider acceptance pass covers idea → native delegation → validated saved preview → follow-up → history/restore/Undo → remix/download → publish/republish/unpublish → reload. Separately exercise reconnect, cancellation, deadline and restart/reclaim with the current deployed backend. Record release, run/version identity and observed result; a successful tool probe is narrower evidence.
 
-Visual changes need before/after browser screenshots, not markup-only tests. Inspect Base UI orientation, dialogs/focus, loading/status icons, narrow layouts, and the white/sky/black token treatment. Generated output may intentionally use a different theme.
+UI evidence checks actual rendering, both locales, dialogs/focus, status treatment, source comparisons, 375px layouts and unsent drafts. Generated apps may use their requested visual style; the shell retains Skyline.
 
-An end-to-end pass exercises idea → manager delegation → browser-validated saved preview → follow-up → history/restore → remix/download → publish/republish/unpublish → reload. Use the real configured provider; there is no product mock mode. Separately exercise disconnect/reconnect, explicit cancellation, persisted deadline enforcement and a validation failure repaired before independent acceptance. Record deployed build, run identity and actual evidence; provider test interception is not deployed acceptance.
-
-Public acceptance requires the designated verified Cloudflare account, the separately approved GCP executor target and authorization; see [deployment](../operations/deployment.md). A local pass, historical screenshot or wrong-account URL is not current release evidence.
+[Deployment](../operations/deployment.md) owns current evidence: the initial targeted Python run reported 139/144 passing, then an affected set reported 76 passing. A real-model check-hash gate regression was subsequently found and is being fixed. Those observations do not establish a complete suite or final production cutover; the integration owner must record the final result against the final code and migrated target.

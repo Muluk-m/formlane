@@ -13,8 +13,6 @@
       "!**/.wrangler",
       "!**/public",
       "!**/routeTree.gen.ts",
-      "!apps/server/drizzle/meta",
-      "!apps/server/worker-configuration.d.ts",
       "!apps/web/playwright-report",
       "!apps/web/test-results",
       "!docs/product",
