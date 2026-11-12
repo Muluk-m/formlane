@@ -342,3 +342,193 @@ it('shows actual project tool inputs and build failures without source prose', (
     content: [{ type: 'data', data: { type: 'build_result', data: failure } }],
   })
 })
+
+it('summarizes active tools without exposing delegation instructions in the summary', () => {
+  const grouped = groupExecutionMessages(
+    toAssistantMessages(
+      [],
+      [
+        event(1, 'agent_start', {
+          id: 'david',
+          name: 'David',
+          task: 'Review all QA evidence independently',
+        }),
+        event(2, 'tool_start', {
+          id: 'baseline',
+          agent: 'david',
+          name: 'read_previous_file',
+          input: { path: 'src/App.tsx' },
+        }),
+      ],
+      'running',
+    ),
+  )
+
+  expect(grouped).toHaveLength(1)
+  expect(grouped[0]?.status).toEqual({ type: 'running' })
+  expect(grouped[0]?.metadata?.custom?.focus).toEqual({
+    toolName: 'read_previous_file',
+    agent: 'david',
+  })
+  expect(grouped[0]?.content).toMatchObject([
+    { type: 'data', data: { data: { task: 'Review all QA evidence independently' } } },
+    { type: 'tool-call', toolName: 'read_previous_file' },
+  ])
+})
+
+it.each([
+  ['failed', 'error'],
+  ['cancelled', 'cancelled'],
+] as const)('keeps a %s execution group terminal when observation ends', (runStatus, reason) => {
+  const grouped = groupExecutionMessages(
+    toAssistantMessages([], [event(1, 'tool_start', toolData)], runStatus),
+  )
+
+  expect(grouped[0]?.status).toEqual({ type: 'incomplete', reason })
+  expect(grouped[0]?.metadata?.custom?.focus).toBeUndefined()
+  expect(tool(grouped[0])).not.toHaveProperty('result')
+})
+
+it('keeps failed attempts visible in a settled summary after a successful retry', () => {
+  const grouped = groupExecutionMessages(
+    toAssistantMessages(
+      [],
+      [
+        event(1, 'tool_start', toolData),
+        event(2, 'tool_end', { ...toolData, output: { error: 'Target was not found' } }),
+        event(3, 'tool_start', toolData),
+        event(4, 'tool_end', { ...toolData, output: { revision: 2 } }),
+      ],
+      'completed',
+    ),
+  )
+
+  expect(grouped[0]?.status).toEqual({ type: 'incomplete', reason: 'error' })
+  expect(grouped[0]?.metadata?.custom?.partStates).toMatchObject({
+    [`tool:${firstRun}:1`]: { status: { type: 'incomplete', reason: 'error' } },
+    [`tool:${firstRun}:3`]: { status: { type: 'complete', reason: 'stop' } },
+  })
+})
+
+it('moves only known system terminal notices into execution evidence and preserves actual replies', () => {
+  const failure =
+    'Generation could not complete. Your previous version is unchanged. Please try again.'
+  const base: ConversationMessage = {
+    id: 'terminal',
+    role: 'system',
+    agent: null,
+    content: failure,
+    createdAt: 300,
+  }
+  const grouped = groupExecutionMessages(
+    toAssistantMessages(
+      [
+        base,
+        { ...base, id: 'user', role: 'user', createdAt: 400 },
+        { ...base, id: 'result', role: 'agent', agent: 'alex', createdAt: 500 },
+        {
+          ...base,
+          id: 'other-system',
+          content: 'A specific diagnostic remains available',
+          createdAt: 600,
+        },
+      ],
+      [
+        event(1, 'tool_start', toolData),
+        event(3, 'run_state', { status: 'failed', error: failure }),
+      ],
+      'failed',
+    ),
+  )
+
+  expect(grouped).toHaveLength(4)
+  expect(grouped[0]).toMatchObject({
+    role: 'assistant',
+    status: { type: 'incomplete', reason: 'error' },
+    metadata: { runId: firstRun, custom: { kind: 'execution' } },
+    content: [
+      { type: 'tool-call' },
+      {
+        type: 'data',
+        name: 'activity',
+        data: { type: 'run_terminal', data: { status: 'failed', error: failure } },
+      },
+    ],
+  })
+  expect(grouped.slice(1).map((message) => message.id)).toEqual(['user', 'result', 'other-system'])
+  expect(grouped[1]?.content).toEqual([{ type: 'text', text: failure }])
+  expect(grouped[2]?.content).toEqual([{ type: 'text', text: failure }])
+  expect(grouped[3]?.role).toBe('system')
+})
+
+it('retains cancellation evidence when the event log is unavailable', () => {
+  const grouped = groupExecutionMessages(
+    toAssistantMessages(
+      [
+        {
+          id: 'cancel',
+          role: 'system',
+          agent: null,
+          content: 'Generation cancelled.',
+          createdAt: 100,
+        },
+      ],
+      [],
+      null,
+    ),
+  )
+
+  expect(grouped[0]).toMatchObject({
+    status: { type: 'incomplete', reason: 'cancelled' },
+    metadata: { custom: { kind: 'execution' } },
+    content: [
+      { type: 'data', data: { type: 'run_terminal', data: { error: 'Generation cancelled.' } } },
+    ],
+  })
+})
+
+it('does not summarize a rejected independent review as completed execution', () => {
+  const review = { id: 'review', agent: 'david', name: 'record_review' }
+  const grouped = groupExecutionMessages(
+    toAssistantMessages(
+      [],
+      [
+        event(1, 'tool_start', review),
+        event(2, 'tool_end', {
+          ...review,
+          output: { accepted: false, findings: 'Reset is broken' },
+        }),
+      ],
+      'completed',
+    ),
+  )
+
+  expect(grouped[0]?.status).toEqual({ type: 'incomplete', reason: 'error' })
+  expect(tool(grouped[0])).toMatchObject({ isError: true, result: { accepted: false } })
+})
+
+it('keeps step-limit failures in terminal execution details without losing the diagnostic', () => {
+  const content =
+    'The agent reached its step limit before validation and review could finish. Your previous version is unchanged.'
+  const grouped = groupExecutionMessages(
+    toAssistantMessages(
+      [{ id: 'step-limit', role: 'system', agent: null, content, createdAt: 100 }],
+      [],
+      'failed',
+    ),
+  )
+
+  expect(grouped).toHaveLength(1)
+  expect(grouped[0]).toMatchObject({
+    role: 'assistant',
+    status: { type: 'incomplete', reason: 'error' },
+    metadata: { custom: { kind: 'execution' } },
+    content: [
+      {
+        type: 'data',
+        name: 'activity',
+        data: { type: 'run_terminal', data: { status: 'failed', error: content } },
+      },
+    ],
+  })
+})

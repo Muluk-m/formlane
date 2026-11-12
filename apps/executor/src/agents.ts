@@ -2,6 +2,7 @@ import { projectTemplateSchema } from '@atoms-demo/contracts'
 import {
   createProjectSource,
   isProjectPath,
+  MAX_PROJECT_FILES,
   type ProjectSource,
   projectSourceHash,
   validateProjectSource,
@@ -121,6 +122,24 @@ function invalidateSource(workspace: Workspace, source: ProjectSource) {
   workspace.review = null
 }
 
+function sourceChanges(source: ProjectSource | null, previous: ProjectSource | null) {
+  const paths = new Set([
+    ...Object.keys(source?.files ?? {}),
+    ...Object.keys(previous?.files ?? {}),
+  ])
+  return [...paths].sort().map((path) => ({
+    path,
+    status:
+      source?.files[path] === undefined
+        ? 'deleted'
+        : previous?.files[path] === undefined
+          ? 'added'
+          : source.files[path] === previous.files[path]
+            ? 'unchanged'
+            : 'modified',
+  }))
+}
+
 export async function executeHarness(
   env: ExecutorConfig,
   context: HarnessContext,
@@ -133,7 +152,7 @@ export async function executeHarness(
   signal.throwIfAborted()
   if (context.previousSource) validateProjectSource(context.previousSource)
   const iterationInstructions = context.previousSource
-    ? 'This is a follow-up to a saved application. The latest user request defines the change; the saved source defines existing behavior and text. Do not reconstruct requirements from the initial idea or invent existing labels, values, or behavior in delegation tasks. Inspect files before describing what must be preserved. Use read_previous_file to compare the immutable saved baseline with current files. Change only what the latest request requires. Independent QA must compare changed files against that baseline and test preserved behavior, even if an earlier delegation or brief contradicts the saved source. '
+    ? 'This is a follow-up to a saved application. The latest user request defines the change; the saved source defines existing behavior and text. Do not reconstruct requirements from the initial idea or invent existing labels, values, or behavior in delegation tasks. Inspect files before describing what must be preserved. Compare the immutable saved baseline with current files using your source-reading tools. Change only what the latest request requires. Independent QA must compare changed files against that baseline and test preserved behavior, even if an earlier delegation or brief contradicts the saved source. '
     : ''
   const provider = new OpenAIProvider({
     apiKey: env.OPENAI_API_KEY,
@@ -261,7 +280,11 @@ export async function executeHarness(
         await emit('agent_start', { id: role, name: roles[role], task: action.task })
         await emit('message_start', { id: messageId, role: 'agent', agent: role })
         let toolIndex = 0
-        const withEvidence = async <T>(name: string, execute: () => Promise<T>): Promise<T> => {
+        const withEvidence = async <T>(
+          name: string,
+          execute: () => Promise<T>,
+          summarize?: (output: T) => unknown,
+        ): Promise<T> => {
           signal.throwIfAborted()
           const id = `${stepName}:${name}:${toolIndex++}`
           await emit('tool_start', { id, name, agent: role })
@@ -271,8 +294,9 @@ export async function executeHarness(
             id,
             name,
             agent: role,
-            output:
-              name === 'read_file' || name === 'read_previous_file'
+            output: summarize
+              ? summarize(output)
+              : name === 'read_file' || name === 'read_previous_file'
                 ? { revision: current.revision }
                 : output,
           })
@@ -285,7 +309,7 @@ export async function executeHarness(
         const read = tool({
           name: 'read_workspace',
           description:
-            'Read the brief, architecture, file listing, build and browser evidence. Use read_file for exact file content.',
+            'Read the brief, architecture, file listing, exact baseline change inventory, build and browser evidence. Use your source-reading tools for exact file content.',
           parameters: z.object({}),
           execute: async () =>
             withEvidence('read_workspace', async () => ({
@@ -305,6 +329,7 @@ export async function executeHarness(
               completion: await completionStatus(current),
               ...(context.previousSource ? {} : { originalIdea: context.idea }),
               previousFiles: Object.keys(context.previousSource?.files ?? {}).sort(),
+              sourceChanges: sourceChanges(current.source, context.previousSource),
               userRequest: context.request,
             })),
         })
@@ -360,6 +385,47 @@ export async function executeHarness(
             }),
         })
         const baselineTools = context.previousSource ? [readPreviousFile] : []
+        const reviewFiles = tool({
+          name: 'read_review_files',
+          description:
+            'Read current and immutable baseline content together for a batch of project paths. Use workspace.sourceChanges to focus comparisons on modified, added and deleted files; unchanged means exact text equality. Read any unchanged files needed to assess behavior and checks. Batch related files instead of alternating individual current/baseline reads.',
+          parameters: z.object({
+            paths: z
+              .array(filePathSchema)
+              .min(1)
+              .max(MAX_PROJECT_FILES * 2),
+          }),
+          execute: async ({ paths }) =>
+            withEvidence(
+              'read_review_files',
+              async () => ({
+                revision: current.revision,
+                files: [...new Set(paths)].map((path) => {
+                  const content = current.source?.files[path]
+                  const previous = context.previousSource?.files[path]
+                  if (content === undefined && previous === undefined)
+                    return { path, status: 'missing', error: `File does not exist: ${path}` }
+                  return {
+                    path,
+                    status:
+                      content === undefined
+                        ? 'deleted'
+                        : previous === undefined
+                          ? 'added'
+                          : content === previous
+                            ? 'unchanged'
+                            : 'modified',
+                    current: content ?? null,
+                    previous: previous ?? null,
+                  }
+                }),
+              }),
+              ({ revision, files }) => ({
+                revision,
+                files: files.map(({ path, status }) => ({ path, status })),
+              }),
+            ),
+        })
         const write = tool({
           name: 'write_file',
           description:
@@ -551,7 +617,7 @@ export async function executeHarness(
               ? 'You are the architect. Read workspace and product brief. For a new project call initialize_project with vanilla (simple HTML/CSS/JS) or react-ts (component-based interactive UI), choosing from user requirements and explaining the choice. Do not merely describe initialization: create the scaffold with the tool. For follow-ups preserve the existing template and files; do not reinitialize. Plan real source modules, CSS and semantic selectors. The compiler supports local JS/TS/JSX/TSX/CSS imports and SVG assets; package.json dependencies and scripts are protected. Apps run in an opaque iframe: no external network, browser storage, backend, CDN or secrets. Keep architecture under 250 words; no source dumps.'
               : role === 'alex'
                 ? `You are the implementation agent. Read workspace and relevant source files. Preserve the selected template and existing source on follow-ups. Only initialize_project if no project exists. Implement real source files with write_file (path before content), edit_file for unique targeted replacements, and delete_file for obsolete files. Keep the Vite index.html entry and canonical package.json; do not generate fake source from compiled HTML. Use local modules and concise CSS, with React/TypeScript components for react-ts. No arbitrary dependencies or config scripts: only template dependencies and the trusted compiler are supported. Preserve unrelated behavior and existing checks during repairs. ${checkInstructions} For new or changed source, set acceptance checks as needed and call build_project. Fix actual compiler errors and rebuild. For a validation-only delegation after David corrected checks, preserve those checks and the current source and build, then call validate_preview directly. Do not rebuild unchanged source: rebuilding clears existing evidence. Call validate_preview only after a successful build of current source; it ends this delegation and sends evidence to the manager. Every file change requires a fresh build and validation. No external resources, fetch, browser storage, cookies or parent access. Fits sandbox allow-scripts allow-forms. Prefer semantic markup, accessible controls and clear polished layout. No source dumps in ordinary chat.`
-                : `You are an independent QA agent. Read workspace, relevant files and user requirements. ${checkInstructions} Assess whether checks cover requested behavior, not tautologies. When coverage is insufficient or expectations are incorrect, create your own corrected complete check set with set_acceptance_checks. Run validate_preview yourself on the current compiled build, then record_review accepted true only when checks pass and the app meets the brief. Your acceptance does not substitute for Alex validation: record_review returns completion status so the manager can obtain missing Alex evidence on your corrected checks. When returning after Alex validation on an unchanged build, preserve the checks, run validate_preview and record_review again. Do not ask Alex for source changes merely to add or correct tests. Distinguish missing coverage or tool limitations from concrete app defects. Request targeted repairs only for actual defects with evidence. Record_review false for unresolved defects, missing build or coverage gaps; never invent passing evidence or unrequested requirements.`
+                : `You are an independent QA agent. Read workspace and user requirements. Use read_review_files to inspect related files in one batch with both current and saved content; it replaces individual current/baseline read tools. workspace.sourceChanges identifies exact changes, including deletions, so unchanged files do not need a second comparison. Inspect their current content when needed to understand behavior or selectors. ${checkInstructions} Assess whether checks cover requested behavior, not tautologies. When coverage is insufficient or expectations are incorrect, create your own corrected complete check set with set_acceptance_checks. Run validate_preview yourself on the current compiled build, then record_review accepted true only when checks pass and the app meets the brief. Your acceptance does not substitute for Alex validation: record_review returns completion status so the manager can obtain missing Alex evidence on your corrected checks. When returning after Alex validation on an unchanged build, preserve the checks, run validate_preview and record_review again. Do not ask Alex for source changes merely to add or correct tests. Distinguish missing coverage or tool limitations from concrete app defects. Request targeted repairs only for actual defects with evidence. Record_review false for unresolved defects, missing build or coverage gaps; never invent passing evidence or unrequested requirements.`
         const specialist = new Agent({
           name: roles[role],
           model: observed.model,
@@ -575,7 +641,7 @@ export async function executeHarness(
                   validate,
                 ]
               : role === 'david'
-                ? [read, ...baselineTools, readFile, setChecks, validate, accept]
+                ? [read, reviewFiles, setChecks, validate, accept]
                 : role === 'bob'
                   ? [read, ...baselineTools, readFile, initialize]
                   : [read, ...baselineTools],
@@ -584,8 +650,16 @@ export async function executeHarness(
             ...(role === 'alex' || role === 'david' ? { toolChoice: 'required' as const } : {}),
           },
         })
+        // A review may inspect each current/deleted file separately. Reserve additional turns
+        // for workspace/check setup, validation and explicit review; the run deadline still applies.
+        const maxTurns =
+          role === 'alex'
+            ? 48
+            : role === 'david'
+              ? Math.max(16, sourceChanges(current.source, context.previousSource).length + 8)
+              : 10
         const stream = await runner.run(specialist, action.task, {
-          maxTurns: role === 'alex' ? 48 : role === 'david' ? 16 : 10,
+          maxTurns,
           signal,
           stream: true,
         })

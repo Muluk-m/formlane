@@ -17,6 +17,12 @@ export function publicRunFailure(error: unknown): { code: RunErrorCode; message:
       message:
         'Generation exceeded its 15-minute execution budget. Your previous version is unchanged.',
     }
+  if (code === 'step_limit')
+    return {
+      code: 'step_limit',
+      message:
+        'The agent reached its step limit before validation and review could finish. Your previous version is unchanged.',
+    }
   if (code === 'validation' || name === 'HarnessValidationError')
     return {
       code: 'validation',

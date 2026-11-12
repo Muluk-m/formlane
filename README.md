@@ -13,6 +13,8 @@ The screenshots show the deployed interface and a persisted real-provider counte
 
 The deployed multi-file workflow is shown in the [React source workspace](docs/screenshots/react-source-production.png) and [375px mobile source view](docs/screenshots/react-source-mobile-production.png).
 
+The version-review workspace adds a persistent history rail, selectable source comparisons and compact execution records: [desktop history and diff](docs/screenshots/workspace-history-diff.png), [conversation and saved result](docs/screenshots/workspace-conversation.png), and [mobile diff](docs/screenshots/workspace-diff-mobile.png). These captures use the revised frontend with real persisted API data.
+
 ## Features
 
 - English/Chinese interface, example prompts, and this browser's project list.
@@ -20,7 +22,7 @@ The deployed multi-file workflow is shown in the [React source workspace](docs/s
 - Resizable conversation/preview workspace on desktop; full-height conversation and preview switching on mobile.
 - Sandboxed interactive preview, a selectable syntax-highlighted file tree with live file drafts and build results, and desktop/mobile preview sizes.
 - Demand-selected Vanilla + Vite or React + TypeScript + Vite projects, with follow-up revisions against the current source tree.
-- Version history, historical preview, and restoring a saved result as current.
+- Version history with current/published markers, historical preview, file-level source diffs with a selectable comparison baseline, and confirmed restoration without discarding later versions.
 - Publish a saved result at `/p/:slug`, republish the same link, or unpublish it.
 - Remix the current or inspected historical version; download its complete runnable source as a ZIP.
 - Cancel a durable run without replacing the last complete result; disconnect and reconnect without cancelling execution.

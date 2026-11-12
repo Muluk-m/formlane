@@ -41,6 +41,7 @@ describe('Atoms DTO validation', () => {
       cursor: 4,
     }
     expect(runSchema.parse(run).errorCode).toBe('timeout')
+    expect(runSchema.parse({ ...run, errorCode: 'step_limit' }).errorCode).toBe('step_limit')
     expect(runSchema.safeParse({ ...run, status: 'idle' }).success).toBe(false)
     expect(runSchema.safeParse({ ...run, errorCode: 'stopped' }).success).toBe(false)
   })

@@ -51,7 +51,13 @@ export const createProjectSchema = z.object({ idea: ideaSchema })
 export const followupSchema = z.object({ content: ideaSchema })
 export const generateSchema = z.object({ content: ideaSchema.optional() })
 export const runStatusSchema = z.enum(['queued', 'running', 'completed', 'failed', 'cancelled'])
-export const runErrorCodeSchema = z.enum(['timeout', 'provider', 'validation', 'internal'])
+export const runErrorCodeSchema = z.enum([
+  'timeout',
+  'provider',
+  'validation',
+  'step_limit',
+  'internal',
+])
 export const runSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),

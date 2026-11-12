@@ -15,8 +15,15 @@ describe('durable run failures', () => {
     ).toBe('validation')
     expect(publicRunFailure(new DOMException('disconnected', 'AbortError')).code).toBe('internal')
   })
+  it('maps the structured step limit to a safe public message', () => {
+    expect(publicRunFailure({ code: 'step_limit', message: 'private upstream secret' })).toEqual({
+      code: 'step_limit',
+      message:
+        'The agent reached its step limit before validation and review could finish. Your previous version is unchanged.',
+    })
+  })
   it('never exposes raw provider payloads or unexpected exception details', () => {
-    for (const code of ['provider', 'validation', 'timeout', 'internal']) {
+    for (const code of ['provider', 'validation', 'step_limit', 'timeout', 'internal']) {
       const error = Object.assign(new Error('test-secret upstream debug'), { code })
       expect(publicRunFailure(error).message).not.toContain('test-secret')
       expect(publicRunFailure(error).message).not.toContain('upstream debug')

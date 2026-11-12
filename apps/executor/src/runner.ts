@@ -2,6 +2,8 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
+import type { RunErrorCode } from '@atoms-demo/contracts'
+import { MaxTurnsExceededError } from '@openai/agents-core'
 import { executeHarness } from './agents'
 import type { ExecutorConfig } from './config'
 import {
@@ -44,9 +46,15 @@ export function providerRetryable(error: unknown): boolean {
 }
 
 export function failureFor(error: unknown): {
-  code: 'provider' | 'validation' | 'timeout' | 'internal'
+  code: RunErrorCode
   message: string
 } {
+  if (error instanceof MaxTurnsExceededError)
+    return {
+      code: 'step_limit',
+      message:
+        'The agent reached its step limit before validation and review could finish. Your previous version is unchanged.',
+    }
   const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
   if (code === 'timeout')
     return {

@@ -10,6 +10,7 @@ import { useI18n } from '@atoms-demo/i18n/react'
 import {
   type AssistantIdentity,
   AssistantRunStatus,
+  AssistantSavedVersion,
   AssistantThread,
 } from '@atoms-demo/ui/composites/assistant-thread'
 import { useMemo } from 'react'
@@ -34,6 +35,7 @@ export function ChatPane({
   runStatus,
   activeAgents,
   activity,
+  savedVersion,
   onSend,
   onStop,
 }: {
@@ -44,6 +46,7 @@ export function ChatPane({
   runStatus: HarnessRun['status'] | null
   activeAgents: Record<string, string>
   activity: HarnessEvent[]
+  savedVersion?: { number: number; onPreview: () => void; onChanges: () => void }
   onSend: (text: string) => void
   onStop: () => void
 }) {
@@ -99,6 +102,7 @@ export function ChatPane({
         resolveAgent={resolveAgent}
         disabled={disabled}
         stopping={stopping}
+        artifact={savedVersion && <AssistantSavedVersion {...savedVersion} />}
         status={
           runStatus && (
             <AssistantRunStatus
