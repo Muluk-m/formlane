@@ -81,6 +81,7 @@
         "read_workspace": "Read workspace",
         "initialize_project": "Initialize project",
         "read_file": "Read file",
+        "read_previous_file": "Compare saved version file",
         "write_file": "Write file",
         "edit_file": "Edit file",
         "delete_file": "Delete file",

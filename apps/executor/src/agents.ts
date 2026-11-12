@@ -132,6 +132,9 @@ export async function executeHarness(
     throw Object.assign(new Error('Model credentials are missing.'), { code: 'provider' })
   signal.throwIfAborted()
   if (context.previousSource) validateProjectSource(context.previousSource)
+  const iterationInstructions = context.previousSource
+    ? 'This is a follow-up to a saved application. The latest user request defines the change; the saved source defines existing behavior and text. Do not reconstruct requirements from the initial idea or invent existing labels, values, or behavior in delegation tasks. Inspect files before describing what must be preserved. Use read_previous_file to compare the immutable saved baseline with current files. Change only what the latest request requires. Independent QA must compare changed files against that baseline and test preserved behavior, even if an earlier delegation or brief contradicts the saved source. '
+    : ''
   const provider = new OpenAIProvider({
     apiKey: env.OPENAI_API_KEY,
     baseURL: env.ENDPOINT,
@@ -175,7 +178,7 @@ export async function executeHarness(
           model,
           toolUseBehavior: 'stop_on_first_tool',
           modelSettings: { toolChoice: 'required', parallelToolCalls: false },
-          instructions: `You manage a real project build. Choose ONE specialist tool per turn within eight total manager turns, including completion. Read workspace.completion: it reports the exact missing evidence and next role. Emma defines scope once, Bob chooses and initializes a suitable template once (or preserves the existing project on follow-ups), Alex implements source files, builds and validates, and David independently runs browser validation and reviews. Alex returns immediately after validation. Never repeat Emma or Bob. Limit source implementation/repair to two Alex delegations; a validation-only Alex delegation on an unchanged build is allowed afterward within the remaining turns. Failed checks may have incorrect expectations: verify calculations and action effects before requesting source repairs. Missing coverage or incorrect checks belong to David. If David corrects checks and accepts but alex_validation is missing, delegate Alex to read workspace and run validate_preview on those corrected checks WITHOUT editing source, replacing checks or rebuilding. Then delegate David to validate and record review again, since Alex validation clears the prior review. If implementationValidation already matches the current build, delegate David instead of rewriting files. Every source repair requires fresh Alex validation followed by David validation and review. Reserve turns for this evidence sequence and completion. Complete only when workspace.completion.ready is true. Tools return durable dispatch receipts; use the next turn for the selected result.`,
+          instructions: `${iterationInstructions}You manage a real project build. Choose ONE specialist tool per turn within eight total manager turns, including completion. Read workspace.completion: it reports the exact missing evidence and next role. Emma defines scope once, Bob chooses and initializes a suitable template once (or preserves the existing project on follow-ups), Alex implements source files, builds and validates, and David independently runs browser validation and reviews. Alex returns immediately after validation. Never repeat Emma or Bob. Limit source implementation/repair to two Alex delegations; a validation-only Alex delegation on an unchanged build is allowed afterward within the remaining turns. Failed checks may have incorrect expectations: verify calculations and action effects before requesting source repairs. Missing coverage or incorrect checks belong to David. If David corrects checks and accepts but alex_validation is missing, delegate Alex to read workspace and run validate_preview on those corrected checks WITHOUT editing source, replacing checks or rebuilding. Then delegate David to validate and record review again, since Alex validation clears the prior review. If implementationValidation already matches the current build, delegate David instead of rewriting files. Every source repair requires fresh Alex validation followed by David validation and review. Reserve turns for this evidence sequence and completion. Complete only when workspace.completion.ready is true. Tools return durable dispatch receipts; use the next turn for the selected result.`,
           tools: [
             choose('emma', 'Delegate product requirements and acceptance criteria'),
             choose(
@@ -190,7 +193,7 @@ export async function executeHarness(
         const result = await runner.run(
           manager,
           JSON.stringify({
-            idea: context.idea,
+            ...(context.previousSource ? {} : { idea: context.idea }),
             request: context.request,
             hasPreviousApp: Boolean(context.previousSource),
             turnsRemaining: 8 - turn,
@@ -268,7 +271,10 @@ export async function executeHarness(
             id,
             name,
             agent: role,
-            output: name === 'read_file' ? { revision: current.revision } : output,
+            output:
+              name === 'read_file' || name === 'read_previous_file'
+                ? { revision: current.revision }
+                : output,
           })
           return output
         }
@@ -297,7 +303,8 @@ export async function executeHarness(
               implementationValidation: current.implementationValidation,
               review: current.review,
               completion: await completionStatus(current),
-              originalIdea: context.idea,
+              ...(context.previousSource ? {} : { originalIdea: context.idea }),
+              previousFiles: Object.keys(context.previousSource?.files ?? {}).sort(),
               userRequest: context.request,
             })),
         })
@@ -339,6 +346,20 @@ export async function executeHarness(
                 : { path, content }
             }),
         })
+        const readPreviousFile = tool({
+          name: 'read_previous_file',
+          description:
+            'Read a file from the immutable saved application before this request. Compare it with read_file to verify requested changes preserve unrelated behavior.',
+          parameters: z.object({ path: filePathSchema }),
+          execute: async ({ path }) =>
+            withEvidence('read_previous_file', async () => {
+              const content = context.previousSource?.files[path]
+              return content === undefined
+                ? { error: `File does not exist in the saved baseline: ${path}` }
+                : { path, content }
+            }),
+        })
+        const baselineTools = context.previousSource ? [readPreviousFile] : []
         const write = tool({
           name: 'write_file',
           description:
@@ -534,19 +555,30 @@ export async function executeHarness(
         const specialist = new Agent({
           name: roles[role],
           model: observed.model,
-          instructions,
+          instructions: iterationInstructions + instructions,
           toolUseBehavior: {
             stopAtToolNames:
               role === 'alex' ? ['validate_preview'] : role === 'david' ? ['record_review'] : [],
           },
           tools:
             role === 'alex'
-              ? [read, initialize, readFile, write, edit, deleteFile, build, setChecks, validate]
+              ? [
+                  read,
+                  ...baselineTools,
+                  initialize,
+                  readFile,
+                  write,
+                  edit,
+                  deleteFile,
+                  build,
+                  setChecks,
+                  validate,
+                ]
               : role === 'david'
-                ? [read, readFile, setChecks, validate, accept]
+                ? [read, ...baselineTools, readFile, setChecks, validate, accept]
                 : role === 'bob'
-                  ? [read, readFile, initialize]
-                  : [read],
+                  ? [read, ...baselineTools, readFile, initialize]
+                  : [read, ...baselineTools],
           modelSettings: {
             parallelToolCalls: false,
             ...(role === 'alex' || role === 'david' ? { toolChoice: 'required' as const } : {}),
