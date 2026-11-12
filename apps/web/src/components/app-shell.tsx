@@ -28,8 +28,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { t } = useI18n()
   const projects = useQuery(projectsQuery)
   const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const isProject = pathname.startsWith('/project/')
   return (
-    <SidebarProvider defaultOpen={!pathname.startsWith('/project/')}>
+    <SidebarProvider
+      key={isProject ? 'project' : 'home'}
+      defaultOpen={!isProject}
+      data-workspace={isProject ? 'project' : 'home'}
+    >
       <Sidebar collapsible="icon">
         <SidebarHeader className="p-4 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-0">
           <Logo className="group-data-[collapsible=icon]:hidden" />
@@ -84,15 +89,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         <SidebarRail />
       </Sidebar>
       <SidebarInset className="min-w-0">
-        <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-          <SidebarTrigger />
-          <span className="text-sm text-muted-foreground">{t('atoms.workspace')}</span>
-        </div>
-        <div
-          className={`${pathname.startsWith('/project/') ? '' : 'landing-bg'} relative min-w-0 flex-1`}
-        >
-          {children}
-        </div>
+        {!isProject && (
+          <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+            <SidebarTrigger />
+            <span className="text-sm text-muted-foreground">{t('atoms.workspace')}</span>
+          </div>
+        )}
+        <div className={`${isProject ? '' : 'landing-bg'} relative min-w-0 flex-1`}>{children}</div>
       </SidebarInset>
     </SidebarProvider>
   )

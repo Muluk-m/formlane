@@ -309,6 +309,8 @@
     "deleteTitle": "Delete project?",
     "deleteConfirm": "Delete “{title}”? This cannot be undone.",
     "chat": "Team conversation",
+    "hideChat": "Hide conversation",
+    "showChat": "Show conversation",
     "savedVersion": "Version {number} ready",
     "previewTitle": "App preview",
     "previewAddress": "Live preview",
