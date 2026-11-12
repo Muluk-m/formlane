@@ -13,7 +13,7 @@ Create a dedicated local PostgreSQL database before migrating. Put backend setti
 | `DATABASE_URL`                        | Local PostgreSQL connection, using the psycopg driver                                                     |
 | `OPENAI_API_KEY`, `ENDPOINT`, `MODEL` | Real compatible provider configuration; missing key is a visible generation error                         |
 | `ALLOWED_ORIGINS`                     | Comma-separated explicit browser origins, including `http://localhost:5173`                               |
-| `PUBLIC_ORIGIN`                       | Public HTML origin, normally `http://localhost:8090` locally                                              |
+| `PUBLIC_ORIGIN`                       | Public viewer frontend origin, normally `http://localhost:5173` locally                                   |
 | `COMPILER_COMMAND`                    | JSON argv for the built compiler, e.g. `["node", "../compiler/dist/index.js"]` from the backend directory |
 | `BROWSER_EXECUTABLE_PATH`             | Explicit sandbox-capable browser path when required by the host                                           |
 
@@ -21,13 +21,13 @@ Use private values for credentials; never put them in `VITE_*`, examples, logs o
 
 ## Migrations and processes
 
-`pnpm db:migrate` applies Alembic explicitly before API/worker use. `pnpm db:generate --message <description>` generates a candidate migration; review it before applying. Startup and request handling do not create schema. SQLAlchemy models and reviewed Alembic history move together.
+`pnpm db:migrate` applies application Alembic migrations explicitly. `uv run python -m formlane.durable_execution migrate` initializes/upgrades DBOS history in the intended isolated database. Startup and requests never create schema. Review application migrations before applying them and preserve DBOS history across restarts.
 
 Run each process in its own terminal:
 
 `pnpm dev:api` starts the FastAPI factory at loopback port 8090. `pnpm dev:worker` builds the isolated Node compiler and starts `formlane.worker`. `pnpm dev` (or `pnpm dev:web`) starts Vite only. API availability alone does not execute queued generation; the worker must run against the same database.
 
-The frontend defaults to `http://localhost:8090` in development. Set `VITE_API_ORIGIN` to another approved backend and `VITE_API_PUBLIC_ORIGIN` only when public documents use a different origin. Frontend values may live in `apps/web/.env.local`; they contain public origins only. Existing `atoms_uid` is sent as `x-owner-id` and cookies are omitted.
+The frontend defaults to `http://localhost:8090` for the API in development. Set `VITE_API_ORIGIN` to the approved backend and `VITE_API_PUBLIC_ORIGIN` to the frontend's public viewer origin. Existing `atoms_uid` remains origin-local and travels as `x-owner-id`; cookies are omitted. Public viewers never request an owner identity.
 
 For a build and local preview, supply the origin to both commands:
 
@@ -35,7 +35,7 @@ For a build and local preview, supply the origin to both commands:
 
 `VITE_API_ORIGIN=http://localhost:8090 pnpm --filter @atoms-demo/web preview`
 
-Allow the preview origin (normally `http://localhost:4173`) in backend CORS. `pnpm --filter @atoms-demo/web pages:dev` serves the built artifact with Pages redirects; allow its actual displayed origin. Rebuild when origin values change. Local dev/preview mirrors historical `/api/*` and `/p/*` redirects; project reloads retain SPA fallback. Read [deployment](deployment.md#static-pages-python-api-cutover) before preparing a release artifact.
+Allow the frontend/preview origin in backend CORS. Local dev/preview retains historical `/api/*` redirects; `/p/:slug` and `/project/...` use static SPA routing. Rebuild when public build origins change. Read [deployment](deployment.md) before releasing; server migrations and acceptance precede client activation.
 
 ## Dependency boundaries and checks
 

@@ -1,4 +1,4 @@
-"""Native CrewAI hierarchical team with PostgreSQL-authoritative checkpoints."""
+"""Native CrewAI hierarchical team with granular DBOS model/tool replay."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from crewai import Agent, Crew, Process, Task
 from crewai.agents.agent_executor import AgentExecutor
 from crewai.flow.flow_definition import FlowDefinition
 from crewai.tools.base_tool import Tool
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
 from .compiler import compile_project
 from .model_stream import ObservedOpenAI, RuntimeAbort
@@ -87,9 +87,15 @@ class ReviewFilesArgs(NoArgs):
 
 
 class BrowserAction(NoArgs):
-    kind: Literal["click", "fill", "press", "reload"]
+    kind: Literal["click", "fill", "select", "press", "reload"]
     selector: str = Field(min_length=1, max_length=300)
     value: str | None
+
+    @model_validator(mode="after")
+    def select_value(self):
+        if self.kind == "select" and self.value is None:
+            raise ValueError("Select requires the option's string value.")
+        return self
 
 
 class BrowserAssertion(NoArgs):
@@ -220,7 +226,8 @@ CHECK_INSTRUCTIONS = """Use 2–8 meaningful browser checks, at most 12 actions 
 Each starts in a fresh isolated page; optional viewport is width 375–1440, height 640–1200.
 Example: {"name":"increment", "actions":[{"kind":"click","selector":"button","value":null}],
 "assertions":[{"kind":"text","selector":"output","expected":"2","attribute":null}]}.
-Actions: click, fill (string value), press (Enter/Tab/Escape/ArrowUp/ArrowDown/ArrowLeft/ArrowRight/Space/Backspace/Delete/Home/End), reload (body, null).
+Actions: click, fill (input/textarea text, string value), select (native <select>, string option value), press (Enter/Tab/Escape/ArrowUp/ArrowDown/ArrowLeft/ArrowRight/Space/Backspace/Delete/Home/End), reload (body, null).
+Use select for a native dropdown, with the option's value (not its label). Never fill a <select>.
 Assertions: text containment; value/count/attribute exact equality; no-horizontal-overflow (body, expected "true").
 Expected is a string. Boolean attributes use selector counts on :disabled/:enabled. Quote CSS attribute values.
 Commit filled controls by moving focus before keyboard assertions. Reload resets in-memory state.
@@ -669,8 +676,9 @@ class Runtime:
                 self.scope = parent_scope
 
         try:
-            saved = self.durable.run(step, execute)
+            saved = self.durable.orchestrate(step, execute)
             self.workspace = copy.deepcopy(saved["workspace"])
+            self.emit("project_reset", {"source": self.workspace["source"]})
             return saved["result"]
         except Exception as error:
             raise RuntimeAbort(error) from None
@@ -815,7 +823,7 @@ def execute_harness(
         }
 
     try:
-        return durable.run("crew-v1/result", execute)
+        return execute()
     finally:
         for llm in llms:
             if llm._client is not None:

@@ -14,9 +14,9 @@
   "production": {
     "branch": "main",
     "pagesProject": "formlane",
-    "frontendOrigin": "https://formlane-9dp.pages.dev",
+    "frontendOrigin": "https://formlane.nainma.online",
     "apiOrigin": "https://136.65.182.87",
-    "apiPublicOrigin": "https://136.65.182.87",
+    "apiPublicOrigin": "https://formlane.nainma.online",
     "backendReady": true
   }
 }

@@ -4,7 +4,14 @@ import { describe, expect, it } from 'vitest'
 import { projectWorkspace, reduceProjectEvent } from './workspace'
 
 function event(type: string, data: RunEvent['data']): RunEvent {
-  return { runId: '00000000-0000-4000-8000-000000000001', sequence: 1, createdAt: 1, type, data }
+  return {
+    runId: '00000000-0000-4000-8000-000000000001',
+    attempt: 1,
+    sequence: 1,
+    createdAt: 1,
+    type,
+    data,
+  }
 }
 
 describe('project source observation', () => {

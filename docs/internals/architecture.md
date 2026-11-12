@@ -1,6 +1,6 @@
 # Architecture
 
-Formlane's replacement backend is FastAPI, native CrewAI and PostgreSQL on the existing GCP VM. Cloudflare Pages serves static React assets; Node remains only as an isolated trusted compiler. The HTTPS API is staged, and production activation remains gated by final acceptance and migration; see [deployment](../operations/deployment.md).
+Formlane uses FastAPI, native CrewAI and PostgreSQL on the existing GCP VM, with DBOS providing durable model/tool execution. Cloudflare Pages serves static React assets; Node remains the isolated trusted compiler. Release evidence is recorded in [deployment](../operations/deployment.md).
 
 ## Boundaries
 
@@ -24,17 +24,17 @@ The browser keeps its contract-derived oRPC client, OpenAPILink and TanStack que
 
 `apps/web/src/lib/api.ts` centralizes session bootstrap, requests, SSE and downloads. `VITE_API_ORIGIN` selects the direct API and `VITE_API_PUBLIC_ORIGIN` selects public documents. The existing `atoms_uid` localStorage capability travels as `x-owner-id`; new requests omit cookies and bootstrap must preserve the supplied owner. Backend CORS permits explicit approved origins and transition support for older credentialed clients.
 
-Pages contains static assets only. Temporary `/api/*` 307 redirects preserve methods/bodies for old loaded clients; `/p/*` 302 redirects preserve existing shared links. New clients call the API directly. Deep `/project/...` reloads retain SPA routing. Frontend origins are build-time public configuration, never secret/runtime bindings.
+Pages contains static assets only. Temporary `/api/*` 307 redirects preserve methods/bodies for old clients. Public `/p/:slug` loads published HTML anonymously from Python inside an opaque full-screen iframe, keeping the custom domain in the address bar. It bypasses private owner bootstrap and application navigation. Frontend origins are build-time public configuration, never secrets.
 
 ## Durable execution and acceptance
 
-1. An owned request creates a PostgreSQL run with an active-run fence and persisted 15-minute deadline. The Python worker claims a 60-second lease and refreshes it every 10 seconds directly through the store.
-2. Native CrewAI uses a hierarchical Crew with Mike as manager and Emma, Bob, Alex and David as specialist Agents. Mike delegates based on actual results; model execution is not a handwritten persona pipeline. Completed agent steps and manager work are checkpointed for recovery.
+1. An owned request creates a PostgreSQL run and first bounded attempt. The worker claims a 60-second lease and renews it every 10 seconds. Explicit resume keeps the same run and committed results, advances its attempt and grants a fresh 15-minute budget; reconnect and automatic reclaim do not reset it.
+2. Native CrewAI uses a hierarchical Crew with Mike managing Emma, Bob, Alex and David. DBOS records individual model requests and tool operations in PostgreSQL. Crew and delegation orchestration remain outside steps so nested work is independently recoverable. Workflow code/config compatibility is pinned; [ADR-0014](../adr/0014-dbos-node-recovery.md) records the decision and external-side-effect limits.
 3. Bob selects Vanilla or React + TypeScript. Alex reads, writes, edits and deletes files, builds the candidate, defines checks and validates. David independently reads baseline/current files, validates and accepts or requests repair.
 4. Source edits invalidate stale build and acceptance evidence. Completion binds implementation validation, independent validation and explicit review to the current source, artifact and applicable check set. A successful build or an accepted stale report is insufficient.
 5. Native Playwright validates an opaque iframe in fresh browser contexts. Chromium stays sandboxed; subprocess environments omit provider/database credentials. CSP, HTTP/WebSocket blocking and disabled service workers/downloads contain generated content. Checks are bounded declarative operations and assertions, not arbitrary privileged JavaScript.
 6. An accepted candidate commits immutable source plus compiled HTML and ancestry atomically, updates current selection and completes the run. Failure, cancellation or deadline expiry preserves the previous complete version and publication.
-7. Persisted sequence-addressed SSE events replay after the last cursor. Disconnect does not cancel work. Cancel fences writes; lease loss aborts the producer. Reclaim reuses immutable completed checkpoints, while interrupted provider calls may repeat and be billed again.
+7. Sequence-addressed SSE replays after the last cursor. Events and run snapshots identify the execution attempt; a previous attempt's terminal event cannot terminate a resumed attempt. Disconnect does not cancel work. Cancellation, deadline and lease loss fence the producer; explicit authorized resume reuses committed results. Uncommitted interrupted provider calls may repeat and be billed again.
 
 Role contracts live in `apps/backend/src/formlane/prompts.py`. Each specifies responsibility, actual tool capabilities, ordered work, handoff content and completion: Mike routes evidence, Emma defines observable scope, Bob plans a runnable foundation and state/interface design, Alex implements and validates, and David independently reviews coverage and baseline preservation. CrewAI goals are concise outcomes; backstories carry the full contracts without repeating them in both fields. The manager follows native coworker delegation and returns a final answer only when completion is ready. Tool permissions and source-bound acceptance remain enforced in `agents.py`; instructions cannot grant capabilities or bypass the guardrail. Verify prompt changes with real-provider workflows, not assertions against their wording.
 

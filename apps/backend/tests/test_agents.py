@@ -31,6 +31,9 @@ class Checkpoints:
             self.values[name] = copy.deepcopy(fn())
         return copy.deepcopy(self.values[name])
 
+    def orchestrate(self, name, fn):
+        return self.run(name, fn)
+
 
 def runtime(previous=None):
     events = []

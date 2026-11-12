@@ -206,3 +206,93 @@ def test_readiness_detects_missing_migration_without_schema_creation(pg_store):
     with TestClient(create_app(settings, pg_store)) as client:
         assert client.get("/healthz").status_code == 503
         assert client.get("/healthz").json() == {"ok": False}
+
+
+def test_resume_receipt_preserves_run_and_messages_and_replays_both_attempts(
+    client, pg_store, project, owner
+):
+    route = f"/api/projects/{project['id']}"
+    initial = client.post(route + "/generate", headers=auth(owner)).json()["run"]
+    run_route = route + f"/runs/{initial['id']}"
+    pg_store.claim_run("api-attempt-one")
+    client.post(run_route + "/cancel", headers=auth(owner))
+    before = client.get(route, headers=auth(owner)).json()
+    failed = client.get(run_route, headers=auth(owner)).json()["run"]
+    assert failed["attempt"] == 1 and failed["resumable"]
+    response = client.post(run_route + "/resume", headers=auth(owner))
+    assert response.status_code == 202
+    resumed = response.json()["run"]
+    assert resumed["id"] == initial["id"]
+    assert resumed["attempt"] == 2 and resumed["status"] == "queued"
+    assert resumed["cursor"] > failed["cursor"]
+    assert not resumed["resumable"]
+    assert "lease_token" not in resumed and "deadline_at" not in resumed
+    assert client.get(route, headers=auth(owner)).json()["messages"] == before["messages"]
+    assert client.post(run_route + "/resume", headers=auth(owner)).json() == {"run": resumed}
+    assert client.get(route + "/runs/latest", headers=auth(owner)).json() == {"run": resumed}
+    pg_store.claim_run("api-attempt-two")
+    client.post(run_route + "/cancel", headers=auth(owner))
+    replay = client.get(run_route + "/events", headers=auth(owner))
+    events = [
+        json.loads(line[6:]) for line in replay.text.splitlines() if line.startswith("data: ")
+    ]
+    terminal = [event for event in events if event["data"].get("status") == "cancelled"]
+    assert [event["attempt"] for event in terminal] == [1, 2]
+    assert [event["data"]["attempt"] for event in terminal] == [1, 2]
+    assert [event["sequence"] for event in events] == list(range(1, len(events) + 1))
+
+
+def test_resume_authorization_superseded_and_completed_conflicts(
+    client, pg_store, project, owner, result
+):
+    root = complete(pg_store, project, owner, result)
+    route = f"/api/projects/{project['id']}"
+    run = pg_store.create_run(project["id"], owner, "Modify the app")
+    pg_store.cancel_run(project["id"], owner, run["id"])
+    resume = route + f"/runs/{run['id']}/resume"
+    assert client.post(resume, headers=auth(str(uuid4()))).status_code == 404
+    other = pg_store.create_project(owner, "Other project")
+    assert (
+        client.post(
+            f"/api/projects/{other['id']}/runs/{run['id']}/resume", headers=auth(owner)
+        ).status_code
+        == 404
+    )
+    assert client.post(route + f"/runs/{uuid4()}/resume", headers=auth(owner)).status_code == 404
+    newer = pg_store.create_run(project["id"], owner, "New instruction")
+    assert client.post(resume, headers=auth(owner)).status_code == 409
+    pg_store.cancel_run(project["id"], owner, newer["id"])
+    assert client.post(resume, headers=auth(owner)).status_code == 409
+    assert client.post(route + f"/runs/{root['id']}/resume", headers=auth(owner)).status_code == 409
+    assert (
+        client.get(route, headers=auth(owner)).json()["project"]["currentVersionId"] == root["id"]
+    )
+
+
+def test_event_stream_does_not_stop_on_terminal_snapshot_from_prior_attempt(
+    client, pg_store, project, owner, monkeypatch
+):
+    run = pg_store.create_run(project["id"], owner)
+    pg_store.cancel_run(project["id"], owner, run["id"])
+    original = pg_store.list_run_events
+    reads = 0
+
+    def resume_between_terminal_snapshot_and_drain(*args):
+        nonlocal reads
+        reads += 1
+        rows = original(*args)
+        if reads == 2:
+            pg_store.resume_run(project["id"], owner, run["id"])
+            pg_store.cancel_run(project["id"], owner, run["id"])
+        return rows
+
+    monkeypatch.setattr(pg_store, "list_run_events", resume_between_terminal_snapshot_and_drain)
+    response = client.get(
+        f"/api/projects/{project['id']}/runs/{run['id']}/events", headers=auth(owner)
+    )
+    events = [
+        json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")
+    ]
+    assert events[-1]["attempt"] == 2
+    assert events[-1]["data"]["status"] == "cancelled"
+    assert [event["attempt"] for event in events] == [1, 1, 2, 2]
