@@ -21,11 +21,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from .models import Message, Project, Run, RunCheckpoint, RunEvent, Version
 from .project import MAX_PREVIEW_BYTES, validate_source
 
-RUN_BUDGET_MS = 900_000
+RUN_IDLE_TIMEOUT_MS = 900_000
 LEASE_DURATION_MS = 60_000
 TERMINAL = {"completed", "failed", "cancelled"}
 ERRORS = {
-    "timeout": "Generation exceeded its 15-minute execution budget. Your previous version is unchanged.",
+    "timeout": "Generation made no progress for 15 minutes. Your previous version is unchanged.",
     "step_limit": "The agent reached its step limit before validation and review could finish. Your previous version is unchanged.",
     "validation": "The generated app did not pass validation after repair. Your previous version is unchanged.",
     "provider": "The model provider could not complete this run. Check the provider configuration and try again.",
@@ -269,7 +269,7 @@ class Store:
         return True
 
     def _expire(self, s: Session, project: Project, run: Run, now: int) -> None:
-        if run.status not in TERMINAL and run.deadline_at <= now:
+        if run.status == "running" and run.deadline_at <= now:
             self._finish(s, project, run, "failed", "timeout", now)
 
     def create_project(self, owner_id: str, idea: str, now: int | None = None) -> dict:
@@ -519,7 +519,7 @@ class Store:
                 request=content or project.idea,
                 previous_version_id=project.current_version_id,
                 created_at=clock,
-                deadline_at=clock + RUN_BUDGET_MS,
+                deadline_at=clock + RUN_IDLE_TIMEOUT_MS,
                 attempt=1,
                 attempt_started_at=clock,
                 execution_version="dbos-v1",
@@ -575,7 +575,7 @@ class Store:
                     .join(Project, Project.id == Run.project_id)
                     .where(
                         Run.status.in_(["queued", "running"]),
-                        Run.deadline_at > clock,
+                        or_(Run.status == "queued", Run.deadline_at > clock),
                         or_(Run.lease_expires_at.is_(None), Run.lease_expires_at <= clock),
                         Project.run_id == Run.id,
                         Project.status == "generating",
@@ -593,10 +593,13 @@ class Store:
                     run.status in TERMINAL
                     or project.run_id != run.id
                     or project.status != "generating"
-                    or run.deadline_at <= clock
+                    or (run.status == "running" and run.deadline_at <= clock)
                     or (run.lease_expires_at or 0) > clock
                 ):
                     continue
+                if run.status == "queued":
+                    run.attempt_started_at = clock
+                    run.deadline_at = clock + RUN_IDLE_TIMEOUT_MS
                 run.status, run.started_at = (
                     "running",
                     run.started_at if run.started_at is not None else clock,
@@ -705,14 +708,17 @@ class Store:
             return {"value": row.result, "createdAt": row.created_at} if row else None
 
     def put_checkpoint(self, run_id: str, lease_token: str, name: str, value: Any) -> dict:
+        """Commit new operation progress and its idle deadline in the same transaction."""
         if not isinstance(name, str) or len(name) > 300:
             raise ValueError("Checkpoint name exceeds 300 characters.")
         json.dumps(value, allow_nan=False)
         with self.sessions.begin() as s:
-            self._require_lease(s, run_id, lease_token)
+            _, run = self._require_lease(s, run_id, lease_token)
             row = s.get(RunCheckpoint, (run_id, name))
             if row is None:
-                row = RunCheckpoint(run_id=run_id, name=name, result=value, created_at=timestamp())
+                clock = timestamp()
+                row = RunCheckpoint(run_id=run_id, name=name, result=value, created_at=clock)
+                run.deadline_at = clock + RUN_IDLE_TIMEOUT_MS
                 s.add(row)
             return {"value": row.result, "createdAt": row.created_at}
 
@@ -812,7 +818,7 @@ class Store:
             ids = list(
                 s.scalars(
                     select(Run.id).where(
-                        Run.status.in_(["queued", "running"]), Run.deadline_at <= timestamp()
+                        Run.status == "running", Run.deadline_at <= timestamp()
                     )
                 )
             )
@@ -873,7 +879,7 @@ class Store:
                 return run_json(run)
             clock = timestamp(now)
             run.attempt += 1
-            run.attempt_started_at, run.deadline_at = clock, clock + RUN_BUDGET_MS
+            run.attempt_started_at, run.deadline_at = clock, clock + RUN_IDLE_TIMEOUT_MS
             run.status = "queued"
             run.finished_at = run.error_code = run.error = None
             run.lease_token = run.lease_owner = run.lease_expires_at = None

@@ -4,6 +4,8 @@ Read before changing a related area. Entries distinguish observed migration mist
 
 ## This migration
 
+- **2026-11-13 — A fixed total deadline interrupted an active acceptance repair.** Run `171dce45-e423-421c-a4dc-aaa4caf1bc97` had 63 committed checkpoints and was correcting an invalid `novalidate` check when the creation-time 15-minute budget terminated it. Durable recovery does not fix an inappropriate task deadline. Exclude queue time and renew an inactivity watchdog only when a new operation checkpoint commits; enforce the persisted deadline rather than the worker's stale claim snapshot. Keep heartbeat/cached replay from masking a stalled execution and retain cancellation and independent acceptance fences.
+
 - **2026-11-12 — Timeout Retry posted the original prompt as a new run.** The previous run already held source and model/tool checkpoints, but the new UUID abandoned that history. Resume preserves workflow identity and committed operations, advances an explicit attempt, and rejects old-attempt terminal events. Verify process termination and recovery through the actual client action.
 - **2026-11-12 — A native select was filled as text.** Run `186a160a-6483-45fc-80cd-23933964bb57` passed seven of eight checks; the remaining action called `fill` on `<select id="tool-category">`. Provide explicit option-value selection with real input/change-event coverage; do not change correct application controls to accommodate unsupported test actions.
 - **2026-11-12 — Published links exposed the server IP.** Both public origins selected the backend and `/p` redirected there. Keep navigation on the frontend domain with isolated generated HTML; verify the address bar and revoked-link behavior.

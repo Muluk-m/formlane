@@ -14,7 +14,6 @@ from formlane.storage import LeaseLost
 from formlane.worker import (
     MAX_ATTEMPTS,
     Durable,
-    RunTimeout,
     failure_for,
     process_tree,
     provider_retryable,
@@ -147,13 +146,24 @@ def test_provider_retries_are_bounded_and_cancel_before_retry(monkeypatch):
         durable.run("cancel", cancel_then_fail)
 
 
-def test_deadline_is_persisted_budget_and_errors_are_public_safe():
-    expired = job()
-    expired["deadline_at"] = int(time.time() * 1000) - 1
-    with pytest.raises(RunTimeout):
-        Durable(MemoryStore(), expired, lambda: False).run(
-            "late", lambda: pytest.fail("Expired work ran")
-        )
+def test_replay_and_following_step_ignore_expired_job_snapshot(monkeypatch):
+    store = MemoryStore()
+    snapshot = job()
+    durable = Durable(store, snapshot, lambda: False)
+    assert durable.run("saved", lambda: "result") == "result"
+    monkeypatch.setattr("formlane.worker.time.time", lambda: (snapshot["deadline_at"] + 1) / 1000)
+
+    assert durable.run("saved", lambda: pytest.fail("Cached operation ran")) == "result"
+    assert durable.run("next", lambda: store.checkpoints["saved"]["value"] + " next") == "result next"
+    assert set(store.checkpoints) == {"saved", "next"}
+
+
+def test_errors_are_public_safe():
+    timeout = type("IdleTimeout", (Exception,), {"code": "timeout"})("private timeout details")
+    assert failure_for(timeout) == {
+        "code": "timeout",
+        "message": "Generation made no progress for 15 minutes. Your previous version is unchanged.",
+    }
     error = RuntimeError("sk-secret database-password provider response")
     assert failure_for(error)["code"] == "internal"
     assert "sk-secret" not in str(failure_for(error))
@@ -162,12 +172,37 @@ def test_deadline_is_persisted_budget_and_errors_are_public_safe():
     assert not provider_retryable(type("AuthenticationError", (Exception,), {})())
 
 
-def test_cached_dbos_result_still_checks_lease_authority():
+@pytest.mark.parametrize("fence", ["lease", "cancellation"])
+@pytest.mark.parametrize("during_replay", [False, True])
+def test_cached_dbos_result_still_checks_authority_and_cancellation(
+    monkeypatch, isolated_step_boundary, fence, during_replay
+):
     store = MemoryStore()
-    durable = Durable(store, job(), lambda: False)
+    cancelled = [False]
+    snapshot = job()
+    durable = Durable(store, snapshot, lambda: cancelled[0])
     assert durable.run("saved", lambda: "result") == "result"
-    store.writable = False
-    with pytest.raises(LeaseLost):
+    monkeypatch.setattr("formlane.worker.time.time", lambda: (snapshot["deadline_at"] + 1) / 1000)
+
+    def revoke():
+        if fence == "lease":
+            store.writable = False
+        else:
+            cancelled[0] = True
+
+    if during_replay:
+        run_step = isolated_step_boundary.run_step
+
+        def replay_then_revoke(options, function):
+            result = run_step(options, function)
+            revoke()
+            return result
+
+        monkeypatch.setattr(isolated_step_boundary, "run_step", replay_then_revoke)
+    else:
+        revoke()
+
+    with pytest.raises(LeaseLost if fence == "lease" else CancelledError):
         durable.run("saved", lambda: pytest.fail("Cached operation ran"))
 
 
