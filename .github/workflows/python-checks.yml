@@ -52,10 +52,10 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.13"
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           version: "0.13.7"
       - run: pnpm install --frozen-lockfile
