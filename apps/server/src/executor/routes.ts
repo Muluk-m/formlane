@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { timingSafeEqual } from 'node:crypto'
-import { projectSourceSchema } from '@atoms-demo/contracts'
+import { projectSourceSchema, runErrorCodeSchema } from '@atoms-demo/contracts'
 import { MAX_PREVIEW_BYTES } from '@atoms-demo/core/project'
 import { eq } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
@@ -43,7 +43,7 @@ const completeSchema = leaseSchema.extend({
   }),
 })
 const failSchema = leaseSchema.extend({
-  code: z.enum(['timeout', 'provider', 'validation', 'internal']),
+  code: runErrorCodeSchema,
   message: z.string().max(20_000),
 })
 

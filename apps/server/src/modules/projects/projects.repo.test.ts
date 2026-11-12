@@ -216,62 +216,93 @@ describe('durable generation persistence on real D1', () => {
     expect(await projects.listVersions(db, projectId)).toEqual([])
   })
 
-  it('returns replay-safe completion and only sanitized failures over the executor API', async () => {
-    const first = await create(Date.now())
-    const leased = await claim(Date.now())
-    const env = { DB: binding, EXECUTOR_TOKEN: crypto.randomUUID() }
-    const complete = () =>
-      worker.fetch(
-        new Request(`http://localhost/internal/executor/runs/${first.id}/complete`, {
+  it.each(['provider', 'step_limit'])(
+    'sanitizes %s failures and replays completion',
+    async (code) => {
+      const first = await create(Date.now())
+      const leased = await claim(Date.now())
+      const env = { DB: binding, EXECUTOR_TOKEN: crypto.randomUUID() }
+      const complete = () =>
+        worker.fetch(
+          new Request(`http://localhost/internal/executor/runs/${first.id}/complete`, {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${env.EXECUTOR_TOKEN}`,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ leaseToken: leased.lease_token, result }),
+          }),
+          env,
+        )
+      expect((await complete()).status).toBe(200)
+      expect((await complete()).status).toBe(200)
+      await projects.publishProject(db, projectId, ownerId, 'planner', Date.now())
+      const followup = await create(Date.now(), 'Follow up')
+      const followupLease = await claim(Date.now())
+      expect(followup.previous_version_id).toBe(first.id)
+      const replay = await worker.fetch(
+        new Request('http://localhost/internal/executor/claim', {
           method: 'POST',
           headers: {
             authorization: `Bearer ${env.EXECUTOR_TOKEN}`,
             'content-type': 'application/json',
           },
-          body: JSON.stringify({ leaseToken: leased.lease_token, result }),
+          body: JSON.stringify({ workerId: followupLease.lease_owner }),
         }),
         env,
       )
-    expect((await complete()).status).toBe(200)
-    expect((await complete()).status).toBe(200)
-    await projects.publishProject(db, projectId, ownerId, 'planner', Date.now())
-    const followup = await create(Date.now(), 'Follow up')
-    const followupLease = await claim(Date.now())
-    expect(followup.previous_version_id).toBe(first.id)
-    const replay = await worker.fetch(
-      new Request('http://localhost/internal/executor/claim', {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${env.EXECUTOR_TOKEN}`,
-          'content-type': 'application/json',
+      expect(await replay.json()).toMatchObject({
+        job: {
+          context: { runId: followup.id, request: 'Follow up', previousSource: result.source },
         },
-        body: JSON.stringify({ workerId: followupLease.lease_owner }),
-      }),
-      env,
-    )
-    expect(await replay.json()).toMatchObject({
-      job: { context: { runId: followup.id, request: 'Follow up', previousSource: result.source } },
-    })
-    const failure = await worker.fetch(
-      new Request(`http://localhost/internal/executor/runs/${followup.id}/fail`, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${env.EXECUTOR_TOKEN}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          leaseToken: followupLease.lease_token,
-          code: 'provider',
-          message: 'private upstream secret',
+      })
+      const failure = await worker.fetch(
+        new Request(`http://localhost/internal/executor/runs/${followup.id}/fail`, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${env.EXECUTOR_TOKEN}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            leaseToken: followupLease.lease_token,
+            code,
+            message: 'private upstream secret',
+          }),
         }),
-      }),
-      env,
-    )
-    expect(failure.status).toBe(200)
-    expect((await runs.getRun(db, followup.id))?.error).not.toContain('private upstream secret')
-    expect((await projects.getPublished(db, 'planner'))?.html).toBe(result.html)
-    expect(await projects.listVersions(db, projectId)).toHaveLength(1)
-  })
+        env,
+      )
+      expect(failure.status).toBe(200)
+      const failed = await runs.getRun(db, followup.id)
+      if (!failed) throw new Error('Expected the failed run to remain observable.')
+      expect(failed.error_code).toBe(code)
+      expect(failed.error).not.toContain('private upstream secret')
+      if (code === 'step_limit')
+        expect(failed.error).toBe(
+          'The agent reached its step limit before validation and review could finish. Your previous version is unchanged.',
+        )
+      expect(runSchema.parse(await runs.runReceipt(db, failed))).toMatchObject({
+        status: 'failed',
+        errorCode: code,
+        error: failed.error,
+      })
+      const events = await runs.listRunEvents(db, followup.id, 0)
+      const terminal = events.at(-1)
+      expect(terminal?.type).toBe('run_state')
+      expect(runSchema.parse(terminal?.data)).toMatchObject({
+        status: 'failed',
+        errorCode: code,
+        error: failed.error,
+      })
+      expect(JSON.stringify(events)).not.toContain('private upstream secret')
+      expect(await projects.getProject(db, projectId, ownerId)).toMatchObject({
+        current_version_id: first.id,
+        published_version_id: first.id,
+        error: failed.error,
+      })
+      expect((await projects.getPublished(db, 'planner'))?.html).toBe(result.html)
+      expect(await projects.listVersions(db, projectId)).toHaveLength(1)
+    },
+  )
 
   it('claims exactly once across pollers and replays a lost claim response for the same worker', async () => {
     const queued = await create()
