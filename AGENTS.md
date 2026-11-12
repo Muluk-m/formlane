@@ -10,7 +10,7 @@ A browser-based AI product team: describe an app, watch specialists build source
 4. Public `/p/:slug` exposes only the explicitly published version. Restore and Undo change current selection, not publication; unpublish revokes public access.
 5. Generation uses the real configured provider. Missing credentials fail visibly; there is no mock generation or silent fallback.
 6. Generated HTML is untrusted. Preserve the opaque iframe, sandboxed Chromium and credential-stripped compiler/browser processes.
-7. Disconnect closes observation only. Cancellation fences writes. Completion requires current-source build evidence, passing implementation and independent browser validation, and David's acceptance within the persisted 15-minute deadline.
+7. Disconnect closes observation only. Cancellation fences writes. Completion requires current-source build evidence, passing implementation and independent browser validation, and David's acceptance. Runs have no fixed wall-clock deadline; retain per-operation timeouts and lease fencing.
 8. PostgreSQL owns all six business tables. Apply Alembic explicitly; requests and startup never create schema. Pages serves static React assets only; Node is restricted to the trusted compiler.
 
 ## Every task

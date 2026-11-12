@@ -256,7 +256,7 @@ class ObservedOpenAI(OpenAICompletion):
         name = f"{scope['path']}/llm-{index}"
 
         def invoke() -> Any:
-            runtime.check()
+            runtime.begin_model_call(scope)
             # Every attempt discards unsaved file fragments and partial messages.
             runtime.emit("project_reset", {"source": runtime.workspace["source"]})
             if scope["role"] != "mike":

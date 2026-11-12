@@ -21,11 +21,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from .models import Message, Project, Run, RunCheckpoint, RunEvent, Version
 from .project import MAX_PREVIEW_BYTES, validate_source
 
-RUN_IDLE_TIMEOUT_MS = 900_000
 LEASE_DURATION_MS = 60_000
 TERMINAL = {"completed", "failed", "cancelled"}
 ERRORS = {
-    "timeout": "Generation made no progress for 15 minutes. Your previous version is unchanged.",
+    "timeout": "An earlier time limit interrupted this run. Continue from the saved progress.",
     "step_limit": "The agent reached its step limit before validation and review could finish. Your previous version is unchanged.",
     "validation": "The generated app did not pass validation after repair. Your previous version is unchanged.",
     "provider": "The model provider could not complete this run. Check the provider configuration and try again.",
@@ -191,7 +190,6 @@ class Store:
             and project.status == "generating"
             and run.status == "running"
             and run.lease_token == token
-            and run.deadline_at > now
             and (run.lease_expires_at or 0) > now
         )
 
@@ -267,10 +265,6 @@ class Store:
             project.error, project.updated_at = run.error, now
         self._state(s, run, now)
         return True
-
-    def _expire(self, s: Session, project: Project, run: Run, now: int) -> None:
-        if run.status == "running" and run.deadline_at <= now:
-            self._finish(s, project, run, "failed", "timeout", now)
 
     def create_project(self, owner_id: str, idea: str, now: int | None = None) -> dict:
         now = timestamp(now)
@@ -504,10 +498,6 @@ class Store:
             if mode == "initial" and project.current_version_id:
                 raise StoreError(400, "This project already has a build. Send a follow-up instead.")
             if project.run_id:
-                previous = s.scalar(select(Run).where(Run.id == project.run_id).with_for_update())
-                if previous:
-                    self._expire(s, project, previous, clock)
-            if project.run_id:
                 raise StoreError(409, "A generation is already running for this project.")
             s.execute(
                 update(Run).where(Run.project_id == project_id).values(recovery_eligible=False)
@@ -519,7 +509,6 @@ class Store:
                 request=content or project.idea,
                 previous_version_id=project.current_version_id,
                 created_at=clock,
-                deadline_at=clock + RUN_IDLE_TIMEOUT_MS,
                 attempt=1,
                 attempt_started_at=clock,
                 execution_version="dbos-v1",
@@ -559,7 +548,6 @@ class Store:
                 .where(
                     Run.status == "running",
                     Run.lease_expires_at > clock,
-                    Run.deadline_at > clock,
                     Project.run_id == Run.id,
                     Project.status == "generating",
                 )
@@ -575,7 +563,6 @@ class Store:
                     .join(Project, Project.id == Run.project_id)
                     .where(
                         Run.status.in_(["queued", "running"]),
-                        or_(Run.status == "queued", Run.deadline_at > clock),
                         or_(Run.lease_expires_at.is_(None), Run.lease_expires_at <= clock),
                         Project.run_id == Run.id,
                         Project.status == "generating",
@@ -593,19 +580,17 @@ class Store:
                     run.status in TERMINAL
                     or project.run_id != run.id
                     or project.status != "generating"
-                    or (run.status == "running" and run.deadline_at <= clock)
                     or (run.lease_expires_at or 0) > clock
                 ):
                     continue
                 if run.status == "queued":
                     run.attempt_started_at = clock
-                    run.deadline_at = clock + RUN_IDLE_TIMEOUT_MS
                 run.status, run.started_at = (
                     "running",
                     run.started_at if run.started_at is not None else clock,
                 )
                 run.lease_token, run.lease_owner = str(uuid4()), worker_id
-                run.lease_expires_at = min(run.deadline_at, clock + LEASE_DURATION_MS)
+                run.lease_expires_at = clock + LEASE_DURATION_MS
                 self._state(s, run, clock)
                 return self._job(run)
             return None
@@ -626,7 +611,6 @@ class Store:
                 "previousSource": version.source if version else None,
                 "attempt": run.attempt,
                 "executionVersion": run.execution_version,
-                "deadlineAt": run.deadline_at,
             }
 
     def check_authority(self, run_id: str, lease_token: str) -> None:
@@ -647,7 +631,7 @@ class Store:
             clock = timestamp(now)
             if pair is None or not self._active(*pair, lease_token, clock):
                 return False
-            pair[1].lease_expires_at = min(pair[1].deadline_at, clock + LEASE_DURATION_MS)
+            pair[1].lease_expires_at = clock + LEASE_DURATION_MS
             return True
 
     def append_event(
@@ -708,17 +692,15 @@ class Store:
             return {"value": row.result, "createdAt": row.created_at} if row else None
 
     def put_checkpoint(self, run_id: str, lease_token: str, name: str, value: Any) -> dict:
-        """Commit new operation progress and its idle deadline in the same transaction."""
         if not isinstance(name, str) or len(name) > 300:
             raise ValueError("Checkpoint name exceeds 300 characters.")
         json.dumps(value, allow_nan=False)
         with self.sessions.begin() as s:
-            _, run = self._require_lease(s, run_id, lease_token)
+            self._require_lease(s, run_id, lease_token)
             row = s.get(RunCheckpoint, (run_id, name))
             if row is None:
                 clock = timestamp()
                 row = RunCheckpoint(run_id=run_id, name=name, result=value, created_at=clock)
-                run.deadline_at = clock + RUN_IDLE_TIMEOUT_MS
                 s.add(row)
             return {"value": row.result, "createdAt": row.created_at}
 
@@ -813,25 +795,10 @@ class Store:
                 safe_error="This run requires its original execution version and cannot resume on this deployment.",
             )
 
-    def expire_runs(self) -> None:
-        with self.sessions() as s:
-            ids = list(
-                s.scalars(
-                    select(Run.id).where(
-                        Run.status == "running", Run.deadline_at <= timestamp()
-                    )
-                )
-            )
-        for run_id in ids:
-            with self.sessions.begin() as s:
-                pair = self._locked_run(s, run_id)
-                if pair:
-                    self._expire(s, *pair, timestamp())
-
     def get_run(self, project_id: str, owner_id: str, run_id: str | None = None) -> dict | None:
         with self.sessions.begin() as s:
             try:
-                project = self._project(s, project_id, owner_id)
+                self._project(s, project_id, owner_id)
             except StoreError:
                 if run_id:
                     raise StoreError(404, "Run not found.") from None
@@ -849,7 +816,6 @@ class Store:
                 if run_id:
                     raise StoreError(404, "Run not found.")
                 return None
-            self._expire(s, project, run, timestamp())
             return run_json(run)
 
     def resume_run(
@@ -879,7 +845,7 @@ class Store:
                 return run_json(run)
             clock = timestamp(now)
             run.attempt += 1
-            run.attempt_started_at, run.deadline_at = clock, clock + RUN_IDLE_TIMEOUT_MS
+            run.attempt_started_at = clock
             run.status = "queued"
             run.finished_at = run.error_code = run.error = None
             run.lease_token = run.lease_owner = run.lease_expires_at = None

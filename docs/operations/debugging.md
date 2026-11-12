@@ -25,7 +25,7 @@ Record environment/release, project/version, run ID, event cursor and the exact 
 
 Use isolated PostgreSQL with explicit Alembic migrations. Never reproduce destructive behavior against production. Network evidence should identify path/status/event, not full prompts or credentials. Inspect `app.py`, `storage.py`, `worker.py` and `agents.py` under [the backend](../../apps/backend/src/formlane/) for the corresponding boundary.
 
-SSE does not own execution. The 15-minute deadline persists across reconnect/reclaim; a 60-second lease renews every 10 seconds. Cancellation rejects late writes and aborts producer work. Restart reuses completed immutable checkpoints, while interrupted provider calls may repeat. A failed build/browser report is repair evidence and preserves the prior complete version.
+SSE does not own execution. Runs have no fixed wall-clock deadline; a 60-second lease renews every 10 seconds. Individual provider, compiler and browser operations retain bounded timeouts. Cancellation rejects late writes and aborts producer work. Restart reuses completed immutable checkpoints, while interrupted provider calls may repeat. A failed build/browser report is repair evidence and preserves the prior complete version.
 
 Use two isolated identities for private access checks. Public HTML must not expose chat, source APIs or owner credentials. A generated page's own styling/logic failure is separate from a shell failure, and opaque preview storage restrictions are intentional.
 

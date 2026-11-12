@@ -16,7 +16,6 @@ from sqlalchemy.engine import make_url
 from formlane.models import Run, RunCheckpoint, RunEvent
 from formlane.storage import (
     LEASE_DURATION_MS,
-    RUN_IDLE_TIMEOUT_MS,
     LeaseLost,
     Store,
     StoreError,
@@ -94,48 +93,19 @@ def test_concurrent_creation_claim_replay_and_single_global_lease(pg_store, proj
     assert pg_store.claim_run("other")["id"] == next_run["id"]
 
 
-def test_new_checkpoints_allow_completion_beyond_fifteen_minutes(
-    pg_store, project, owner, result, monkeypatch
-):
-    clock = 1_000_000
-    monkeypatch.setattr("formlane.storage.timestamp", lambda now=None: clock if now is None else now)
-    run = start(pg_store, project, owner)
-    initial_deadline = run["deadline_at"]
-    deadline = initial_deadline
-    for step in range(1, 62):
-        clock += LEASE_DURATION_MS // 2
-        assert pg_store.heartbeat(run["id"], run["lease_token"])
-        if step % 10 == 0:
-            checkpoint = pg_store.put_checkpoint(
-                run["id"], run["lease_token"], f"operation:{step}", {"step": step}
-            )
-            deadline = clock + RUN_IDLE_TIMEOUT_MS
-            assert checkpoint["createdAt"] == clock
-        pg_store.expire_runs()
-        with pg_store.sessions() as session:
-            saved = session.get(Run, run["id"])
-            assert saved.status == "running"
-            assert saved.deadline_at == deadline
-            assert saved.lease_expires_at == clock + LEASE_DURATION_MS
-    assert clock > initial_deadline + RUN_IDLE_TIMEOUT_MS
-    assert pg_store.complete_run(run["id"], run["lease_token"], result)
-    saved = pg_store.get_project(project["id"], owner)
-    assert saved["project"]["currentVersionId"] == run["id"]
-    assert saved["source"] == result["source"]
-
-
 @pytest.mark.parametrize("resumed", [False, True])
-def test_queue_wait_does_not_start_idle_watchdog(pg_store, project, owner, monkeypatch, resumed):
+def test_queued_and_resumed_work_survives_long_wait(pg_store, project, owner, monkeypatch, resumed):
     clock = 1_000_000
-    monkeypatch.setattr("formlane.storage.timestamp", lambda now=None: clock if now is None else now)
+    monkeypatch.setattr(
+        "formlane.storage.timestamp", lambda now=None: clock if now is None else now
+    )
     if resumed:
         previous = start(pg_store, project, owner)
         pg_store.cancel_run(project["id"], owner, previous["id"])
         receipt = pg_store.resume_run(project["id"], owner, previous["id"])
     else:
         receipt = pg_store.create_run(project["id"], owner, "Build")
-    clock += 2 * RUN_IDLE_TIMEOUT_MS
-    pg_store.expire_runs()
+    clock += 1_800_000
     assert pg_store.get_run(project["id"], owner, receipt["id"])["status"] == "queued"
     with pytest.raises(StoreError) as duplicate:
         pg_store.create_run(project["id"], owner, "Another instruction")
@@ -143,61 +113,21 @@ def test_queue_wait_does_not_start_idle_watchdog(pg_store, project, owner, monke
     claimed = pg_store.claim_run("worker")
     assert claimed["id"] == receipt["id"]
     assert claimed["attempt_started_at"] == clock
-    assert claimed["deadline_at"] == clock + RUN_IDLE_TIMEOUT_MS
     assert claimed["lease_expires_at"] == clock + LEASE_DURATION_MS
     assert claimed["started_at"] == (previous["started_at"] if resumed else clock)
     assert claimed["attempt"] == (2 if resumed else 1)
 
 
-def test_replay_heartbeats_and_events_never_renew_idle_deadline(
-    pg_store, project, owner, result, monkeypatch
-):
+def test_failed_checkpoint_commit_leaves_no_partial_result(pg_store, project, owner, monkeypatch):
     clock = 1_000_000
-    monkeypatch.setattr("formlane.storage.timestamp", lambda now=None: clock if now is None else now)
-    run = start(pg_store, project, owner)
-    checkpoint = pg_store.put_checkpoint(run["id"], run["lease_token"], "committed", None)
-    deadline = clock + RUN_IDLE_TIMEOUT_MS
-    while clock + LEASE_DURATION_MS // 2 < deadline:
-        clock += LEASE_DURATION_MS // 2
-        assert pg_store.heartbeat(run["id"], run["lease_token"])
-        assert pg_store.get_checkpoint(run["id"], run["lease_token"], "committed") == checkpoint
-        assert pg_store.put_checkpoint(
-            run["id"], run["lease_token"], "committed", {"ignored": True}
-        ) == checkpoint
-        pg_store.append_event(run["id"], run["lease_token"], f"token:{clock}", "token", {})
-        with pg_store.sessions() as session:
-            saved = session.get(Run, run["id"])
-            assert saved.deadline_at == deadline
-            assert saved.lease_expires_at == min(clock + LEASE_DURATION_MS, deadline)
-    clock = deadline
-    assert not pg_store.heartbeat(run["id"], run["lease_token"])
-    assert not pg_store.complete_run(run["id"], run["lease_token"], result)
-    assert pg_store.claim_run("replacement") is None
-    for operation in [
-        lambda: pg_store.get_checkpoint(run["id"], run["lease_token"], "committed"),
-        lambda: pg_store.put_checkpoint(run["id"], run["lease_token"], "committed", {}),
-        lambda: pg_store.put_checkpoint(run["id"], run["lease_token"], "late", {}),
-        lambda: pg_store.append_event(run["id"], run["lease_token"], "late", "token", {}),
-    ]:
-        with pytest.raises(LeaseLost):
-            operation()
-    pg_store.expire_runs()
-    expired = pg_store.get_run(project["id"], owner, run["id"])
-    assert expired["status"] == "failed" and expired["errorCode"] == "timeout"
-    assert expired["error"] == (
-        "Generation made no progress for 15 minutes. Your previous version is unchanged."
+    monkeypatch.setattr(
+        "formlane.storage.timestamp", lambda now=None: clock if now is None else now
     )
-
-
-def test_checkpoint_and_idle_deadline_roll_back_together(pg_store, project, owner, monkeypatch):
-    clock = 1_000_000
-    monkeypatch.setattr("formlane.storage.timestamp", lambda now=None: clock if now is None else now)
     run = start(pg_store, project, owner)
     clock += 1_000
 
     def fail_commit(session):
         session.flush()
-        assert session.get(Run, run["id"]).deadline_at == clock + RUN_IDLE_TIMEOUT_MS
         assert session.get(RunCheckpoint, (run["id"], "uncommitted")) is not None
         raise RuntimeError("checkpoint commit unavailable")
 
@@ -208,25 +138,26 @@ def test_checkpoint_and_idle_deadline_roll_back_together(pg_store, project, owne
     finally:
         event.remove(pg_store.sessions, "before_commit", fail_commit)
     with pg_store.sessions() as session:
-        assert session.get(Run, run["id"]).deadline_at == run["deadline_at"]
         assert session.get(RunCheckpoint, (run["id"], "uncommitted")) is None
 
 
 @pytest.mark.parametrize("authority_loss", ["reclaimed", "cancelled"])
-def test_fenced_checkpoint_cannot_renew_idle_deadline(
+def test_fenced_checkpoint_cannot_change_committed_history(
     pg_store, project, owner, result, monkeypatch, authority_loss
 ):
     clock = 1_000_000
-    monkeypatch.setattr("formlane.storage.timestamp", lambda now=None: clock if now is None else now)
+    monkeypatch.setattr(
+        "formlane.storage.timestamp", lambda now=None: clock if now is None else now
+    )
     run = start(pg_store, project, owner)
     clock += 1_000
-    checkpoint = pg_store.put_checkpoint(run["id"], run["lease_token"], "committed", {"first": True})
-    deadline = clock + RUN_IDLE_TIMEOUT_MS
+    checkpoint = pg_store.put_checkpoint(
+        run["id"], run["lease_token"], "committed", {"first": True}
+    )
     clock += LEASE_DURATION_MS
     if authority_loss == "reclaimed":
         replacement = pg_store.claim_run("replacement")
         assert replacement["lease_token"] != run["lease_token"]
-        assert replacement["deadline_at"] == deadline
         assert replacement["attempt_started_at"] == run["attempt_started_at"]
     else:
         pg_store.cancel_run(project["id"], owner, run["id"])
@@ -236,7 +167,6 @@ def test_fenced_checkpoint_cannot_renew_idle_deadline(
     assert not pg_store.heartbeat(run["id"], run["lease_token"])
     assert not pg_store.complete_run(run["id"], run["lease_token"], result)
     with pg_store.sessions() as session:
-        assert session.get(Run, run["id"]).deadline_at == deadline
         assert session.get(RunCheckpoint, (run["id"], "committed")).result == checkpoint["value"]
         assert session.get(RunCheckpoint, (run["id"], "late")) is None
 
@@ -412,18 +342,18 @@ def test_safe_failures_retain_current_and_published(pg_store, project, owner, re
     assert pg_store.get_published(published["slug"])["html"] == result["html"]
 
 
-def test_deadline_fences_all_writes_before_expiry_and_cancellation_allows_retry(
+def test_expired_lease_fences_all_writes_and_cancellation_allows_retry(
     pg_store, project, owner, result
 ):
     run = start(pg_store, project, owner)
     with pg_store.sessions.begin() as session:
-        session.get(Run, run["id"]).deadline_at = timestamp() - 1
+        session.get(Run, run["id"]).lease_expires_at = timestamp() - 1
     assert not pg_store.heartbeat(run["id"], run["lease_token"])
     assert not pg_store.complete_run(run["id"], run["lease_token"], result)
     with pytest.raises(LeaseLost):
         pg_store.put_checkpoint(run["id"], run["lease_token"], "late", {})
-    pg_store.expire_runs()
-    assert pg_store.get_run(project["id"], owner, run["id"])["errorCode"] == "timeout"
+    pg_store.cancel_run(project["id"], owner, run["id"])
+    assert pg_store.get_run(project["id"], owner, run["id"])["status"] == "cancelled"
     retry = start(pg_store, project, owner, "Retry")
     pg_store.cancel_run(project["id"], owner, retry["id"])
     assert not pg_store.complete_run(retry["id"], retry["lease_token"], result)
@@ -453,15 +383,21 @@ def test_invalid_sources_never_replace_success_and_completion_replay_is_idempote
     assert saved["project"]["currentVersionId"] == first["id"]
 
 
-def test_heartbeat_caps_lease_at_deadline(pg_store, project, owner):
-    run = start(pg_store, project, owner)
+def test_long_running_work_can_complete_while_heartbeats_keep_authority(
+    pg_store, project, owner, result, monkeypatch
+):
     clock = timestamp()
-    with pg_store.sessions.begin() as session:
-        session.get(Run, run["id"]).deadline_at = clock + 100
-    assert pg_store.heartbeat(run["id"], run["lease_token"], clock)
-    with pg_store.sessions() as session:
-        saved = session.get(Run, run["id"])
-        assert saved.lease_expires_at == clock + 100 < clock + LEASE_DURATION_MS
+    created = pg_store.create_run(project["id"], owner, "Build the app", now=clock - 3_600_000)
+    run = pg_store.claim_run("long-running-worker", now=clock)
+    assert run["id"] == created["id"]
+    for elapsed in range(30_000, 3_600_001, 30_000):
+        assert pg_store.heartbeat(run["id"], run["lease_token"], clock + elapsed)
+    monkeypatch.setattr(
+        "formlane.storage.timestamp", lambda now=None: clock + 3_600_000 if now is None else now
+    )
+    assert pg_store.get_run(project["id"], owner, run["id"])["status"] == "running"
+    assert pg_store.complete_run(run["id"], run["lease_token"], result)
+    assert pg_store.get_project(project["id"], owner)["source"] == result["source"]
 
 
 @pytest.mark.parametrize("terminal", ["failed", "cancelled"])
@@ -506,7 +442,7 @@ def test_resume_preserves_checkpoint_source_history_and_fences_old_attempt(
     assert claimed["lease_token"] != run["lease_token"]
     assert claimed["previous_version_id"] == baseline["id"]
     assert claimed["attempt_started_at"] == clock
-    assert claimed["deadline_at"] == clock + RUN_IDLE_TIMEOUT_MS
+
     assert claimed["execution_version"] == run["execution_version"] == "dbos-v1"
     assert (
         pg_store.get_checkpoint(run["id"], claimed["lease_token"], "source:committed") == checkpoint
@@ -523,7 +459,7 @@ def test_resume_preserves_checkpoint_source_history_and_fences_old_attempt(
     ] == [(2, 2, "queued"), (2, 2, "running"), (2, 2, "failed")]
 
 
-def test_concurrent_resume_grants_only_one_new_attempt_and_reclaim_keeps_deadline(
+def test_concurrent_resume_grants_only_one_new_attempt_and_reclaim_preserves_it(
     pg_store, project, owner
 ):
     run = start(pg_store, project, owner)
@@ -545,11 +481,9 @@ def test_concurrent_resume_grants_only_one_new_attempt_and_reclaim_keeps_deadlin
     with pg_store.sessions.begin() as session:
         persisted = session.get(Run, run["id"])
         assert persisted.attempt == 2
-        assert persisted.deadline_at == claimed["deadline_at"]
         persisted.lease_expires_at = timestamp() - 1
     reclaimed = pg_store.claim_run("reclaimed-worker")
     assert reclaimed["attempt"] == 2
-    assert reclaimed["deadline_at"] == claimed["deadline_at"]
     assert reclaimed["attempt_started_at"] == claimed["attempt_started_at"]
 
 
@@ -575,7 +509,7 @@ def test_new_run_and_version_selection_permanently_revoke_resume(pg_store, proje
     assert completed.value.status == 409
 
 
-def test_resume_rolls_back_attempt_deadline_and_fence_when_event_commit_fails(
+def test_resume_rolls_back_attempt_and_fence_when_event_commit_fails(
     pg_store, project, owner, monkeypatch
 ):
     run = start(pg_store, project, owner)
@@ -591,7 +525,6 @@ def test_resume_rolls_back_attempt_deadline_and_fence_when_event_commit_fails(
     assert pg_store.get_run(project["id"], owner, run["id"]) == before
     with pg_store.sessions() as session:
         persisted = session.get(Run, run["id"])
-        assert persisted.deadline_at == run["deadline_at"]
         assert persisted.lease_token == run["lease_token"]
         assert persisted.attempt_started_at == run["attempt_started_at"]
 
@@ -654,7 +587,7 @@ def test_recovery_migration_preserves_legacy_run_and_event_history(owner):
                         "id": run_id,
                         "project": project_id,
                         "clock": clock + offset,
-                        "deadline": clock + RUN_IDLE_TIMEOUT_MS,
+                        "deadline": clock + 900_000,
                     },
                 )
                 connection.execute(

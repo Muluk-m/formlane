@@ -10,6 +10,7 @@ Group=formlane
 WorkingDirectory=/opt/formlane/python-backend/current/apps/backend
 Environment=HOME=/var/lib/formlane/python
 Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONPATH=/opt/formlane/python-backend/current/apps/backend/src
 EnvironmentFile=/etc/formlane/backend.env
 ExecStart=/opt/formlane/python-backend/current/apps/backend/.venv/bin/python -m uvicorn formlane.app:create_app --factory --host 127.0.0.1 --port 8090 --no-proxy-headers
 Restart=on-failure

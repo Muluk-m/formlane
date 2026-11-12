@@ -361,7 +361,7 @@
       "cancelled": "Run cancelled"
     },
     "runError": {
-      "timeout": "The run stopped making progress. Your saved work is safe.",
+      "timeout": "An earlier time limit interrupted this run. Continue from the saved progress.",
       "provider": "The model provider could not complete this run.",
       "validation": "The app did not pass validation after repair.",
       "step_limit": "The agent reached its step limit before validation and review finished.",

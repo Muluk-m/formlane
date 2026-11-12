@@ -226,7 +226,7 @@ def test_resume_receipt_preserves_run_and_messages_and_replays_both_attempts(
     assert resumed["attempt"] == 2 and resumed["status"] == "queued"
     assert resumed["cursor"] > failed["cursor"]
     assert not resumed["resumable"]
-    assert "lease_token" not in resumed and "deadline_at" not in resumed
+    assert "lease_token" not in resumed
     assert client.get(route, headers=auth(owner)).json()["messages"] == before["messages"]
     assert client.post(run_route + "/resume", headers=auth(owner)).json() == {"run": resumed}
     assert client.get(route + "/runs/latest", headers=auth(owner)).json() == {"run": resumed}

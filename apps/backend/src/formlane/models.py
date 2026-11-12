@@ -116,7 +116,6 @@ class Run(Base):
     created_at: Mapped[int] = mapped_column(BigInteger)
     started_at: Mapped[int | None] = mapped_column(BigInteger)
     finished_at: Mapped[int | None] = mapped_column(BigInteger)
-    deadline_at: Mapped[int] = mapped_column(BigInteger)
     attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     attempt_started_at: Mapped[int] = mapped_column(BigInteger)
     execution_version: Mapped[str] = mapped_column(
