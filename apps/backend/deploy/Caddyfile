@@ -1,0 +1,16 @@
+{
+	# IP clients omit SNI; the VM receives traffic on its private NAT address.
+	default_sni {$FORMLANE_API_HOST}
+}
+
+# Formlane API ingress. TLS state is persisted by the packaged Caddy service.
+{$FORMLANE_API_HOST} {
+	tls {
+		issuer acme {
+			profile shortlived
+		}
+	}
+	reverse_proxy 127.0.0.1:8090 {
+		flush_interval -1
+	}
+}

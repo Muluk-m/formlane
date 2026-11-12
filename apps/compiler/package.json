@@ -1,0 +1,27 @@
+{
+  "name": "@formlane/compiler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node ../../scripts/vitest-guard.mjs"
+  },
+  "dependencies": {
+    "@atoms-demo/core": "workspace:*",
+    "esbuild": "^0.25.12",
+    "parse5": "8.1.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.0"
+  }
+}
