@@ -1,6 +1,6 @@
 # Python services with PostgreSQL and static Pages
 
-Status: accepted; rollout is staged and release evidence is recorded separately.
+Status: accepted and deployed; release evidence is recorded in [deployment](../operations/deployment.md).
 
 The user chose to replace the Worker/D1 business backend and Node agent runtime with FastAPI, CrewAI and PostgreSQL on the existing GCP VM. Cloudflare Pages will serve only the React application. Python API and durable task execution run as separate non-root processes, sharing PostgreSQL authority for ownership, runs, replayable events, leases, immutable checkpoints and versions. SQLAlchemy and Alembic replace Drizzle for this explicitly selected Python service. A restricted Node compiler remains a local subprocess because generated React/Vite source still needs JavaScript compilation; it never executes generated configuration, plugins or package scripts.
 

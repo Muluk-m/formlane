@@ -2,7 +2,7 @@
 
 Describe an app and watch an AI product team build it. Mike delegates to Emma for requirements, Bob for template selection, Alex for implementation and David for independent validation. Follow-ups revise the current source and repeat the acceptance gate. This recreates the core [atoms.dev](https://atoms.dev/) loop: team conversation, interactive preview and a published link. Projects belong to an anonymous browser identity; there is no registered account system.
 
-The replacement architecture is **FastAPI + native CrewAI + PostgreSQL on the existing GCP VM**, with **static React on Cloudflare Pages** and an isolated Node compiler. The API at **https://136.65.182.87** is currently staged. **Final production cutover has not happened**; staging rehearsal and earlier release evidence are not production acceptance. [Deployment status and cutover](docs/operations/deployment.md) record the gate and remaining evidence.
+The production architecture is **FastAPI + native CrewAI + PostgreSQL on the existing GCP VM**, with **static React on Cloudflare Pages** and an isolated Node compiler. The API runs at **https://136.65.182.87**. The write-fenced migration preserved all six business tables and existing anonymous ownership. [Deployment evidence and recovery](docs/operations/deployment.md) record the exact import, acceptance runs and release identities.
 
 The frontend stays at [formlane-9dp.pages.dev](https://formlane-9dp.pages.dev), preserving existing anonymous browser ownership and shared links. Historical published examples include the [React counter](https://formlane-9dp.pages.dev/p/8tq3mrv54j) and [market app](https://formlane-9dp.pages.dev/p/7e2g3qqnnd).
 
@@ -47,7 +47,7 @@ Use the manifest-pinned Node/pnpm versions and Python 3.13 with uv. PostgreSQL i
 
 ## Deployment and limitations
 
-The target API uses the reserved GCP address `formlane-api` in `us-central1` on the existing `formlane-agent` VM. Caddy terminates HTTPS on 443 and proxies to loopback FastAPI; PostgreSQL is loopback-only. Production remains gated on real-model acceptance and a final write-fenced six-table import. The provider remains `grok-4.7` at the existing compatible endpoint; secrets never enter frontend configuration. Exact accounts, service paths, staging databases and recovery rules are in [deployment](docs/operations/deployment.md).
+The API uses the reserved GCP address `formlane-api` in `us-central1` on the existing `formlane-agent` VM. Caddy terminates HTTPS on 443 and proxies to loopback FastAPI; PostgreSQL is loopback-only. The old Node executor is disabled and D1 is retained as a frozen recovery snapshot. The provider remains `grok-4.7` at the existing compatible endpoint; secrets never enter frontend configuration. Exact accounts, service paths, isolated databases and recovery rules are in [deployment](docs/operations/deployment.md).
 
 Generated projects are frontend applications with fixed template dependencies, bounded to 64 files/256 KiB of source and 512 KiB of compiled preview. The service does not provision generated backends, databases or authentication. Interactive state is in memory inside the opaque preview; saved source/history does not persist generated runtime state. Downloaded projects run with `pnpm install`, `pnpm dev` and `pnpm build`; React projects also support `pnpm typecheck`. The compiler supports local JS/TS/JSX/TSX, CSS, JSON and SVG with fixed React imports, not arbitrary server modules or custom Vite plugins.
 

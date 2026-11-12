@@ -35,4 +35,4 @@
 
 Project execution states are `idle`, `generating` and `error`. Publication is a separate pointer. Run states are queued, running, completed, failed or cancelled; timeout, provider, validation, step-limit and internal failures remain distinct. A later failure preserves current and published versions.
 
-The target architecture is Python/FastAPI/CrewAI/PostgreSQL with static Pages. The HTTPS backend is currently staged; [deployment](docs/operations/deployment.md) owns rollout status and production cutover evidence.
+The production architecture is Python/FastAPI/CrewAI/PostgreSQL with static Pages. [Deployment](docs/operations/deployment.md) owns rollout status, exact migration evidence and recovery boundaries.
