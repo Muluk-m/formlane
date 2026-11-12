@@ -98,7 +98,13 @@ const messageParts = {
   },
 }
 
-function AssistantMessage({ resolveAgent }: { resolveAgent: AssistantAgentResolver }) {
+function AssistantMessage({
+  resolveAgent,
+  renderSavedVersion,
+}: {
+  resolveAgent: AssistantAgentResolver
+  renderSavedVersion?: (versionId: string) => ReactNode
+}) {
   const { t } = useI18n()
   const role = useAuiState((s) => s.message.role)
   const custom = useAuiState((s) => s.message.metadata.custom)
@@ -108,6 +114,13 @@ function AssistantMessage({ resolveAgent }: { resolveAgent: AssistantAgentResolv
   )
   const stepCount = useAuiState((s) => s.message.content.length)
   const identity = resolveAgent(typeof custom.agent === 'string' ? custom.agent : null)
+  if (custom.kind === 'saved-version' && typeof custom.versionId === 'string') {
+    return (
+      <MessagePrimitive.Root className="min-w-0">
+        {renderSavedVersion?.(custom.versionId)}
+      </MessagePrimitive.Root>
+    )
+  }
   if (role === 'system' || custom.kind === 'system') {
     return (
       <MessagePrimitive.Root className="px-3 py-1" data-testid="system-message">
@@ -378,13 +391,13 @@ export function AssistantThread({
   status,
   disabled,
   stopping,
-  artifact,
+  renderSavedVersion,
 }: {
   resolveAgent: AssistantAgentResolver
   status?: ReactNode
   disabled?: boolean
   stopping?: boolean
-  artifact?: ReactNode
+  renderSavedVersion?: (versionId: string) => ReactNode
 }) {
   const { t } = useI18n()
   return (
@@ -416,9 +429,13 @@ export function AssistantThread({
         </AuiIf>
         <div className="flex min-w-0 flex-col gap-5" data-testid="run-activity">
           <ThreadPrimitive.Messages>
-            {() => <AssistantMessage resolveAgent={resolveAgent} />}
+            {() => (
+              <AssistantMessage
+                resolveAgent={resolveAgent}
+                renderSavedVersion={renderSavedVersion}
+              />
+            )}
           </ThreadPrimitive.Messages>
-          {artifact}
         </div>
         <div className="pointer-events-none sticky bottom-0 mt-4 flex justify-center">
           <ThreadPrimitive.ScrollToBottom
