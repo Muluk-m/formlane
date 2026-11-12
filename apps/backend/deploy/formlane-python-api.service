@@ -1,0 +1,31 @@
+[Unit]
+Description=Formlane staged Python API
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+Type=simple
+User=formlane
+Group=formlane
+WorkingDirectory=/opt/formlane/python-backend/current/apps/backend
+Environment=HOME=/var/lib/formlane/python
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=/etc/formlane/backend-stage.env
+ExecStart=/opt/formlane/python-backend/current/apps/backend/.venv/bin/python -m uvicorn formlane.app:create_app --factory --host 127.0.0.1 --port 8090 --no-proxy-headers
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=25s
+KillMode=control-group
+UMask=0077
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/formlane/python
+NoNewPrivileges=true
+MemoryMax=512M
+TasksMax=128
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
