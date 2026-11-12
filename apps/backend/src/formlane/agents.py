@@ -26,6 +26,13 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 from .compiler import compile_project
 from .model_stream import ObservedOpenAI, RuntimeAbort
 from .project import artifact_hash, create_source, is_project_path, source_hash, validate_source
+from .prompts import (
+    ITERATION_INSTRUCTIONS,
+    MANAGER_INSTRUCTIONS,
+    ROLE_GOALS,
+    ROLE_INSTRUCTIONS,
+    TEAM_INSTRUCTIONS,
+)
 from .validator import validate_artifact, validate_checks
 
 
@@ -219,19 +226,6 @@ Expected is a string. Boolean attributes use selector counts on :disabled/:enabl
 Commit filled controls by moving focus before keyboard assertions. Reload resets in-memory state.
 Combine related assertions; verify calculations and correct wrong expectations without changing valid app behavior.
 """
-ITERATION_INSTRUCTIONS = """This is a follow-up to a saved application. Only the latest request defines the change;
-the immutable saved source defines existing text and behavior. Inspect actual files before describing what to preserve.
-An earlier idea, brief or delegation cannot override saved behavior. Compare current and baseline, including deletions,
-and test preservation of unrelated behavior. Do not invent old labels or reconstruct the original creation request.
-"""
-ROLE_INSTRUCTIONS = {
-    "emma": "Read workspace and define only requested scope and 2–8 observable acceptance criteria. Include requested interactions, no invented features, persistence or visual constraints. Respond concisely in the user language.",
-    "bob": "Read workspace and actual source. For a new project initialize_project with vanilla for simple HTML/CSS/JS or react-ts for component UI. Preserve existing template and files on follow-ups. Plan modules and semantic selectors in under 250 words. Templates have fixed dependencies. The trusted compiler supports local JS/TS/JSX/TSX/CSS/SVG imports. Apps run in opaque iframes without network, storage, backend, CDN or secrets.",
-    "alex": "Read workspace and relevant current and baseline files. Implement real application source with write_file (path before content), unique edit_file replacements, delete_file. Preserve unrelated behavior and existing checks during repair. Keep Vite index.html entry and protected canonical package.json. No config scripts, arbitrary dependencies, fetch, storage, cookies or parent access. Use accessible semantic markup and polished layout. Build current source, fix real compiler errors, then validate_preview, which ends this delegation. For validation-only work preserve source, build and corrected checks, and validate directly; rebuilding clears evidence. No source dumps in ordinary chat. "
-    + CHECK_INSTRUCTIONS,
-    "david": "Independently inspect requested behavior and exact source. Use read_review_files to batch current and immutable baseline files, including every changed/deleted file from sourceChanges. Read unchanged files as needed for behavior and selectors. Assess coverage, not tautologies. Correct invalid/incomplete checks if necessary, run validate_preview yourself, then record_review. Only accept when your independent current-build report passes and behavior meets the latest request while preserving baseline. record_review ends this delegation. Reject with concrete defects; do not demand code changes to accommodate wrong expectations. After Alex validates corrected checks, independently validate and review again. "
-    + CHECK_INSTRUCTIONS,
-}
 
 
 class Runtime:
@@ -736,12 +730,12 @@ def execute_harness(
         llms.append(llm)
         return llm
 
-    baseline_instructions = ITERATION_INSTRUCTIONS if runtime.previous else ""
+    baseline_instructions = f"{ITERATION_INSTRUCTIONS}\n\n" if runtime.previous else ""
     agents = [
         DurableAgent(
             role=role.title(),
-            goal=ROLE_INSTRUCTIONS[role],
-            backstory=baseline_instructions + ROLE_INSTRUCTIONS[role],
+            goal=ROLE_GOALS[role],
+            backstory=f"{TEAM_INSTRUCTIONS}\n\n{baseline_instructions}{ROLE_INSTRUCTIONS[role]}",
             llm=model(),
             tools=runtime.tools(role),
             allow_delegation=False,
@@ -758,8 +752,7 @@ def execute_harness(
     manager = Agent(
         role="Mike",
         goal="Deliver the requested app only with current-source implementation validation and independent acceptance.",
-        backstory=baseline_instructions
-        + "Manage a real source build through native delegation. Emma defines scope once; Bob initializes a template once or preserves existing source; Alex implements, builds and validates; David independently inspects baseline changes, browser-validates and reviews. Choose the next specialist dynamically from their returned workspace.completion. At most eight delegations and two implementation/repair passes; validation-only delegations remain allowed. Failed checks may be wrong expectations, not app defects. Obtain missing Alex evidence on corrected checks, then a fresh David review. Finish only when completion.ready is true. Summarize concisely in the user language; no source dumps.",
+        backstory=f"{TEAM_INSTRUCTIONS}\n\n{baseline_instructions}{MANAGER_INSTRUCTIONS}",
         llm=model(),
         allow_delegation=True,
         allow_code_execution=False,
