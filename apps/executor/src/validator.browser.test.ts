@@ -74,6 +74,94 @@ it('rejects missing text and substring matches for non-text assertions', async (
   expect(report.issues).toHaveLength(4)
 }, 45_000)
 
+it('shares the polling deadline without starving assertions after an incorrect expectation', async () => {
+  const report = await validateArtifact(
+    html,
+    [
+      {
+        name: 'incorrect first expectation',
+        actions: [
+          { kind: 'fill', selector: '#name', value: 'Ada' },
+          { kind: 'click', selector: '#save', value: null },
+        ],
+        assertion: { kind: 'text', selector: '#status', expected: 'Deleted' },
+        assertions: [
+          { kind: 'text', selector: '#status', expected: 'Saved Ada' },
+          { kind: 'value', selector: '#name', expected: 'Ada' },
+          { kind: 'attribute', selector: '#status', attribute: 'data-state', expected: 'ready' },
+          { kind: 'count', selector: 'button', expected: '1' },
+          { kind: 'no-horizontal-overflow', selector: 'body', expected: 'true' },
+        ],
+      },
+      {
+        name: 'multiple real failures share one deadline',
+        actions: [],
+        assertions: [
+          { kind: 'text', selector: '#status', expected: 'Deleted' },
+          { kind: 'value', selector: '#name', expected: 'Ada' },
+          { kind: 'attribute', selector: '#status', attribute: 'data-state', expected: 'read' },
+          { kind: 'text', selector: '#missing', expected: '' },
+        ],
+      },
+    ],
+    AbortSignal.timeout(20_000),
+  )
+  expect(report.valid).toBe(false)
+  expect(report.checks.map((check) => check.passed)).toEqual([false, false])
+  expect(report.checks[0]?.actual).toBe(
+    '1: Saved Ada; 2: Saved Ada; 3: Ada; 4: ready; 5: 1; 6: true',
+  )
+  expect(report.issues.filter((issue) => issue.startsWith('incorrect first expectation'))).toEqual([
+    'incorrect first expectation assertion 1 (text, #status): expected "Deleted", got "Saved Ada".',
+  ])
+  expect(report.issues).toHaveLength(5)
+  expect(report.issues[4]).toContain('assertion 4 (text, #missing)')
+}, 25_000)
+
+it('keeps boolean attributes literal and checks enabled state through selectors', async () => {
+  const report = await validateArtifact(
+    `<!doctype html><html><body>
+<button id="empty" disabled>Empty</button>
+<button id="true" disabled="true">True</button>
+<button id="false" disabled="false">False</button>
+<button id="enabled" aria-disabled="false">Enabled</button>
+</body></html>`,
+    [
+      {
+        name: 'literal attributes and boolean presence',
+        actions: [{ kind: 'click', selector: '#enabled', value: null }],
+        assertions: [
+          { kind: 'attribute', selector: '#empty', attribute: 'disabled', expected: '' },
+          { kind: 'attribute', selector: '#true', attribute: 'disabled', expected: 'true' },
+          { kind: 'attribute', selector: '#false', attribute: 'disabled', expected: 'false' },
+          {
+            kind: 'attribute',
+            selector: '#enabled',
+            attribute: 'aria-disabled',
+            expected: 'false',
+          },
+          { kind: 'count', selector: 'button:disabled', expected: '3' },
+          { kind: 'count', selector: '#enabled:not([disabled])', expected: '1' },
+        ],
+      },
+      {
+        name: 'absent does not mean literal false',
+        actions: [],
+        assertions: [
+          { kind: 'attribute', selector: '#enabled', attribute: 'disabled', expected: 'false' },
+          { kind: 'count', selector: '#enabled:enabled', expected: '1' },
+        ],
+      },
+    ],
+    AbortSignal.timeout(20_000),
+  )
+  expect(report.valid).toBe(false)
+  expect(report.checks.map((check) => check.passed)).toEqual([true, false])
+  expect(report.issues).toEqual([
+    'absent does not mean literal false assertion 1 (attribute, #enabled): expected "false", got null.',
+  ])
+}, 25_000)
+
 it('validates a targeted repair of SVG keyboard activation', async () => {
   const candidate = `<!doctype html><html><body>
 <svg><g id="marker" tabindex="0" role="button"><circle cx="30" cy="30" r="20"/></g></svg>

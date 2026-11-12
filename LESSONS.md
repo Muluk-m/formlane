@@ -4,6 +4,9 @@ Read before changing a related area. Entries distinguish observed migration mist
 
 ## This migration
 
+- **2026-11-12 — Independent review accepted a corrected check set while completion lacked implementation evidence.** Manager context hid the implementation-validation stamp, so it repeatedly chose completion after David accepted. Expose the same unmet completion requirements to every role. Obtain Alex's validation on the unchanged build and then a fresh independent review; do not weaken the acceptance gate or rewrite correct application code to match an incorrect expectation.
+- **2026-11-12 — A failed assertion starved subsequent checks.** Sequential polling shared one five-second deadline, leaving later selectors only 1 ms and producing misleading missing-element errors. Poll independent assertions together under the bounded deadline and preserve each observed result. Boolean `disabled` is presence-based; use `:disabled`/`:enabled` selector counts, not a literal `"false"` attribute expectation.
+
 - **2026-11-11 — CI stalled on an unnecessary browser dependency install.** The GitHub Ubuntu runner already provides Google Chrome, and executor tests use that binary explicitly. Running Playwright's dependency installer first made the checks depend on Ubuntu mirror DNS and failed before any tests ran. Verify the installed Chrome executable, then run the unchanged browser tests; do not disable sandboxing or skip them.
 
 - **2026-11-11 — Tool-call generation was invisible until the tool executed.** Forwarding only ordinary model text left the code pane empty while `write_artifact` HTML arguments streamed. Observe the installed SDK's real argument events before Runner executes the tool; preserve JSON chunk boundaries and keep draft observation separate from workspace acceptance. Test actual Runner ordering, cancellation, escapes, and final-artifact deduplication.

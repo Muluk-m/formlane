@@ -72,6 +72,43 @@ async function currentBuild(workspace: Workspace): Promise<Build | null> {
   return build
 }
 
+async function completionStatus(workspace: Workspace) {
+  const build = await currentBuild(workspace)
+  const missing: string[] = []
+  if (!build) missing.push('current_build')
+  if (
+    !build ||
+    workspace.implementationValidation?.sourceHash !== build.sourceHash ||
+    workspace.implementationValidation.artifactHash !== build.artifactHash
+  )
+    missing.push('alex_validation')
+  if (
+    !build ||
+    !workspace.report?.valid ||
+    workspace.report.artifactHash !== build.artifactHash ||
+    workspace.validatedBy !== 'david'
+  )
+    missing.push('david_validation')
+  if (
+    !build ||
+    !workspace.review?.accepted ||
+    workspace.review.sourceHash !== build.sourceHash ||
+    workspace.review.artifactHash !== build.artifactHash
+  )
+    missing.push('david_acceptance')
+  return {
+    ready: missing.length === 0,
+    missing,
+    nextRole: !workspace.source
+      ? 'bob'
+      : missing.includes('alex_validation')
+        ? 'alex'
+        : missing.length
+          ? 'david'
+          : 'complete',
+  }
+}
+
 function invalidateSource(workspace: Workspace, source: ProjectSource) {
   validateProjectSource(source)
   workspace.source = source
@@ -138,7 +175,7 @@ export async function executeHarness(
           model,
           toolUseBehavior: 'stop_on_first_tool',
           modelSettings: { toolChoice: 'required', parallelToolCalls: false },
-          instructions: `You manage a real project build. Choose ONE specialist tool per turn within eight delegations. Emma defines scope once, Bob chooses and initializes a suitable template once (or preserves the existing project on follow-ups), Alex implements source files, builds and validates, and David independently runs browser validation and reviews. Alex returns immediately after validation; failed reports are concrete evidence for a targeted repair delegation. Never repeat Emma or Bob. Delegate Alex at most twice in total. If the current build has a passing implementation report, delegate David instead of rewriting files. Missing test coverage belongs to David. After a repair, David must review the repaired build again. Complete as soon as the current source is built, browser checks pass and independent review accepts. Tools return durable dispatch receipts; use the next turn for the selected result.`,
+          instructions: `You manage a real project build. Choose ONE specialist tool per turn within eight total manager turns, including completion. Read workspace.completion: it reports the exact missing evidence and next role. Emma defines scope once, Bob chooses and initializes a suitable template once (or preserves the existing project on follow-ups), Alex implements source files, builds and validates, and David independently runs browser validation and reviews. Alex returns immediately after validation. Never repeat Emma or Bob. Limit source implementation/repair to two Alex delegations; a validation-only Alex delegation on an unchanged build is allowed afterward within the remaining turns. Failed checks may have incorrect expectations: verify calculations and action effects before requesting source repairs. Missing coverage or incorrect checks belong to David. If David corrects checks and accepts but alex_validation is missing, delegate Alex to read workspace and run validate_preview on those corrected checks WITHOUT editing source, replacing checks or rebuilding. Then delegate David to validate and record review again, since Alex validation clears the prior review. If implementationValidation already matches the current build, delegate David instead of rewriting files. Every source repair requires fresh Alex validation followed by David validation and review. Reserve turns for this evidence sequence and completion. Complete only when workspace.completion.ready is true. Tools return durable dispatch receipts; use the next turn for the selected result.`,
           tools: [
             choose('emma', 'Delegate product requirements and acceptance criteria'),
             choose(
@@ -156,6 +193,7 @@ export async function executeHarness(
             idea: context.idea,
             request: context.request,
             hasPreviousApp: Boolean(context.previousSource),
+            turnsRemaining: 8 - turn,
             history,
             workspace: {
               brief: workspace.brief,
@@ -164,8 +202,12 @@ export async function executeHarness(
               template: workspace.source?.template ?? null,
               files: Object.keys(workspace.source?.files ?? {}).sort(),
               build: workspace.build,
+              checks: workspace.checks,
               report: workspace.report,
+              validatedBy: workspace.validatedBy,
+              implementationValidation: workspace.implementationValidation,
               review: workspace.review,
+              completion: await completionStatus(workspace),
             },
           }),
           { maxTurns: 2, signal },
@@ -175,27 +217,15 @@ export async function executeHarness(
         return decision
       })
       if (action.role === 'complete') {
-        const build = await currentBuild(workspace)
-        if (
-          workspace.source &&
-          build &&
-          workspace.implementationValidation?.sourceHash === build.sourceHash &&
-          workspace.implementationValidation.artifactHash === build.artifactHash &&
-          workspace.report?.valid &&
-          workspace.report.artifactHash === build.artifactHash &&
-          workspace.validatedBy === 'david' &&
-          workspace.review?.accepted === true &&
-          workspace.review.sourceHash === build.sourceHash &&
-          workspace.review.artifactHash === build.artifactHash
-        ) {
+        const completion = await completionStatus(workspace)
+        if (workspace.source && completion.ready) {
           signal.throwIfAborted()
           return { source: workspace.source, html: workspace.html, summary: action.task }
         }
         history.push({
           role: 'system',
           task: action.task,
-          result:
-            'Completion rejected: current source requires a successful build, Alex browser validation, and passing independent David validation and acceptance.',
+          result: `Completion rejected: missing ${completion.missing.join(', ')}. Delegate ${completion.nextRole} for current-source evidence. If only Alex validation is missing after corrected David checks pass, validate the unchanged build with Alex, then rerun David validation and review.`,
         })
         continue
       }
@@ -263,7 +293,10 @@ export async function executeHarness(
               build: current.build,
               checks: current.checks,
               report: current.report,
+              validatedBy: current.validatedBy,
+              implementationValidation: current.implementationValidation,
               review: current.review,
+              completion: await completionStatus(current),
               originalIdea: context.idea,
               userRequest: context.request,
             })),
@@ -483,11 +516,11 @@ export async function executeHarness(
                 sourceHash: built?.sourceHash ?? '',
                 artifactHash: built?.artifactHash ?? '',
               }
-              return current.review
+              return { ...current.review, completion: await completionStatus(current) }
             }),
         })
         const checkInstructions =
-          'Use 2–8 checks, at most 12 actions and 8 total assertions per check. Every selector must be a complete valid CSS selector; quote attribute values with double quotes, e.g. input[data-favorites-only="true"], never leave an attribute selector open. Each check starts with fresh page state and an optional viewport (width 375–1440, height 640–1200; default 1280x720). Actions: click(selector, null), fill(selector, string), press(selector, schema-enumerated key), reload(body, null). Reload resets in-memory state inside the opaque iframe. Put exact assertions in assertions; legacy assertion remains supported and counts toward the same limit. Kinds: text (expected is contained in selected text), value, count, attribute (supply attribute name; missing attributes do not equal empty strings), no-horizontal-overflow (selector body, expected "true"; fixed document-width check). expected is always a string; attribute is null or omitted for other kinds. Keep independent QA coverage compact: combine related assertions in one check, then call validate_preview immediately. Do not replace checks repeatedly after a passing report.'
+          'Use 2–8 checks, at most 12 actions and 8 total assertions per check. Every selector must be a complete valid CSS selector; quote attribute values with double quotes, e.g. input[data-favorites-only="true"], never leave an attribute selector open. Each check starts with fresh page state and an optional viewport (width 375–1440, height 640–1200; default 1280x720). Actions: click(selector, null), fill(selector, string), press(selector, schema-enumerated key), reload(body, null). After filling controls, commit their change by moving focus to an appropriate control before testing keyboard-driven state; a later blur can otherwise apply the input again. Reload resets in-memory state inside the opaque iframe. Put exact assertions in assertions; legacy assertion remains supported and counts toward the same limit. Kinds: text (expected is contained in selected text), value, count, attribute (literal getAttribute value; a missing attribute is null, never "false" or an empty string), no-horizontal-overflow (selector body, expected "true"; fixed document-width check). For boolean attributes use count assertions on :disabled/:enabled or [disabled]/:not([disabled]) selectors instead of expecting the string "false". expected is always a string; attribute is null or omitted for other kinds. Verify expected calculations and all action effects, including newly spawned state, before treating a failed check as an app defect. Correct mathematically wrong expectations without rewriting a valid app. Keep independent QA coverage compact: combine related assertions in one check, then call validate_preview immediately. Do not replace checks repeatedly after a passing report.'
         if (role === 'alex' && current.report && !current.report.valid)
           await emit('repair', { attempt: current.revision + 1, issues: current.report.issues })
         const instructions =
@@ -496,8 +529,8 @@ export async function executeHarness(
             : role === 'bob'
               ? 'You are the architect. Read workspace and product brief. For a new project call initialize_project with vanilla (simple HTML/CSS/JS) or react-ts (component-based interactive UI), choosing from user requirements and explaining the choice. Do not merely describe initialization: create the scaffold with the tool. For follow-ups preserve the existing template and files; do not reinitialize. Plan real source modules, CSS and semantic selectors. The compiler supports local JS/TS/JSX/TSX/CSS imports and SVG assets; package.json dependencies and scripts are protected. Apps run in an opaque iframe: no external network, browser storage, backend, CDN or secrets. Keep architecture under 250 words; no source dumps.'
               : role === 'alex'
-                ? `You are the implementation agent. Read workspace and relevant source files. Preserve the selected template and existing source on follow-ups. Only initialize_project if no project exists. Implement real source files with write_file (path before content), edit_file for unique targeted replacements, and delete_file for obsolete files. Keep the Vite index.html entry and canonical package.json; do not generate fake source from compiled HTML. Use local modules and concise CSS, with React/TypeScript components for react-ts. No arbitrary dependencies or config scripts: only template dependencies and the trusted compiler are supported. Preserve unrelated behavior and existing checks during repairs. ${checkInstructions} Use set_acceptance_checks for checks, then call build_project. Fix actual compiler errors and rebuild. Call validate_preview only after a successful build of current source; it ends this delegation and sends evidence to the manager. Every file change requires a fresh build and validation. No external resources, fetch, browser storage, cookies or parent access. Fits sandbox allow-scripts allow-forms. Prefer semantic markup, accessible controls and clear polished layout. No source dumps in ordinary chat.`
-                : `You are an independent QA agent. Read workspace, relevant files and user requirements. ${checkInstructions} Assess whether checks cover requested behavior, not tautologies. When coverage is insufficient, create your own complete check set with set_acceptance_checks. Run validate_preview yourself on the current compiled build, then record_review accepted true only when checks pass and the app meets the brief. Do not ask Alex for source changes merely to add tests. Distinguish missing coverage or tool limitations from concrete app defects. Request targeted repairs only for actual defects with evidence. Record_review false for unresolved defects, missing build or coverage gaps; never invent passing evidence or unrequested requirements.`
+                ? `You are the implementation agent. Read workspace and relevant source files. Preserve the selected template and existing source on follow-ups. Only initialize_project if no project exists. Implement real source files with write_file (path before content), edit_file for unique targeted replacements, and delete_file for obsolete files. Keep the Vite index.html entry and canonical package.json; do not generate fake source from compiled HTML. Use local modules and concise CSS, with React/TypeScript components for react-ts. No arbitrary dependencies or config scripts: only template dependencies and the trusted compiler are supported. Preserve unrelated behavior and existing checks during repairs. ${checkInstructions} For new or changed source, set acceptance checks as needed and call build_project. Fix actual compiler errors and rebuild. For a validation-only delegation after David corrected checks, preserve those checks and the current source and build, then call validate_preview directly. Do not rebuild unchanged source: rebuilding clears existing evidence. Call validate_preview only after a successful build of current source; it ends this delegation and sends evidence to the manager. Every file change requires a fresh build and validation. No external resources, fetch, browser storage, cookies or parent access. Fits sandbox allow-scripts allow-forms. Prefer semantic markup, accessible controls and clear polished layout. No source dumps in ordinary chat.`
+                : `You are an independent QA agent. Read workspace, relevant files and user requirements. ${checkInstructions} Assess whether checks cover requested behavior, not tautologies. When coverage is insufficient or expectations are incorrect, create your own corrected complete check set with set_acceptance_checks. Run validate_preview yourself on the current compiled build, then record_review accepted true only when checks pass and the app meets the brief. Your acceptance does not substitute for Alex validation: record_review returns completion status so the manager can obtain missing Alex evidence on your corrected checks. When returning after Alex validation on an unchanged build, preserve the checks, run validate_preview and record_review again. Do not ask Alex for source changes merely to add or correct tests. Distinguish missing coverage or tool limitations from concrete app defects. Request targeted repairs only for actual defects with evidence. Record_review false for unresolved defects, missing build or coverage gaps; never invent passing evidence or unrequested requirements.`
         const specialist = new Agent({
           name: roles[role],
           model: observed.model,
@@ -571,7 +604,10 @@ export async function executeHarness(
                   revision: workspace.revision,
                   build: workspace.build,
                   report: workspace.report,
+                  validatedBy: workspace.validatedBy,
+                  implementationValidation: workspace.implementationValidation,
                   review: workspace.review,
+                  completion: await completionStatus(workspace),
                   specialistOutput: workspace.lastOutput,
                 }),
       })
