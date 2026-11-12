@@ -1,43 +1,46 @@
 # Development
 
-## Setup and local execution
+## Setup
 
-Work in `/Users/qiqian/Projects/Self/atoms-demo`. Read Node `engines` and `packageManager` in the root manifest before installing; use its pinned pnpm, including on remote machines. Do not produce an npm lockfile or use reference-repository node_modules as a dependency contract.
+Use an isolated Formlane checkout. Follow the root manifest's Node and pnpm pins, and `apps/backend/pyproject.toml` / `uv.lock` for Python 3.13 dependencies. JavaScript uses pnpm/Turbo; Python uses uv. Install only when authorized:
 
-```sh
-pnpm install
-cp apps/server/.dev.vars.example apps/server/.dev.vars
-pnpm db:migrate
-pnpm dev
-```
+`pnpm install` and `uv sync --directory apps/backend --frozen` prepare their respective dependencies. Install a sandbox-capable Playwright Chromium/Chrome for the backend environment. Keep package versions and browser selection aligned with the lockfiles and actual deployment runtime.
 
-The server workspace is Wrangler's working directory; its local configuration lives in `apps/server/.dev.vars`. Configure the control-plane `EXECUTOR_TOKEN` there, not model execution credentials. `pnpm db:migrate` applies local D1 migrations; never change it to `--remote` as a shortcut. Model execution runs separately in `apps/executor` on Node 24 with native Chromium and environment variables `OPENAI_API_KEY`, `ENDPOINT`, `MODEL`, `EXECUTOR_TOKEN` and `CONTROL_PLANE_URL`. The URL must use HTTPS and the token must match the target API. Never commit or log secrets. No Workflow/browser bindings or mock generation are required or supported by this execution path. Local UI startup alone does not establish generation acceptance.
+Create a dedicated local PostgreSQL database before migrating. Put backend settings in a private `apps/backend/.env` or process environment:
 
-`pnpm dev` uses Turbo to coordinate the web and Worker tasks. Start only one instance of each service; `dev:web` / `dev:server` are separate entry points when needed. The web development proxy sends API/public requests to the Worker, preserving the browser's same-origin ownership behavior. Read the Vite and Wrangler configurations for ports and routes instead of duplicating configuration here.
+| Setting                               | Purpose                                                                                                   |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                        | Local PostgreSQL connection, using the psycopg driver                                                     |
+| `OPENAI_API_KEY`, `ENDPOINT`, `MODEL` | Real compatible provider configuration; missing key is a visible generation error                         |
+| `ALLOWED_ORIGINS`                     | Comma-separated explicit browser origins, including `http://localhost:5173`                               |
+| `PUBLIC_ORIGIN`                       | Public HTML origin, normally `http://localhost:8090` locally                                              |
+| `COMPILER_COMMAND`                    | JSON argv for the built compiler, e.g. `["node", "../compiler/dist/index.js"]` from the backend directory |
+| `BROWSER_EXECUTABLE_PATH`             | Explicit sandbox-capable browser path when required by the host                                           |
 
-## Dependencies and shared code
+Use private values for credentials; never put them in `VITE_*`, examples, logs or checked-in files. Remote staging/test/production databases are separate resources, not convenient local development stores.
 
-- Read the installed package declaration for new API usage. Base UI, TanStack Table, oRPC, and Zod must follow the selected major versions.
-- Changes to API shapes begin in contracts, then update server and web. Runtime-independent helpers belong in core; SDK agents, scoped tools, native browser validation and checkpoint orchestration belong in `apps/executor`. D1 persistence and lease authorization belong in `apps/server`.
-- All visible copy uses the single i18n catalog. All product controls use UI. Feature-specific composition stays in the web application.
-- Drizzle schema and SQL migrations move together. Local D1 and deployment bindings are distinct configurations.
-- Preserve migration history through `0005_project_sources.sql`. Apply the source snapshot migration before starting a source-aware API/executor, with old runs drained and old executors stopped. Generate Worker binding types with the server's `cf:typegen` script when bindings change. Read [ADR-0012](../adr/0012-durable-agent-harness.md) before changing durable execution.
+## Migrations and processes
 
-## Checks and resource use
+`pnpm db:migrate` applies Alembic explicitly before API/worker use. `pnpm db:generate --message <description>` generates a candidate migration; review it before applying. Startup and request handling do not create schema. SQLAlchemy models and reviewed Alembic history move together.
 
-Use the smallest check that answers the question: a named core/parser test, component test, package typecheck, or changed-file gate. Root scripts are authoritative for exact behavior. Guarded test commands require explicit files locally and avoid watch mode; CI/full verification is coordinated, not launched separately by every agent.
+Run each process in its own terminal:
 
-```sh
-pnpm --filter @atoms-demo/core test test/pipeline.test.ts
-pnpm --filter @atoms-demo/ui test src/composites/status-badge.test.tsx
-pnpm --filter @atoms-demo/web typecheck
-pnpm check:changed
-```
+`pnpm dev:api` starts the FastAPI factory at loopback port 8090. `pnpm dev:worker` builds the isolated Node compiler and starts `formlane.worker`. `pnpm dev` (or `pnpm dev:web`) starts Vite only. API availability alone does not execute queued generation; the worker must run against the same database.
 
-These are examples to run when verification is authorized, not evidence of a successful run. Full install/build/test work should have a single owner, especially on shared machines. Do not copy ignored secret files to a remote workspace; file synchronization may not respect gitignore.
+The frontend defaults to `http://localhost:8090` in development. Set `VITE_API_ORIGIN` to another approved backend and `VITE_API_PUBLIC_ORIGIN` only when public documents use a different origin. Frontend values may live in `apps/web/.env.local`; they contain public origins only. Existing `atoms_uid` is sent as `x-owner-id` and cookies are omitted.
 
-## Branches and delivery
+For a build and local preview, supply the origin to both commands:
 
-Use an isolated feature branch/worktree when another session owns changes. Preserve uncommitted work; do not blanket-stage, reset, or commit another agent's files. The integration owner commits each completed coherent module using a brief English Conventional Commit, after shared edits and agreed checks settle. Delegated editors leave commits to that owner. Pushes and deployments require separate authorization; no reference-project branch-to-production automation is assumed here.
+`VITE_API_ORIGIN=http://localhost:8090 pnpm --filter @atoms-demo/web build`
 
-A handoff identifies affected behavior, exercised checks, and blockers. UI screenshots must show the actual build under review. Historical screenshots remain a feature reference, not new visual evidence.
+`VITE_API_ORIGIN=http://localhost:8090 pnpm --filter @atoms-demo/web preview`
+
+Allow the preview origin (normally `http://localhost:4173`) in backend CORS. `pnpm --filter @atoms-demo/web pages:dev` serves the built artifact with Pages redirects; allow its actual displayed origin. Rebuild when origin values change. Local dev/preview mirrors historical `/api/*` and `/p/*` redirects; project reloads retain SPA fallback. Read [deployment](deployment.md#static-pages-python-api-cutover) before preparing a release artifact.
+
+## Dependency boundaries and checks
+
+API changes update shared contracts, Python routes/models and frontend consumers together. Native CrewAI/provider tools and durability belong in the backend. Node compiler changes stay in `apps/compiler`; shared TypeScript packages remain runtime-independent. All product controls use shared UI and visible copy uses the single i18n catalog.
+
+One integration owner runs authorized checks after shared edits land. Choose explicit relevant files, package typechecks or a changed-file gate; avoid simultaneous installs, full suites and watch processes. Examples are `pnpm --filter @atoms-demo/web typecheck`, `pnpm --filter @formlane/compiler test src/project-build.test.ts` and, from `apps/backend`, `uv run pytest tests/test_api.py`. Backend persistence tests require `TEST_DATABASE_URL` pointing at an isolated PostgreSQL test database; never production. See [testing](../internals/testing.md).
+
+Preserve unrelated work. The integration owner handles coherent English Conventional Commits after agreed checks; delegated editors do not independently commit or deploy. A handoff separates checks actually exercised from recommended checks. Historical screenshots do not establish visual evidence for a new build.

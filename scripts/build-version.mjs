@@ -1,4 +1,4 @@
-// Build version shared by server, web and extension: YYYYMMDDhhmm in Asia/Shanghai.
+// Frontend build version: YYYYMMDDhhmm in Asia/Shanghai.
 // CI may pin it with BUILD_VERSION so every artifact of one build agrees.
 const TIME_ZONE = 'Asia/Shanghai'
 

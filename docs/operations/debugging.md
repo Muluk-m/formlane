@@ -2,38 +2,39 @@
 
 ## Establish the failing boundary
 
-Record the local/deployed environment, browser owner, project/version, run ID, event cursor and exact symptom. Redact secrets and generated private content. Inspect relevant source/configuration before retrying; a user-reported failure is evidence, not something to repeat just to prove it exists.
+Record environment/release, project/version, run ID, event cursor and the exact symptom. Treat reported failures as evidence. Redact ownership capabilities, provider/database secrets and private generated content.
 
-| Symptom                                     | Start here                                                                                                                        |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Project request rejected or missing         | Contract input/output, ownership cookie/header, oRPC error mapping, local proxy                                                   |
-| Generation never starts                     | Executor systemd/polling, matching bearer token, HTTPS control-plane URL, D1 queued run/lease and executor provider configuration |
-| Candidate exists but no version is saved    | Browser report artifact hash, failed checks, David's review and manager repair decision                                           |
-| A partial document replaces an older result | Validated version commit and active-run fence                                                                                     |
-| Generation fails during execution           | Persisted failure category/deadline, executor journal, current lease and named checkpoint, provider/tool evidence                 |
-| Reload loses visible progress               | Owned event subscription, last sequence cursor, D1 replay and UI event reduction                                                  |
-| Cancelled work writes a later result        | Run fence before termination and conditional late-write rejection                                                                 |
-| Restore changes the public app unexpectedly | Current pointer versus published pointer; these must remain separate                                                              |
-| Public link shows the wrong version         | Published version selection, slug lookup, republish operation                                                                     |
-| Preview differs from downloaded code        | Viewed/current version selection, iframe sandbox, HTML extraction                                                                 |
-| Tabs or separators face the wrong way       | Base UI orientation custom variants in shared globals.css                                                                         |
-| Works in Node but not Worker                | workerd runtime support and bundled dependencies                                                                                  |
-| Wrong branding or untranslated label        | Single i18n catalog and shared Logo; do not add a local dictionary                                                                |
+| Symptom                                  | Start here                                                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Private project missing/rejected         | FastAPI ownership, unchanged `atoms_uid` / `x-owner-id`, contract error shape and exact-origin CORS                 |
+| Browser cannot reach API                 | Build-time API origin, Caddy certificate/default SNI, 80/443 ingress, FastAPI loopback listener and CORS preflight  |
+| Generation queues but never starts       | Python worker unit, matching database/environment, PostgreSQL run/lease and provider settings                       |
+| Candidate exists but no saved version    | Current source/artifact/check hashes, implementation report, independent validation and David's acceptance          |
+| Valid source blocked after checks change | Check-set invalidation and evidence-only revalidation; never weaken the acceptance gate to accept stale evidence    |
+| Failure during execution                 | Persisted safe error category/deadline, worker journal, lease owner, named checkpoint and tool/provider event       |
+| Reconnect loses progress                 | Owned SSE cursor, PostgreSQL event order and client replay/deduplication; Caddy streaming flush                     |
+| Cancelled run later writes               | Cancellation fence, transaction authority check, heartbeat loss and subprocess cleanup                              |
+| Compiler fails                           | JSON argv, built compiler entry, release working directory, permissions, virtual imports and fixed dependencies     |
+| Chromium fails to launch                 | Non-root sandbox support, executable selection and host namespace/AppArmor policy                                   |
+| Restore/Undo changes public app          | Current/ancestry pointer versus published pointer                                                                   |
+| Wrong public version or download         | Published slug selection versus requested owned saved version and exact source snapshot                             |
+| Import rejected                          | Exact six-table schema, empty/exact target, canonical manifest, ancestry policy, message order and cursor integrity |
+| Branding/controls regress                | Single i18n catalog, shared UI/Base UI variants and Skyline tokens                                                  |
 
-## Local evidence
+## Local evidence and durability
 
-Use local Wrangler/workerd and local D1 for runtime/persistence diagnosis. Apply migrations to a fresh local database when checking schema behavior. Do not use a production database to reproduce destructive operations. Browser network evidence should include the failing path/status or SSE event, not credentials or entire private prompts.
+Use isolated PostgreSQL with explicit Alembic migrations. Never reproduce destructive behavior against production. Network evidence should identify path/status/event, not full prompts or credentials. Inspect `app.py`, `storage.py`, `worker.py` and `agents.py` under [the backend](../../apps/backend/src/formlane/) for the corresponding boundary.
 
-Generation is real-only. Inspect D1 runs, events, leases and checkpoints rather than inferring execution from SSE. Disconnect closes observation only; cancel fences writes. The persisted 15-minute deadline survives reconnect and lease reclaim. A 60-second lease is refreshed every 10 seconds; heartbeat failure aborts the executor's local work. Restart reuses completed checkpoints; interrupted calls can repeat. Failed browser checks return repair evidence while preserving the prior version.
+SSE does not own execution. The 15-minute deadline persists across reconnect/reclaim; a 60-second lease renews every 10 seconds. Cancellation rejects late writes and aborts producer work. Restart reuses completed immutable checkpoints, while interrupted provider calls may repeat. A failed build/browser report is repair evidence and preserves the prior complete version.
 
-## Ownership and generated content
-
-Use two separate browser identities when checking private-project isolation. Published HTML is the only deliberate public surface; it must not expose project chat or owner tokens. Preview HTML remains sandboxed. A generated page's own styling or JavaScript failure is distinct from a bug in the Atoms shell.
+Use two isolated identities for private access checks. Public HTML must not expose chat, source APIs or owner credentials. A generated page's own styling/logic failure is separate from a shell failure, and opaque preview storage restrictions are intentional.
 
 ## Deployment diagnosis
 
-First read [deployment](deployment.md). Verify Cloudflare and GCP identities independently before authorized remote actions. Correlate API and executor build versions, VM service journal, lease owner, run ID and event cursor. Historical wrong-account URLs or predecessor-generation checks are not current acceptance. The Cloudflare Free CPU failure was resolved architecturally by moving execution to GCP, not by enabling a paid plan or relaxing browser isolation.
+Read [deployment](deployment.md) before remote operations. Correlate Pages `/version.json`, backend release, active service environment/database, run identity and journal entries for `formlane-python-api` / `formlane-python-worker`. The current services use the stage environment: reaching the reserved HTTPS IP is not evidence that the final database has been activated.
 
-## Closing a diagnosis
+Caddy 2.11.9 manages short-lived Let's Encrypt IP certificates. Preserve its TLS state, renewal access and `default_sni` setting for the NAT address; do not replace this with disabled certificate verification. FastAPI listens on `127.0.0.1:8090` and PostgreSQL on loopback 5432, neither publicly exposed. Keep API and worker pointed at the same intended database.
 
-State the observed cause, affected path, changed behavior and verification actually exercised. Name an unresolved external prerequisite precisely. A build, HTTP 200, SDK provider proof and deployed end-to-end browser acceptance prove different things. See [ADR-0012](../adr/0012-durable-agent-harness.md).
+A rollback must retain one writable authority. Old Pages assets may call legacy paths; restoring them while removing forwarding can split writes between D1 and PostgreSQL. Fence writers before any data recovery. Never merge a staging snapshot into production or use reset/import as a generic repair.
+
+State observed cause, affected behavior, exercised checks and the exact remaining prerequisite. A build, HTTP 200, provider tool probe, rehearsal hash report and real production browser acceptance prove different things.
