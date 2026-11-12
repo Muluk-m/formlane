@@ -30,10 +30,6 @@ HEARTBEAT_SECONDS = 10
 MAX_ATTEMPTS = 5
 
 
-class RunTimeout(Exception):
-    code = "timeout"
-
-
 def provider_retryable(error: BaseException) -> bool:
     status = getattr(error, "status_code", getattr(error, "status", None))
     if isinstance(status, int):
@@ -51,11 +47,6 @@ def provider_retryable(error: BaseException) -> bool:
 
 def failure_for(error: BaseException) -> dict:
     code = getattr(error, "code", None)
-    if code == "timeout" or isinstance(error, RunTimeout):
-        return {
-            "code": "timeout",
-            "message": "Generation exceeded its execution budget. Your previous version is unchanged.",
-        }
     if code == "step_limit":
         return {
             "code": "step_limit",
@@ -109,8 +100,6 @@ class Durable:
     def check(self) -> None:
         if self.cancelled():
             raise CancelledError()
-        if int(time.time() * 1000) >= self.job["deadline_at"]:
-            raise RunTimeout()
         self.store.check_authority(self.job["id"], self.job["lease_token"])
 
     @contextmanager
@@ -356,9 +345,6 @@ def execute_job(settings: Settings, store: Store, job: dict, shutdown: threading
                 or time.monotonic() - last_heartbeat[0] >= 45
             ):
                 break
-            if int(time.time() * 1000) >= job["deadline_at"]:
-                state = {"state": "failed", **failure_for(RunTimeout())}
-                break
             if receive.poll(0.2):
                 try:
                     state = receive.recv()
@@ -410,7 +396,6 @@ def run_worker(settings: Settings, shutdown: threading.Event | None = None) -> N
     try:
         while not shutdown.is_set():
             try:
-                store.expire_runs()
                 job = store.claim_run(worker_id)
                 if job:
                     execute_job(settings, store, job, shutdown)

@@ -14,7 +14,6 @@ from formlane.storage import LeaseLost
 from formlane.worker import (
     MAX_ATTEMPTS,
     Durable,
-    RunTimeout,
     failure_for,
     process_tree,
     provider_retryable,
@@ -72,7 +71,7 @@ class MemoryStore:
 
 
 def job():
-    return {"id": "run", "lease_token": "lease", "deadline_at": int(time.time() * 1000) + 900_000}
+    return {"id": "run", "lease_token": "lease"}
 
 
 def test_checkpoint_commits_before_next_step_and_recovers_json_null():
@@ -147,13 +146,7 @@ def test_provider_retries_are_bounded_and_cancel_before_retry(monkeypatch):
         durable.run("cancel", cancel_then_fail)
 
 
-def test_deadline_is_persisted_budget_and_errors_are_public_safe():
-    expired = job()
-    expired["deadline_at"] = int(time.time() * 1000) - 1
-    with pytest.raises(RunTimeout):
-        Durable(MemoryStore(), expired, lambda: False).run(
-            "late", lambda: pytest.fail("Expired work ran")
-        )
+def test_errors_are_public_safe():
     error = RuntimeError("sk-secret database-password provider response")
     assert failure_for(error)["code"] == "internal"
     assert "sk-secret" not in str(failure_for(error))

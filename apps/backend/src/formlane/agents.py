@@ -267,6 +267,7 @@ class Runtime:
             "implementationPasses": 0,
         }
         self.delegations = 0
+        self.live_delegations: set[str] = set()
         self.scope = self.new_scope("crew-v1/manager", "mike")
 
     def new_scope(self, path: str, role: str) -> dict:
@@ -278,6 +279,14 @@ class Runtime:
             "tool_index": 0,
             "mutated": False,
         }
+
+    def begin_model_call(self, scope: dict) -> None:
+        self.check()
+        if scope["role"] == "mike" or scope["path"] in self.live_delegations:
+            return
+        if len(self.live_delegations) >= 8:
+            raise HarnessFailure("step_limit")
+        self.live_delegations.add(scope["path"])
 
     def check(self) -> None:
         if self.cancelled():
@@ -604,8 +613,6 @@ class Runtime:
         self.check()
         index = self.delegations
         self.delegations += 1
-        if index >= 8:
-            raise HarnessFailure("step_limit")
         role = agent._role_id
         step = f"crew-v1/delegate-{index}-{role}"
         parent_scope = self.scope
