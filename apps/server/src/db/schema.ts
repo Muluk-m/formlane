@@ -50,6 +50,7 @@ export const versions = sqliteTable(
     prompt: text('prompt').notNull(),
     created_at: integer('created_at').notNull(),
     source: text('source', { mode: 'json' }).$type<ProjectSource>().notNull(),
+    parent_version_id: text('parent_version_id'),
   },
   (table) => [uniqueIndex('idx_versions_number').on(table.project_id, table.number)],
 )

@@ -156,6 +156,9 @@
       "retryLoad": "重新加载",
       "reloadPreview": "刷新预览",
       "projectActions": "项目操作",
+      "undo": "撤销",
+      "undoToVersion": "撤销到版本 {number}",
+      "nothingToUndo": "暂无可撤销的版本",
       "restoreTitle": "恢复到版本 {number}？",
       "restoreDescription": "后续修改将以此版本为起点。其他版本仍保留，已发布的页面不会改变。"
     },

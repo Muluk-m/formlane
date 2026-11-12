@@ -46,6 +46,8 @@ The trusted executor compiler reads an in-memory project tree and installed temp
 
 Only explicitly public provider reasoning-summary events become `reasoning_summary` records. The configured Chat Completions provider has no supported public summary, so the interface shows actual delegation tasks and tool evidence without synthesizing reasoning or exposing raw model reasoning.
 
+Execution indicators follow the explicitly observed run ID, never the timestamp of the latest received activity. A replacement run can be known before its first event arrives; earlier unfinished tools and pending text must remain interrupted during that gap and after terminal replay.
+
 ## Persistence and public boundary
 
 Read [data-model.md](data-model.md) for pointer and ownership invariants. Local schema setup is an explicit migration step; requests do not auto-create tables. D1/SQLite behavior must be respected instead of importing row-lock or transaction assumptions from the reference PostgreSQL application.
@@ -53,6 +55,8 @@ Read [data-model.md](data-model.md) for pointer and ownership invariants. Local 
 Preview HTML is untrusted and sandboxed. Public HTML is served only through publication. Current, viewed, and published versions are separate concepts; browser state must not accidentally collapse them.
 
 Version inspection uses immutable source snapshots from the existing ownership-checked API. The Changes view labels both compared versions and lets the user choose a baseline; its initial comparison is the preceding numbered version, not a claim about the run's original parent after restoration. The bounded line diff retains exact source/newline content and falls back to an explicitly labeled replacement for large edits. Inspection never moves the current or published pointer. Restore confirms the target and preserves later history; it continues to select the current pointer rather than adopting v0's new-version-on-restore persistence semantics.
+
+Saved-result cards are immutable conversation milestones, ordered by each version's saved timestamp. They must stay before subsequent requests instead of following the latest execution as a transcript footer. Their preview and comparison actions inspect that exact version; neither a new run nor restoring the current pointer relocates an earlier milestone.
 
 Project/chat/code/version persistence in D1 does not persist the generated application's interactive runtime state. The opaque-origin preview cannot rely on browser storage; generated apps use in-memory state for the preview session.
 

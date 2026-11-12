@@ -369,7 +369,7 @@ export async function completeRun(
       .insert(versions)
       .select(sql`
       select r.id, r.project_id, (select coalesce(max(number), 0) + 1 from versions where project_id = r.project_id),
-        ${result.html}, r.request, ${now}, ${JSON.stringify(result.source)} from runs r
+        ${result.html}, r.request, ${now}, ${JSON.stringify(result.source)}, r.previous_version_id from runs r
       where r.id = ${runId} and ${leased(runId, leaseToken, now)}
     `)
       .onConflictDoNothing({ target: versions.id }),
@@ -384,7 +384,7 @@ export async function completeRun(
       .insert(runEvents)
       .select(sql`
       select null, ${runId}, 'version', 'version', json_object('id', id, 'number', number,
-        'prompt', prompt, 'createdAt', created_at), ${now} from versions
+        'parentVersionId', parent_version_id, 'prompt', prompt, 'createdAt', created_at), ${now} from versions
       where id = ${runId} and ${leased(runId, leaseToken, now)}
     `)
       .onConflictDoNothing({ target: [runEvents.run_id, runEvents.event_key] }),

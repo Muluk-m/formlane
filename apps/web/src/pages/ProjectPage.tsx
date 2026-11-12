@@ -48,6 +48,7 @@ import {
   ArrowDown01Icon,
   Clock01Icon,
   MoreHorizontalIcon,
+  UndoIcon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -104,6 +105,11 @@ export function ProjectPage() {
   const [source, setSource] = useState<ProjectSource | null>(null)
   const [workspace, setWorkspace] = useState(() => projectWorkspace(null))
   const [banner, setBanner] = useState<string | null>(null)
+  const [failedAction, setFailedAction] = useState<{
+    action: () => Promise<unknown>
+    label: string
+  } | null>(null)
+  const [actionPending, setActionPending] = useState(false)
   const [run, setRun] = useState<HarnessRun | null>(null)
   const [starting, setStarting] = useState(false)
   const [loadingRun, setLoadingRun] = useState(true)
@@ -121,7 +127,7 @@ export function ProjectPage() {
   const [restoreTarget, setRestoreTarget] = useState<AppVersion | null>(null)
   const [historyAction, setHistoryAction] = useState<{
     id: string
-    kind: 'preview' | 'restore'
+    kind: 'preview' | 'restore' | 'undo'
   } | null>(null)
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [viewing, setViewing] = useState<
@@ -132,6 +138,7 @@ export function ProjectPage() {
   const [split, setSplit] = useState(() => Number(localStorage.getItem('atoms-split')) || 420)
   const [wide, setWide] = useState(() => window.matchMedia('(min-width: 860px)').matches)
   const startPending = useRef(false)
+  const undoPending = useRef(false)
   const cursorRef = useRef({ runId: '', sequence: 0 })
   const mounted = useRef(true)
   const retryRequest = useRef<string | undefined>(undefined)
@@ -192,11 +199,13 @@ export function ProjectPage() {
   }, [])
 
   async function begin(content?: string) {
-    if (startPending.current || running || reconciliationPending.current) return
+    if (startPending.current || undoPending.current || running || reconciliationPending.current)
+      return
     startPending.current = true
     retryRequest.current = content
     setStarting(true)
     setBanner(null)
+    setFailedAction(null)
     selectCurrentVersion()
     try {
       const receipt = await startRun(id, !project?.currentVersionId, content)
@@ -297,6 +306,7 @@ export function ProjectPage() {
     } else if (event.type === 'message_start') {
       const message: ConversationMessage = {
         id: String(data.id),
+        runId: event.runId,
         role: data.role === 'system' ? 'system' : data.role === 'user' ? 'user' : 'agent',
         agent: typeof data.agent === 'string' ? data.agent : null,
         content: typeof data.content === 'string' ? data.content : '',
@@ -339,6 +349,7 @@ export function ProjectPage() {
     } else if (event.type === 'version') {
       const version: AppVersion = {
         id: String(data.id),
+        parentVersionId: typeof data.parentVersionId === 'string' ? data.parentVersionId : null,
         number: Number(data.number),
         prompt: String(data.prompt ?? ''),
         createdAt: Number(data.createdAt),
@@ -485,19 +496,23 @@ export function ProjectPage() {
     window.addEventListener('pointerup', up)
   }
 
-  async function openVersion(versionId: string, selection: number) {
+  async function openVersion(versionId: string, selection: number, mode: 'preview' | 'changes') {
     if (versionId === project?.currentVersionId) setViewing(null)
     else {
       const { version } = await client.fetchQuery(versionQuery(id, versionId))
       if (!mounted.current || selection !== historySelection.current) return
       setViewing(version)
     }
-    if (tab !== 'changes') setTab('preview')
+    setTab(mode)
     setMobilePanel('preview')
   }
 
   async function restore(versionId: string) {
+    setBanner(null)
+    setFailedAction(null)
+    historySelection.current++
     const result = await restoreMutation.mutateAsync({ id, versionId })
+    setProject(result.project)
     setHtml(result.html)
     setSource(result.source)
     setWorkspace(projectWorkspace(result.source))
@@ -505,14 +520,18 @@ export function ProjectPage() {
     await refresh()
   }
 
-  async function selectHistoryVersion(versionId: string, kind: 'preview' | 'restore') {
-    if (historyAction) return
+  async function selectHistoryVersion(
+    versionId: string,
+    kind: 'preview' | 'restore',
+    mode: 'preview' | 'changes' = tab === 'changes' ? 'changes' : 'preview',
+  ) {
+    if (historyAction || undoPending.current) return
     const selection = ++historySelection.current
     setHistoryAction({ id: versionId, kind })
     setHistoryError(null)
     try {
       if (kind === 'restore') await restore(versionId)
-      else await openVersion(versionId, selection)
+      else await openVersion(versionId, selection, mode)
       if (kind === 'restore') setRestoreTarget(null)
     } catch (error) {
       if (!mounted.current || (kind === 'preview' && selection !== historySelection.current)) return
@@ -523,6 +542,28 @@ export function ProjectPage() {
       }
     } finally {
       setHistoryAction(null)
+    }
+  }
+
+  async function undoVersionChange() {
+    if (
+      undoPending.current ||
+      busy ||
+      running ||
+      stopping ||
+      project?.status === 'generating' ||
+      historyAction ||
+      !undoVersion
+    )
+      return
+    undoPending.current = true
+    setHistoryAction({ id: undoVersion.id, kind: 'undo' })
+    setHistoryError(null)
+    try {
+      await restore(undoVersion.id)
+    } finally {
+      undoPending.current = false
+      if (mounted.current) setHistoryAction(null)
     }
   }
 
@@ -553,12 +594,17 @@ export function ProjectPage() {
     await navigate({ to: '/project/$id', params: { id: copy.id } })
   }
 
-  async function act(action: () => Promise<unknown>) {
+  async function act(action: () => Promise<unknown>, label: string) {
     setBanner(null)
+    setFailedAction(null)
+    setActionPending(true)
     try {
       await action()
     } catch (error) {
+      setFailedAction({ action, label })
       setBanner(error instanceof Error ? error.message : t('atoms.requestError'))
+    } finally {
+      setActionPending(false)
     }
   }
 
@@ -599,12 +645,16 @@ export function ProjectPage() {
     starting ||
     loadingRun ||
     reconciling ||
+    actionPending ||
+    historyAction?.kind === 'undo' ||
     restoreMutation.isPending ||
     publishMutation.isPending ||
     unpublishMutation.isPending ||
     remixMutation.isPending
   const selectedVersion =
     viewing ?? versions.find((version) => version.id === project.currentVersionId)
+  const currentVersion = versions.find((version) => version.id === project.currentVersionId)
+  const undoVersion = versions.find((version) => version.id === currentVersion?.parentVersionId)
   return (
     <div className="flex h-[calc(100dvh-3rem)] min-h-0 flex-col bg-background">
       <header className="flex shrink-0 flex-wrap items-center gap-3 border-b px-4 py-3">
@@ -620,6 +670,32 @@ export function ProjectPage() {
         </div>
         {(busy || starting || stopping) && <Spinner />}
         <div className="flex flex-wrap gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="undo-version"
+            disabled={
+              !undoVersion ||
+              busy ||
+              running ||
+              stopping ||
+              project.status === 'generating' ||
+              Boolean(historyAction)
+            }
+            title={
+              undoVersion
+                ? t('atoms.versionReview.undoToVersion', { number: undoVersion.number })
+                : t('atoms.versionReview.nothingToUndo')
+            }
+            onClick={() => void act(undoVersionChange, t('atoms.versionReview.undo'))}
+          >
+            {historyAction?.kind === 'undo' ? (
+              <Spinner />
+            ) : (
+              <HugeiconsIcon icon={UndoIcon} size={16} strokeWidth={1.5} />
+            )}
+            {t('atoms.versionReview.undo')}
+          </Button>
           <Button
             ref={historyButton}
             variant={historyOpen ? 'secondary' : 'ghost'}
@@ -651,7 +727,7 @@ export function ProjectPage() {
               <DropdownMenuItem
                 data-testid="remix-button"
                 disabled={busy || running}
-                onClick={() => void act(remix)}
+                onClick={() => void act(remix, t('atoms.remix'))}
               >
                 {t('atoms.remix')}
               </DropdownMenuItem>
@@ -659,12 +735,14 @@ export function ProjectPage() {
                 data-testid="download-button"
                 disabled={!project.currentVersionId}
                 onClick={() =>
-                  void act(() =>
-                    downloadProject(
-                      id,
-                      `${slugify(project.title)}-v${viewing?.number ?? versions.find((version) => version.id === project.currentVersionId)?.number ?? 1}.zip`,
-                      viewing?.id,
-                    ),
+                  void act(
+                    () =>
+                      downloadProject(
+                        id,
+                        `${slugify(project.title)}-v${viewing?.number ?? versions.find((version) => version.id === project.currentVersionId)?.number ?? 1}.zip`,
+                        viewing?.id,
+                      ),
+                    t('atoms.download'),
                   )
                 }
               >
@@ -676,7 +754,7 @@ export function ProjectPage() {
             size="sm"
             data-testid="publish-button"
             disabled={!project.currentVersionId || running || busy}
-            onClick={() => void act(publish)}
+            onClick={() => void act(publish, publishLabel)}
           >
             {publishLabel}
           </Button>
@@ -700,15 +778,17 @@ export function ProjectPage() {
             />
             <div className="min-w-0 space-y-1">
               <p>
-                {connection === 'reconnecting'
-                  ? t('atoms.reconnecting')
-                  : run?.status === 'failed'
-                    ? t(`atoms.runError.${run.errorCode ?? 'internal'}`)
-                    : run?.status === 'cancelled'
-                      ? t('atoms.runCancelled')
-                      : banner || projectError}
+                {failedAction
+                  ? banner
+                  : connection === 'reconnecting'
+                    ? t('atoms.reconnecting')
+                    : run?.status === 'failed'
+                      ? t(`atoms.runError.${run.errorCode ?? 'internal'}`)
+                      : run?.status === 'cancelled'
+                        ? t('atoms.runCancelled')
+                        : banner || projectError}
               </p>
-              {run?.status === 'failed' && (run.error || banner) && (
+              {!failedAction && run?.status === 'failed' && (run.error || banner) && (
                 <Collapsible className="text-xs text-muted-foreground">
                   <CollapsibleTrigger
                     render={
@@ -727,6 +807,15 @@ export function ProjectPage() {
           {connection === 'error' ? (
             <Button variant="outline" onClick={() => void reconnectRun()}>
               {t('atoms.reconnect')}
+            </Button>
+          ) : failedAction ? (
+            <Button
+              variant="outline"
+              disabled={busy || running}
+              onClick={() => void act(failedAction.action, failedAction.label)}
+              data-testid="retry-action-button"
+            >
+              {failedAction.label}
             </Button>
           ) : (
             !running &&
@@ -792,29 +881,14 @@ export function ProjectPage() {
               running={running}
               disabled={busy || connection === 'error'}
               stopping={stopping}
-              runStatus={run?.status ?? null}
+              run={run}
               activeAgents={activeAgents}
               activity={activity}
               onSend={(text) => void begin(text)}
               onStop={() => void stop()}
-              savedVersion={
-                project.currentVersionId
-                  ? {
-                      number:
-                        versions.find((version) => version.id === project.currentVersionId)
-                          ?.number ?? 1,
-                      onPreview: () => {
-                        selectCurrentVersion()
-                        setTab('preview')
-                        setMobilePanel('preview')
-                      },
-                      onChanges: () => {
-                        selectCurrentVersion()
-                        setTab('changes')
-                        setMobilePanel('preview')
-                      },
-                    }
-                  : undefined
+              versions={versions}
+              onOpenVersion={(versionId, mode) =>
+                void selectHistoryVersion(versionId, 'preview', mode)
               }
             />
           </div>
@@ -1014,7 +1088,7 @@ export function ProjectPage() {
                     await navigator.clipboard.writeText(share.url)
                     setCopied(true)
                   }
-                })
+                }, t('atoms.copyLink'))
               }
             >
               {copied ? t('atoms.copied') : t('atoms.copyLink')}
@@ -1028,7 +1102,11 @@ export function ProjectPage() {
                 {t('atoms.preview')}
               </Button>
             )}
-            <Button variant="outline" disabled={busy} onClick={() => void act(unpublish)}>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => void act(unpublish, t('atoms.unpublish'))}
+            >
               {t('atoms.unpublish')}
             </Button>
             <Button variant="ghost" onClick={() => setShare(null)}>
