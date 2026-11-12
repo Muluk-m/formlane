@@ -37,7 +37,7 @@ The API and worker share PostgreSQL business state; DBOS owns durable workflow/o
 
 A saved version requires a build for the current source, passing implementation checks, independent browser validation and David's explicit acceptance. Source/check changes invalidate affected evidence. Sandboxed Chromium validates opaque iframes with restricted networking and no provider/database credentials. Compiler subprocesses accept bounded virtual source without executing generated package scripts or plugins.
 
-Each execution attempt has a persisted **15-minute deadline**, a 60-second lease and a 10-second heartbeat. Explicit Resume preserves run identity, source and committed results while granting a fresh attempt; automatic reclaim does not reset its deadline. Cancellation fences late writes. Interrupted operations without committed results may repeat, including provider billing. Completed, superseded and baseline-invalidated runs cannot resume; failures retain accepted versions.
+Runs have **no fixed wall-clock deadline**. A 60-second lease and 10-second heartbeat detect lost workers; individual provider, compiler and browser operations retain bounded timeouts. Explicit Resume preserves run identity, source and committed results. Replayed delegations do not consume the current execution's fresh-work allowance. Cancellation fences late writes. Interrupted operations without committed results may repeat, including provider billing. Completed, superseded and baseline-invalidated runs cannot resume; failures retain accepted versions.
 
 ## Development
 

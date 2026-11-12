@@ -2,23 +2,23 @@
 
 ## Current rollout status
 
-**Python/PostgreSQL is the verified production authority.** Static Pages deployment `fcf25487` serves merged release `9dce745`; `/version.json` reports commit `9dce7459ab36`. Its JavaScript/CSS artifacts match the accepted `f7dfcb3` build, including the latest light workspace layout. The final fenced import passed before activation; `backendReady` is true. Python and JavaScript CI plus GitGuardian passed before merge.
+**Python/PostgreSQL with DBOS is the production authority.** [PR #16](https://github.com/Muluk-m/formlane/pull/16) shipped release `a7cc7ca84762885cd3b683465830e509b384836e`; static Pages deployment `31b9079c` reports `a7cc7ca84762` from `/version.json`. The backend passed readiness after explicit Alembic/DBOS migrations. Python CI, JavaScript CI and GitGuardian passed before merge.
 
-| Resource                      | Current identity / boundary                                                                   |
-| ----------------------------- | --------------------------------------------------------------------------------------------- |
-| Cloudflare account            | **Maqiqian0316@gmail.com's Account**, `252fba810f75c0370e5aa7200abc8f80`                      |
-| Pages                         | Project `formlane`, canonical frontend **https://formlane-9dp.pages.dev**                     |
-| Python API / public documents | **https://136.65.182.87**                                                                     |
-| Reserved GCP address          | `formlane-api`, region `us-central1`                                                          |
-| GCP identity                  | `maqiqian@roibest.com`, project `roibest-internal-apps`                                       |
-| Existing VM                   | `formlane-agent`, zone `us-central1-c`                                                        |
-| Backend release               | `/opt/formlane/python-backend/current`                                                        |
-| systemd services              | `formlane-python-api`, `formlane-python-worker`, non-root user `formlane`                     |
-| Current service environment   | Private `/etc/formlane/backend.env`; production database `formlane`                           |
-| Databases                     | Production `formlane`; isolated `formlane_stage` and `formlane_test` retained                 |
-| Public ingress                | Caddy 2.11.9 on 80/443; only these web ingress ports are open                                 |
-| Private listeners             | FastAPI `127.0.0.1:8090`; PostgreSQL loopback port 5432                                       |
-| Provider                      | `grok-4.7` at `https://sub2api.qiliangjia.org/v1`; secrets only in private server environment |
+| Resource                    | Current identity / boundary                                                                                 |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Cloudflare account          | **Maqiqian0316@gmail.com's Account**, `252fba810f75c0370e5aa7200abc8f80`                                    |
+| Pages                       | Project `formlane`, canonical frontend **https://formlane.nainma.online**; original Pages hostname retained |
+| Python API                  | **https://136.65.182.87**; public viewer navigation stays on the frontend domain                            |
+| Reserved GCP address        | `formlane-api`, region `us-central1`                                                                        |
+| GCP identity                | `maqiqian@roibest.com`, project `roibest-internal-apps`                                                     |
+| Existing VM                 | `formlane-agent`, zone `us-central1-c`                                                                      |
+| Backend release             | `/opt/formlane/python-backend/releases/durable-recovery-20261112`, selected by `current`                    |
+| systemd services            | `formlane-python-api`, `formlane-python-worker`, non-root user `formlane`                                   |
+| Current service environment | Private `/etc/formlane/backend.env`; production database `formlane`                                         |
+| Databases                   | Production `formlane`; isolated `formlane_stage` and `formlane_test` retained                               |
+| Public ingress              | Caddy 2.11.9 on 80/443; only these web ingress ports are open                                               |
+| Private listeners           | FastAPI `127.0.0.1:8090`; PostgreSQL loopback port 5432                                                     |
+| Provider                    | `grok-4.7` at `https://sub2api.qiliangjia.org/v1`; secrets only in private server environment               |
 
 Caddy automatically obtains and renews Let's Encrypt **short-lived IP certificates**. Preserve its TLS state and renewal reachability. The [Caddy template](../../apps/backend/deploy/Caddyfile) requests the `shortlived` ACME profile and sets `default_sni` to the API host: IP clients can omit SNI and the VM receives traffic on its private NAT address. Streaming proxy flush remains enabled. Neither the API nor PostgreSQL is exposed directly. Do not work around TLS failures by disabling certificate verification.
 
@@ -83,15 +83,27 @@ Before PostgreSQL accepts production writes, a failed cutover can remain fenced 
 
 After PostgreSQL accepts writes, restoring old Pages assets alone can send writes to stale D1 and split project history. Keep forwarding to the authoritative Python/PostgreSQL backend, or fence **all** writers and perform an explicitly reviewed data/backend recovery before reopening traffic. The importer is one-way exact snapshot migration, not an automatic reverse sync. Never replace production with stage data or an earlier export after new writes without a coordinated recovery decision.
 
-A worker restart reuses completed durable operations. Explicit owner-authorized resume continues the same eligible run with a new attempt and bounded deadline; old attempts and producers remain fenced. Superseded runs and changed baselines cannot resume. A stale checkpoint never permits stale build/check/review acceptance. Preserve Chromium sandboxing and private environment isolation during recovery.
+A worker restart reuses completed durable operations. Explicit owner-authorized resume continues the same eligible run with a new attempt; old attempts and producers remain fenced. Runs have no fixed wall-clock deadline. Superseded runs and changed baselines cannot resume. A stale checkpoint never permits stale build/check/review acceptance. Preserve Chromium sandboxing and private environment isolation during recovery.
 
 ### DBOS recovery release
 
 Apply the application Alembic migration and `uv run python -m formlane.durable_execution migrate` explicitly against the intended database before activating the new worker. Runtime uses `run_migrations=False`. Preserve the business tables, legacy checkpoint rows and DBOS system schema together in recovery backups. Workflow code/config compatibility is pinned: retain the matching worker release or perform a reviewed migration instead of replaying old operations under incompatible code. Verify process termination/reclaim, same-run resume, completed-operation reuse, stale-token rejection and browser replay before activating the client resume action.
 
+Package the compiler with its root pnpm dependency store and referenced workspace packages. Copying only `apps/compiler` leaves relative dependency links dangling. Override `COMPILER_COMMAND` to the candidate's exact executable during staging acceptance; a successful build through an older absolute path does not verify the release artifact.
+
 Recovery candidate `dbd1543` passed 32 focused PostgreSQL storage/recovery tests, including spawned-process death, legacy checkpoint reuse, interrupted initial dispatch and connection loss during ownership transfer. The populated staging database migrated successfully after making deferred constraints immediate before backfill/DDL. DBOS and application tables must share one database; their separate schemas participate in the same lease-fenced scheduling transaction.
 
-Browser acceptance resumed migrated cancelled run `d6afe371-8748-4572-a5e2-1dec5089f61b` without changing its ID or request: attempt 1 advanced to 2. Reload replayed cursor 156 while retaining saved v2. [Staging workspace evidence](../screenshots/durable-recovery-stage.png) shows candidate `dbd1543` during independent review; it is not production activation evidence.
+Browser acceptance resumed migrated cancelled run `d6afe371-8748-4572-a5e2-1dec5089f61b` without changing its ID or request: attempt 1 advanced to 2 and completed as v3 at terminal cursor 177. Reload replayed cursor 156 while retaining saved v2. The resulting heading-only revision passed counter interaction 0 → 1 → 0. [Staging workspace evidence](../screenshots/durable-recovery-stage.png) shows candidate `dbd1543` during independent review.
+
+Production was drained before activation: 21 projects, 348 messages, 29 versions, 58 runs, 5,242 events and 549 legacy checkpoints. The full private backup is `/var/lib/formlane/backups/before-durable-recovery-20261112.dump`, SHA-256 `854146267fcbd086684cee47c032363f63812dc9658fc66da9fdecf9e81426e7`. Prior release `role-prompts-pr14` and its private environment backup are retained. Production `/healthz` and `/api/health` returned 200 after activation. The [published counter](https://formlane.nainma.online/p/8tq3mrv54j) remained on the custom domain and changed 0 → 2 when clicked; [production viewer evidence](../screenshots/durable-public-production.png) shows this release.
+
+### Removing whole-run deadlines
+
+Migration `0003_remove_run_deadline` removes the obsolete deadline column. Keep API and worker stopped while applying it, and retain a complete PostgreSQL backup. Pin service `PYTHONPATH` to the active release's `apps/backend/src`; copied editable Python environments may otherwise import a previous release.
+
+The reviewed change preserves DBOS operation names/order and committed results. After Alembic, run [the hash-pinned manifest migration](../../apps/backend/deploy/migrate_execution_budget.py) with the candidate Python environment and `--env-file /etc/formlane/backend.env`: inspect first, then add `--apply`. It updates only matching application/DBOS compatibility metadata in one transaction and rejects other source/config versions. Preserve the preceding release and its compiler dependency graph. Restore the database backup as part of rollback; switching only the executable is insufficient after this schema/manifest migration.
+
+Focused verification covered 78 backend tests and five catalog tests. A simulated hour in the queue followed by an hour of heartbeating execution completed successfully. A production database copy resumed run `82930c09-1cf0-44a7-9d60-24b1bb534479` from attempt 3 to 4, reused its committed operations, completed independent acceptance, and saved v3 at terminal cursor 489. The recovered counter passed 0 → 1 → 0. [Staging evidence](../screenshots/recovery-budget-stage.png) records this acceptance; it is not production activation evidence.
 
 ## Historical releases — Worker/D1 and Node executor
 

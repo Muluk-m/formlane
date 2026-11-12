@@ -28,7 +28,7 @@ Pages contains static assets only. Temporary `/api/*` 307 redirects preserve met
 
 ## Durable execution and acceptance
 
-1. An owned request creates a PostgreSQL run and first bounded attempt. The worker claims a 60-second lease and renews it every 10 seconds. Explicit resume keeps the same run and committed results, advances its attempt and grants a fresh 15-minute budget; reconnect and automatic reclaim do not reset it.
+1. An owned request creates a PostgreSQL run without a fixed wall-clock deadline. The worker claims a 60-second lease and renews it every 10 seconds. Explicit resume keeps the same run and committed results and advances its attempt. Lease fencing, cancellation and per-operation timeouts remain active; replayed delegations do not consume the current execution's fresh-work allowance.
 2. Native CrewAI uses a hierarchical Crew with Mike managing Emma, Bob, Alex and David. DBOS records individual model requests and tool operations in PostgreSQL. Crew and delegation orchestration remain outside steps so nested work is independently recoverable. Workflow code/config compatibility is pinned; [ADR-0014](../adr/0014-dbos-node-recovery.md) records the decision and external-side-effect limits.
 3. Bob selects Vanilla or React + TypeScript. Alex reads, writes, edits and deletes files, builds the candidate, defines checks and validates. David independently reads baseline/current files, validates and accepts or requests repair.
 4. Source edits invalidate stale build and acceptance evidence. Completion binds implementation validation, independent validation and explicit review to the current source, artifact and applicable check set. A successful build or an accepted stale report is insufficient.

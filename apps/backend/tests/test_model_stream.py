@@ -15,7 +15,7 @@ from crewai.tools.base_tool import Tool
 from openai.types.chat import ChatCompletionChunk
 from pydantic import BaseModel
 
-from formlane.agents import SourceExecutor
+from formlane.agents import DurableAgent, HarnessFailure, Runtime, SourceExecutor
 from formlane.model_stream import FileJsonStream, ObservedOpenAI, RuntimeAbort, StreamObserver
 
 
@@ -91,19 +91,22 @@ class MemoryDurable:
             self.results[name] = copy.deepcopy(function())
         return copy.deepcopy(self.results[name])
 
+    def orchestrate(self, name, function):
+        return function()
+
 
 def test_real_crewai_executor_receives_native_stream_before_running_tool(monkeypatch):
     """Runs CrewAI's real Crew/Agent/native OpenAI provider; only transport is synthetic."""
     events = []
     saved = []
-    runtime = SimpleNamespace(
-        scope={"path": "test/alex", "role": "alex", "message_id": "message", "llm_index": 0},
-        workspace={"source": None},
-        cancelled=lambda: False,
-        check=lambda: None,
-        emit=lambda kind, data: events.append((kind, data)),
-        durable=MemoryDurable(),
+    runtime = Runtime(
+        None,
+        {"runId": "stream-test"},
+        MemoryDurable(),
+        lambda kind, data: events.append((kind, data)),
+        lambda: False,
     )
+    runtime.scope = runtime.new_scope("test/alex", "alex")
     payload = json.dumps({"path": "src/main.js", "content": "const result = 42;"})
 
     def stream(**kwargs):
@@ -220,14 +223,14 @@ def test_failed_provider_attempt_does_not_reuse_partial_reader(monkeypatch):
             except ConnectionError:
                 return fn()
 
-    runtime = SimpleNamespace(
-        scope={"path": "step", "role": "alex", "message_id": "msg", "llm_index": 0},
-        workspace={"source": None},
-        cancelled=lambda: False,
-        check=lambda: None,
-        emit=lambda kind, data: events.append((kind, data)),
-        durable=RetryDurable(),
+    runtime = Runtime(
+        None,
+        {"runId": "stream-test"},
+        RetryDurable(),
+        lambda kind, data: events.append((kind, data)),
+        lambda: False,
     )
+    runtime.scope = runtime.new_scope("step", "alex")
 
     def native_call(llm, *args):
         attempts[0] += 1
@@ -255,14 +258,10 @@ def test_failed_provider_attempt_does_not_reuse_partial_reader(monkeypatch):
 
 
 def test_provider_exception_cannot_become_native_tool_error_text(monkeypatch):
-    runtime = SimpleNamespace(
-        scope={"path": "step", "role": "alex", "message_id": "msg", "llm_index": 0},
-        workspace={"source": None},
-        cancelled=lambda: False,
-        check=lambda: None,
-        emit=lambda *_: None,
-        durable=MemoryDurable(),
+    runtime = Runtime(
+        None, {"runId": "stream-test"}, MemoryDurable(), lambda *_: None, lambda: False
     )
+    runtime.scope = runtime.new_scope("step", "alex")
 
     def fail(*args):
         raise ValueError("credential-material-must-not-be-public")
@@ -273,3 +272,47 @@ def test_provider_exception_cannot_become_native_tool_error_text(monkeypatch):
         llm.call("task")
     assert "credential-material" not in str(error.value)
     assert "credential-material" in str(error.value.cause)
+
+
+def test_resume_replays_delegations_without_spending_fresh_work_budget(monkeypatch):
+    durable = MemoryDurable()
+    calls = []
+
+    def provider(llm, *args):
+        calls.append(llm._runtime.scope["path"])
+        return f"Completed delegation {len(calls)}"
+
+    monkeypatch.setattr(OpenAICompletion, "call", provider)
+    monkeypatch.setattr(
+        Agent, "execute_task", lambda agent, task, *args: agent.llm.call(task.description)
+    )
+    task = Task(description="Continue the saved application", expected_output="Reviewed app")
+
+    def agent_for_attempt():
+        runtime = Runtime(
+            None,
+            {"runId": "same-run", "request": "Continue the saved application", "idea": "Counter"},
+            durable,
+            lambda *_: None,
+            lambda: False,
+        )
+        llm = ObservedOpenAI(model="test", api_key="test-key").bind(runtime)
+        return DurableAgent(role="Alex", goal="Implement", backstory="Developer", llm=llm).bind(
+            runtime, "alex"
+        )
+
+    first = agent_for_attempt()
+    saved = [first.execute_task(task) for _ in range(8)]
+    with pytest.raises(HarnessFailure, match="step_limit"):
+        first.execute_task(task)
+    assert len(calls) == 8
+
+    resumed = agent_for_attempt()
+    assert [resumed.execute_task(task) for _ in range(8)] == saved
+    assert len(calls) == 8
+    for index in range(8, 16):
+        result = json.loads(resumed.execute_task(task))
+        assert result["result"] == f"Completed delegation {index + 1}"
+    with pytest.raises(HarnessFailure, match="step_limit"):
+        resumed.execute_task(task)
+    assert calls == [f"crew-v1/delegate-{index}-alex" for index in range(16)]

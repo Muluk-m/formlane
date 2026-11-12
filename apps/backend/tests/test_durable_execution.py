@@ -215,7 +215,6 @@ def _reclaim(store, job):
     replacement = store.claim_run(str(uuid4()))
     assert replacement["id"] == job["id"]
     assert replacement["lease_token"] != job["lease_token"]
-    assert replacement["deadline_at"] == job["deadline_at"]
     assert replacement["attempt"] == job["attempt"]
     return replacement
 
