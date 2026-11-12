@@ -192,10 +192,7 @@
       "crlf": "CRLF"
     },
     "landing": {
-      "headline": "你的下一个应用",
-      "headlineAccent": "从一个想法开始。",
-      "subtitle": "说说你想做什么，和 AI 团队一起把它变成应用。",
-      "inspiration": "找一点灵感",
+      "headline": "想做点什么？",
       "projectsNote": "继续上次的创作",
       "saved": "已有保存版本",
       "notBuilt": "尚未构建"

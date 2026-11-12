@@ -196,10 +196,7 @@
       "crlf": "CRLF"
     },
     "landing": {
-      "headline": "Your next app",
-      "headlineAccent": "starts with an idea.",
-      "subtitle": "Describe what you have in mind. Build it with your AI team.",
-      "inspiration": "A little inspiration",
+      "headline": "What would you like to build?",
       "projectsNote": "Pick up where you left off",
       "saved": "Saved version",
       "notBuilt": "Not built yet"

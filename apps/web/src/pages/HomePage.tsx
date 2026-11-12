@@ -91,7 +91,7 @@ export function HomePage() {
   const error = create.error ?? projects.error ?? health.error
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <main className="mx-auto max-w-6xl px-4 pt-12 pb-8 sm:px-8 sm:pt-20 sm:pb-12">
+      <main className="mx-auto max-w-6xl px-4 pt-8 pb-8 sm:px-8 sm:pt-12 sm:pb-12">
         <ThreadPrimitive.Root className="mx-auto max-w-3xl">
           <AssistantHomeIntro />
           {health.data && !health.data.mock && !health.data.hasKey && (
@@ -104,7 +104,7 @@ export function HomePage() {
               {t('atoms.mockPill')}
             </Badge>
           )}
-          <div className="mt-8 sm:mt-10">
+          <div className="mt-7 sm:mt-8">
             <AssistantComposer mode="idea" disabled={create.isPending} />
           </div>
           {error && (
@@ -116,7 +116,7 @@ export function HomePage() {
             <AssistantHomeSuggestions disabled={create.isPending} />
           </div>
         </ThreadPrimitive.Root>
-        <section id="projects" className="mx-auto mt-16 max-w-5xl sm:mt-20">
+        <section id="projects" className="mx-auto mt-12 max-w-5xl sm:mt-16">
           <AssistantHomeProjectsHeading />
           {projects.isPending && (
             <div className="mt-5">
