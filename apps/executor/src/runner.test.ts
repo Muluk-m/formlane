@@ -1,5 +1,6 @@
 import { createServer } from 'node:http'
 import type { Socket } from 'node:net'
+import { MaxTurnsExceededError } from '@openai/agents-core'
 import { expect, it } from 'vitest'
 import { failureFor, providerRetryable } from './runner'
 
@@ -48,4 +49,14 @@ it('keeps programming errors and authentication rejection out of retries', () =>
   expect(failureFor(programmingError).code).toBe('internal')
   expect(providerRetryable(credentialsError)).toBe(false)
   expect(failureFor(credentialsError).code).toBe('provider')
+})
+
+it('reports a distinct step limit without retrying the provider', () => {
+  const error = new MaxTurnsExceededError('Max turns (16) exceeded')
+  expect(providerRetryable(error)).toBe(false)
+  expect(failureFor(error)).toEqual({
+    code: 'step_limit',
+    message:
+      'The agent reached its step limit before validation and review could finish. Your previous version is unchanged.',
+  })
 })
