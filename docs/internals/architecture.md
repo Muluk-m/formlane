@@ -46,6 +46,8 @@ The trusted executor compiler reads an in-memory project tree and installed temp
 
 Only explicitly public provider reasoning-summary events become `reasoning_summary` records. The configured Chat Completions provider has no supported public summary, so the interface shows actual delegation tasks and tool evidence without synthesizing reasoning or exposing raw model reasoning.
 
+Execution indicators follow the explicitly observed run ID, never the timestamp of the latest received activity. A replacement run can be known before its first event arrives; earlier unfinished tools and pending text must remain interrupted during that gap and after terminal replay.
+
 ## Persistence and public boundary
 
 Read [data-model.md](data-model.md) for pointer and ownership invariants. Local schema setup is an explicit migration step; requests do not auto-create tables. D1/SQLite behavior must be respected instead of importing row-lock or transaction assumptions from the reference PostgreSQL application.
