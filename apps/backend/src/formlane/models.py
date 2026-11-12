@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     ForeignKey,
     ForeignKeyConstraint,
@@ -116,6 +117,12 @@ class Run(Base):
     started_at: Mapped[int | None] = mapped_column(BigInteger)
     finished_at: Mapped[int | None] = mapped_column(BigInteger)
     deadline_at: Mapped[int] = mapped_column(BigInteger)
+    attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    attempt_started_at: Mapped[int] = mapped_column(BigInteger)
+    execution_version: Mapped[str] = mapped_column(
+        Text, default="crew-v1", server_default="crew-v1"
+    )
+    recovery_eligible: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     error_code: Mapped[str | None] = mapped_column(Text)
     error: Mapped[str | None] = mapped_column(Text)
     version_id: Mapped[str | None] = mapped_column(Text)
@@ -129,6 +136,7 @@ class Run(Base):
             "status IN ('queued','running','completed','failed','cancelled')", name="run_status"
         ),
         CheckConstraint("event_cursor >= 0", name="run_cursor_nonnegative"),
+        CheckConstraint("attempt >= 1", name="run_attempt_positive"),
         Index("idx_runs_project", "project_id", "created_at"),
         Index("idx_runs_queue", "status", "lease_expires_at", "created_at"),
         ForeignKeyConstraint(
@@ -156,9 +164,11 @@ class RunEvent(Base):
     type: Mapped[str] = mapped_column(Text)
     data: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[int] = mapped_column(BigInteger)
+    attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     __table_args__ = (
         UniqueConstraint("run_id", "event_key", name="idx_run_events_key"),
         CheckConstraint("sequence > 0", name="event_positive_sequence"),
+        CheckConstraint("attempt >= 1", name="event_attempt_positive"),
     )
 
 

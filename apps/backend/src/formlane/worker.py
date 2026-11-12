@@ -15,10 +15,13 @@ import threading
 import time
 import uuid
 from concurrent.futures import CancelledError
+from contextlib import contextmanager
 from typing import Any, Callable
 
+from dbos import DBOS
 from sqlalchemy.exc import SQLAlchemyError
 
+from .durable_execution import ExecutionInterrupted, ExecutionVersionMismatch, execute_durable
 from .settings import Settings
 from .storage import LeaseLost, Store
 
@@ -88,7 +91,7 @@ def failure_for(error: BaseException) -> dict:
 
 
 class Durable:
-    """Commit each immutable result before returning it to CrewAI's next operation."""
+    """DBOS operation results with a fenced application commit/import journal."""
 
     def __init__(
         self,
@@ -108,36 +111,85 @@ class Durable:
             raise CancelledError()
         if int(time.time() * 1000) >= self.job["deadline_at"]:
             raise RunTimeout()
+        self.store.check_authority(self.job["id"], self.job["lease_token"])
+
+    @contextmanager
+    def events(self, name: str, attempt: int = 0):
+        token = self.scope.set({"name": name, "attempt": attempt, "index": 0})
+        try:
+            yield
+        finally:
+            self.scope.reset(token)
+
+    def step(self, name: str, function: Callable[[], Any]) -> Any:
+        self.check()
+        if DBOS.workflow_id is None or DBOS.step_id is not None:
+            raise RuntimeError("Durable operations require a workflow, never an outer step.")
+
+        def invoke():
+            try:
+                self.check()
+                return function()
+            except BaseException as error:
+                # DBOS must not checkpoint a failed provider call, lease loss or
+                # cancellation. Only successful operations are replayable.
+                raise ExecutionInterrupted(getattr(error, "cause", error)) from None
+
+        try:
+            result = DBOS.run_step({"name": name}, invoke)
+        except ExecutionInterrupted as error:
+            raise error.cause from None
+        # DBOS skips invoke entirely when replaying: fence cached returns too.
+        self.check()
+        return result
+
+    def orchestrate(self, name: str, function: Callable[[], Any]) -> Any:
+        """Import an immutable legacy aggregate, or run orchestration outside steps.
+
+        The import decision is itself durable, so later replay takes the identical
+        branch. Never wrap a delegation/crew in a step: DBOS swallows nested steps.
+        """
+        with self.events(name):
+            saved = self.step(
+                f"{name}/legacy-import",
+                lambda: self.store.get_checkpoint(self.job["id"], self.job["lease_token"], name),
+            )
+            if saved is not None:
+                return saved["value"]
+            result = function()
+            self.check()
+            return result
 
     def run(self, name: str, function: Callable[[], Any]) -> Any:
-        self.check()
-        saved = self.store.get_checkpoint(self.job["id"], self.job["lease_token"], name)
-        if saved is not None:
-            return saved["value"]
-        for attempt in range(MAX_ATTEMPTS):
-            token = self.scope.set({"name": name, "attempt": attempt, "index": 0})
-            try:
-                value = function()
-                self.check()
-                # Reject non-JSON values and detach mutable workspace references.
-                value = json.loads(json.dumps(value, ensure_ascii=False, allow_nan=False))
-                saved = self.store.put_checkpoint(
-                    self.job["id"], self.job["lease_token"], name, value
-                )
-                self.check()
+        def perform():
+            saved = self.store.get_checkpoint(self.job["id"], self.job["lease_token"], name)
+            if saved is not None:
                 return saved["value"]
-            except Exception as error:
-                self.check()
-                if not provider_retryable(error) or attempt + 1 == MAX_ATTEMPTS:
-                    raise
-                delay = min(60.0, 10.0 * 2**attempt)
-                until = time.monotonic() + delay
-                while time.monotonic() < until:
-                    self.check()
-                    self.sleep(min(0.2, max(0.0, until - time.monotonic())))
-            finally:
-                self.scope.reset(token)
-        raise RuntimeError("Unreachable retry state")
+            for attempt in range(MAX_ATTEMPTS):
+                with self.events(name, attempt):
+                    try:
+                        value = function()
+                        self.check()
+                        value = json.loads(json.dumps(value, ensure_ascii=False, allow_nan=False))
+                        # This fenced journal also closes a DBOS-commit failure
+                        # window and imports pre-DBOS completed model/tool effects.
+                        saved = self.store.put_checkpoint(
+                            self.job["id"], self.job["lease_token"], name, value
+                        )
+                        self.check()
+                        return saved["value"]
+                    except Exception as error:
+                        self.check()
+                        if not provider_retryable(error) or attempt + 1 == MAX_ATTEMPTS:
+                            raise
+                        delay = min(60.0, 10.0 * 2**attempt)
+                        until = time.monotonic() + delay
+                        while time.monotonic() < until:
+                            self.check()
+                            self.sleep(min(0.2, max(0.0, until - time.monotonic())))
+            raise RuntimeError("Unreachable retry state")
+
+        return self.step(name, perform)
 
     def emit(self, event_type: str, data: dict) -> None:
         self.check()
@@ -165,13 +217,19 @@ def _child(settings_data: dict, job: dict, connection: Any, cancellation: Any) -
         from .agents import execute_harness
 
         context = store.harness_context(job["id"], job["lease_token"])
-        result = execute_harness(settings, context, durable, durable.emit, cancellation.is_set)
+        result = execute_durable(
+            settings,
+            durable,
+            lambda: execute_harness(settings, context, durable, durable.emit, cancellation.is_set),
+        )
         durable.check()
         # Completion stays in the child: large source/HTML never block the supervisor pipe.
         completed = store.complete_run(job["id"], job["lease_token"], result)
         connection.send({"state": "completed" if completed else "released"})
     except (LeaseLost, SQLAlchemyError, CancelledError):
         connection.send({"state": "released"})
+    except ExecutionVersionMismatch:
+        connection.send({"state": "incompatible"})
     except BaseException as error:
         cause = getattr(error, "cause", error)
         if isinstance(cause, (LeaseLost, SQLAlchemyError, CancelledError)):
@@ -305,10 +363,10 @@ def execute_job(settings: Settings, store: Store, job: dict, shutdown: threading
                 try:
                     state = receive.recv()
                 except EOFError:
-                    state = {"state": "failed", **failure_for(RuntimeError())}
+                    state = {"state": "released"}
                 break
             if not process.is_alive():
-                state = {"state": "failed", **failure_for(RuntimeError())}
+                state = {"state": "released"}
                 break
     finally:
         heartbeat_stop.set()
@@ -316,6 +374,13 @@ def execute_job(settings: Settings, store: Store, job: dict, shutdown: threading
         receive.close()
         monitor.join(timeout=2)
         process.close()
+    if state and state["state"] == "incompatible":
+        try:
+            store.fail_incompatible_run(job["id"], job["lease_token"])
+        except (LeaseLost, SQLAlchemyError):
+            pass
+        LOG.warning("run_incompatible run_id=%s", job["id"])
+        return
     if (
         state
         and state["state"] == "failed"

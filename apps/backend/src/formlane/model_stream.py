@@ -284,6 +284,8 @@ class ObservedOpenAI(OpenAICompletion):
                 self._observer = None
 
         try:
+            # This is one DBOS step per native provider call; delegation and
+            # crew execution remain workflow orchestration, never enclosing steps.
             return runtime.durable.run(name, invoke)
         except Exception as error:
             raise RuntimeAbort(error) from None

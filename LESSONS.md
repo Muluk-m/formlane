@@ -4,6 +4,10 @@ Read before changing a related area. Entries distinguish observed migration mist
 
 ## This migration
 
+- **2026-11-12 — Timeout Retry posted the original prompt as a new run.** The previous run already held source and model/tool checkpoints, but the new UUID abandoned that history. Resume preserves workflow identity and committed operations, advances an explicit attempt, and rejects old-attempt terminal events. Verify process termination and recovery through the actual client action.
+- **2026-11-12 — A native select was filled as text.** Run `186a160a-6483-45fc-80cd-23933964bb57` passed seven of eight checks; the remaining action called `fill` on `<select id="tool-category">`. Provide explicit option-value selection with real input/change-event coverage; do not change correct application controls to accommodate unsupported test actions.
+- **2026-11-12 — Published links exposed the server IP.** Both public origins selected the backend and `/p` redirected there. Keep navigation on the frontend domain with isolated generated HTML; verify the address bar and revoked-link behavior.
+
 - **2026-11-12 — Collapsed sidebar label intercepted New project clicks.** The project group label combined a negative margin with opacity zero, placing an invisible box over the preceding navigation link. Disable pointer events for the label in icon mode. Verify the actual hit target and navigation after collapse; visibility alone does not prove a control is clickable.
 
 - **2026-11-12 — Independent QA treated DOM attributes as computed CSS.** A real-provider visual-follow-up replay repeatedly asserted nonexistent style attributes and exhausted its review turns even though behavior checks passed. Role contracts must state that attribute assertions read literal markup, distinguish source-inspected CSS from browser-observed behavior, forbid probing imaginary assertion APIs, and direct QA to record its verdict once meaningful coverage and current-build evidence are complete. Verify prompt revisions with the failing real-provider workflow; string-matching prompt tests cannot establish model behavior.

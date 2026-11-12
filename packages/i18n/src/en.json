@@ -146,6 +146,15 @@
     "pending": "Pending"
   },
   "atoms": {
+    "publicViewer": {
+      "loading": "Loading published app…",
+      "title": "Published app",
+      "unavailable": "This app is not available",
+      "unavailableDescription": "The link may be incorrect, or the app may no longer be published.",
+      "loadFailed": "Could not load this app",
+      "loadFailedDescription": "Check your connection and try again.",
+      "retry": "Try again"
+    },
     "versionReview": {
       "changes": "Changes",
       "backToChat": "Back to conversation",
@@ -272,7 +281,8 @@
     "unpublish": "Unpublish",
     "close": "Close",
     "liveNote": "Anyone with this link can open the app full screen.",
-    "retry": "Retry these instructions",
+    "resume": "Resume",
+    "resuming": "Resuming…",
     "interrupted": "The last run looks interrupted.",
     "takeOver": "Take over",
     "notFound": "This project isn't in this browser.",
@@ -332,7 +342,7 @@
     "reconnect": "Reconnect",
     "durableRun": "You can leave this page. The run continues until it finishes or you stop it.",
     "stopping": "Stopping…",
-    "runCancelled": "This run was cancelled. Send new instructions or retry the same request.",
+    "runCancelled": "This run was stopped. Your saved work is safe.",
     "previousVersionKept": "Your previous saved version is unchanged.",
     "runActivity": "Agent and tool activity",
     "toolStarted": "Tool started: {name}",
@@ -351,11 +361,11 @@
       "cancelled": "Run cancelled"
     },
     "runError": {
-      "timeout": "The run reached its time limit. Retry these instructions or narrow the request.",
-      "provider": "The model provider could not complete this run. Retry when the provider is available.",
-      "validation": "The app did not pass validation after repair. Revise your instructions or retry.",
-      "step_limit": "The agent reached its step limit before validation and review finished. Your saved version is unchanged; you can retry.",
-      "internal": "The run failed before completion. Your saved work is safe; you can retry."
+      "timeout": "The run reached its time limit. Your saved work is safe.",
+      "provider": "The model provider could not complete this run.",
+      "validation": "The app did not pass validation after repair.",
+      "step_limit": "The agent reached its step limit before validation and review finished.",
+      "internal": "The run stopped before completion. Your saved work is safe."
     },
     "kilobytes": "{count} KB"
   },

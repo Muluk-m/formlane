@@ -106,7 +106,7 @@ def validate_checks(checks: list[dict]) -> list[dict]:
             selector = _string(action.get("selector"), "Action selector", 1, 300)
             if kind == "click":
                 valid = value is None
-            elif kind == "fill":
+            elif kind in ("fill", "select"):
                 valid = isinstance(value, str) and utf16_length(value) <= 1000
             elif kind == "press":
                 valid = isinstance(value, str) and value in KEYS
@@ -261,6 +261,19 @@ async def _run_browser(html: str, checks: list[dict], settings, cancelled, repor
                                 await element.click(timeout=5000)
                             elif action["kind"] == "press":
                                 await element.press(action["value"], timeout=5000)
+                            elif action["kind"] == "select":
+                                # Playwright strings match labels too; choose the exact option node.
+                                option = await element.evaluate_handle(
+                                    "(select, value) => Array.from(select.options).find(option => option.value === value)",
+                                    action["value"],
+                                )
+                                try:
+                                    node = option.as_element()
+                                    if node is None:
+                                        raise ValueError("No option matches the requested value.")
+                                    await element.select_option(element=node, timeout=5000)
+                                finally:
+                                    await option.dispose()
                             else:
                                 await element.fill(action["value"], timeout=5000)
                     assertions = ([check["assertion"]] if check.get("assertion") else []) + check[

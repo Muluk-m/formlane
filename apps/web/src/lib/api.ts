@@ -120,6 +120,12 @@ export async function startRun(id: string, initial: boolean, content?: string): 
   return result.run
 }
 
+export async function resumeRun(id: string, runId: string): Promise<Run> {
+  const response = await request(`/api/projects/${id}/runs/${runId}/resume`, { method: 'POST' })
+  if (!response.ok) throw new RunConnectionError(await readError(response), response.status)
+  return runReceiptSchema.parse(await response.json()).run
+}
+
 export async function cancelRun(id: string, runId: string): Promise<void> {
   const response = await request(`/api/projects/${id}/runs/${runId}/cancel`, { method: 'POST' })
   if (!response.ok) throw new RunConnectionError(await readError(response), response.status)

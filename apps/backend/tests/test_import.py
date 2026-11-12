@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from test_storage import complete, postgres_store, start
 
 from formlane.import_d1 import (
+    EXTRA_COLUMNS,
     JSON_COLUMNS,
     TABLES,
     ImportConflict,
@@ -51,6 +52,23 @@ def exported(pg_store, project, owner, result):
     return data
 
 
+def test_legacy_failed_run_import_preserves_recovery(pg_store, project, owner, result):
+    failed = start(pg_store, project, owner)
+    pg_store.put_checkpoint(failed["id"], failed["lease_token"], "saved-source", result["source"])
+    assert pg_store.finish_run(failed["id"], failed["lease_token"], "failed", "provider", "Failed")
+    with pg_store.engine.connect() as connection:
+        exported = read_target(connection)
+    with postgres_store() as target:
+        import_data(target, exported)
+        resumed = target.resume_run(project["id"], owner, failed["id"])
+        assert resumed["id"] == failed["id"]
+        assert resumed["attempt"] == 2
+        claim = target.claim_run("import-recovery")
+        assert claim["execution_version"] == "crew-v1"
+        checkpoint = target.get_checkpoint(claim["id"], claim["lease_token"], "saved-source")
+        assert checkpoint["value"] == result["source"]
+
+
 def raw_d1_json(data):
     raw = deepcopy(data)
     for name, columns in JSON_COLUMNS.items():
@@ -71,7 +89,7 @@ def sqlite_dump(data):
                 else [
                     column.name
                     for column in TABLES[name].columns
-                    if column.name not in {"position", "event_cursor"}
+                    if column.name not in EXTRA_COLUMNS.get(name, set())
                 ]
             )
             definitions = [

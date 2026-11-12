@@ -195,13 +195,17 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
                 connection.execute(text("SELECT 1 FROM projects LIMIT 0"))
                 connection.execute(text("SELECT 1 FROM messages LIMIT 0"))
                 connection.execute(text("SELECT source, parent_version_id FROM versions LIMIT 0"))
-                connection.execute(text("SELECT event_cursor, lease_token FROM runs LIMIT 0"))
-                connection.execute(text("SELECT sequence FROM run_events LIMIT 0"))
+                connection.execute(
+                    text(
+                        "SELECT event_cursor, lease_token, attempt, attempt_started_at, execution_version, recovery_eligible FROM runs LIMIT 0"
+                    )
+                )
+                connection.execute(text("SELECT sequence, attempt FROM run_events LIMIT 0"))
                 connection.execute(text("SELECT result FROM run_checkpoints LIMIT 0"))
                 revision = connection.execute(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar()
-                if revision != "0001_postgres":
+                if revision != "0002_run_recovery":
                     return JSONResponse({"ok": False}, status_code=503)
             return {"ok": True}
         except Exception:
@@ -335,6 +339,11 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
         store.cancel_run(project_id, request.state.owner_id, run_id)
         return {"ok": True}
 
+    @app.post("/api/projects/{project_id}/runs/{run_id}/resume")
+    def resume_run(request: Request, project_id: str, run_id: str):
+        run = store.resume_run(project_id, request.state.owner_id, run_id)
+        return JSONResponse({"run": run}, status_code=202)
+
     @app.get("/api/projects/{project_id}/runs/{run_id}/events")
     async def events(request: Request, project_id: str, run_id: str):
         owner = request.state.owner_id
@@ -375,7 +384,15 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
                             yield encode(event)
                             cursor = event["sequence"]
                         if len(remaining) < 100:
-                            return
+                            latest = await run_in_threadpool(
+                                store.get_run, project_id, owner, run_id
+                            )
+                            if (
+                                latest["status"] in TERMINAL
+                                and latest["attempt"] == current["attempt"]
+                                and latest["cursor"] <= cursor
+                            ):
+                                return
                         continue
                 except StoreError as error:
                     if error.status == 404:
