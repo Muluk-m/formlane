@@ -149,10 +149,10 @@ export function AssistantExecutionSummary() {
   return (
     <>
       <AssistantActivityIcon tone={tone} />
-      <span className="min-w-0 flex-1 text-xs font-medium">
-        <span className="block truncate">{label}</span>
+      <span className="flex min-w-0 flex-1 items-center gap-2 text-xs font-medium">
+        <span className="truncate">{label}</span>
         {tone === 'running' && focus?.agent && (
-          <span className="mt-0.5 block truncate font-normal text-muted-foreground">
+          <span className="shrink-0 font-normal text-muted-foreground">
             {focus.agent.charAt(0).toUpperCase() + focus.agent.slice(1)}
           </span>
         )}

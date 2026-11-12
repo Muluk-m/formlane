@@ -30,6 +30,7 @@ export function Stage({
   onDevice,
   onBack,
   versionControl,
+  toolbarAction,
   changes,
   onRestore,
   restoreDisabled,
@@ -49,6 +50,7 @@ export function Stage({
   onDevice: (device: 'desktop' | 'mobile') => void
   onBack: () => void
   versionControl: ReactNode
+  toolbarAction?: ReactNode
   changes: ReactNode
   onRestore?: () => void
   restoreDisabled?: boolean
@@ -80,10 +82,10 @@ export function Stage({
       onValueChange={(value) => {
         if (value === 'preview' || value === 'code' || value === 'changes') onTab(value)
       }}
-      className="h-full min-h-0 min-w-0 flex-1 gap-0 bg-surface-sunken"
+      className="h-full min-h-0 min-w-0 flex-1 gap-0 overflow-hidden rounded-2xl border bg-card shadow-card"
     >
-      <div className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-background px-3 py-2">
-        <TabsList variant="line" aria-label={t('atoms.previewTitle')}>
+      <div className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+        <TabsList aria-label={t('atoms.previewTitle')} className="max-w-full">
           <TabsTrigger value="preview" data-testid="tab-preview">
             {t('atoms.preview')}
           </TabsTrigger>
@@ -97,10 +99,13 @@ export function Stage({
             {t('atoms.versionReview.changes')}
           </TabsTrigger>
         </TabsList>
-        {versionControl}
+        <div className="ml-auto flex min-w-0 items-center gap-2">
+          {versionControl}
+          {toolbarAction}
+        </div>
       </div>
       {tab === 'preview' && (
-        <div className="flex h-11 shrink-0 items-center gap-1 px-3">
+        <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3">
           <Button
             variant="ghost"
             size="icon-sm"
@@ -111,31 +116,33 @@ export function Stage({
           >
             <HugeiconsIcon icon={ArrowReloadHorizontalIcon} size={16} strokeWidth={1.5} />
           </Button>
-          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+          <span className="min-w-0 flex-1 truncate rounded-md bg-surface-sunken px-3 py-1 text-xs text-muted-foreground">
             {t('atoms.previewAddress')}
           </span>
-          <Button
-            size="icon-sm"
-            variant={device === 'desktop' ? 'secondary' : 'ghost'}
-            data-testid="device-desktop"
-            aria-label={t('atoms.desktop')}
-            title={t('atoms.desktop')}
-            aria-pressed={device === 'desktop'}
-            onClick={() => onDevice('desktop')}
-          >
-            <HugeiconsIcon icon={ComputerIcon} size={16} strokeWidth={1.5} />
-          </Button>
-          <Button
-            size="icon-sm"
-            variant={device === 'mobile' ? 'secondary' : 'ghost'}
-            data-testid="device-mobile"
-            aria-label={t('atoms.mobile')}
-            title={t('atoms.mobile')}
-            aria-pressed={device === 'mobile'}
-            onClick={() => onDevice('mobile')}
-          >
-            <HugeiconsIcon icon={SmartPhone01Icon} size={16} strokeWidth={1.5} />
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              size="icon-sm"
+              variant={device === 'desktop' ? 'secondary' : 'ghost'}
+              data-testid="device-desktop"
+              aria-label={t('atoms.desktop')}
+              title={t('atoms.desktop')}
+              aria-pressed={device === 'desktop'}
+              onClick={() => onDevice('desktop')}
+            >
+              <HugeiconsIcon icon={ComputerIcon} size={16} strokeWidth={1.5} />
+            </Button>
+            <Button
+              size="icon-sm"
+              variant={device === 'mobile' ? 'secondary' : 'ghost'}
+              data-testid="device-mobile"
+              aria-label={t('atoms.mobile')}
+              title={t('atoms.mobile')}
+              aria-pressed={device === 'mobile'}
+              onClick={() => onDevice('mobile')}
+            >
+              <HugeiconsIcon icon={SmartPhone01Icon} size={16} strokeWidth={1.5} />
+            </Button>
+          </div>
         </div>
       )}
       {staleLabel && (
@@ -181,13 +188,13 @@ export function Stage({
           {t('atoms.files.copyFailed')}
         </p>
       )}
-      <div className="min-h-0 flex-1 p-2 sm:p-3">
+      <div className="min-h-0 min-w-0 flex-1 bg-surface-sunken p-2 sm:p-3">
         <TabsContent value="preview" keepMounted className="h-full min-h-0 data-[hidden]:hidden">
-          <div className="flex h-full items-stretch justify-center">
+          <div className="flex h-full min-w-0 items-stretch justify-center">
             {html ? (
               <PreviewFrame key={`${previewRevision}:${html}`} html={html} device={device} />
             ) : (
-              <div className="grid h-full w-full place-items-center rounded-lg border border-dashed bg-card p-8 text-center text-muted-foreground">
+              <div className="grid h-full w-full place-items-center rounded-xl border border-dashed bg-card p-6 text-center text-muted-foreground sm:p-8">
                 <p className="max-w-sm">{t('atoms.emptyPreview')}</p>
               </div>
             )}
