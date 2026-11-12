@@ -18,4 +18,4 @@ Use the root engineering guidance and shared Skyline tokens. Application navigat
 
 ## Runtime
 
-Pages Functions forward `/api/*` and `/p/*` through the `API` service binding or runtime `API_ORIGIN`; Vite mirrors these routes locally. The deployment owner configures the verified account and bindings. Build identity is emitted as `/version.json` using the root build helper.
+Pages serves static assets only. `src/lib/api.ts` centralizes direct FastAPI transport and preserves the existing `atoms_uid` localStorage ownership capability using `x-owner-id`; cookies are omitted. The Python API retains the shared oRPC JSON/error contract. Vite validates `VITE_API_ORIGIN` and `VITE_API_PUBLIC_ORIGIN`, emits `/version.json`, and generates temporary `/api/*` (307) and `/p/*` (302) redirects for older clients and public links. Production keeps the canonical Pages origin; the new HTTPS API is currently staged. Read [deployment](../../docs/operations/deployment.md#static-pages-python-api-cutover) before building for release or changing origins: final fenced import and backend acceptance precede `backendReady` activation.

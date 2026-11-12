@@ -1,35 +1,40 @@
 # Data model and lifecycle
 
-The server's Drizzle schema and checked-in D1 migrations define fields and constraints. This document records relationships and invariants that field lists alone do not explain; avoid maintaining a second schema dictionary.
+[SQLAlchemy models](../../apps/backend/src/formlane/models.py), [storage](../../apps/backend/src/formlane/storage.py) and [Alembic migrations](../../apps/backend/migrations/) define the PostgreSQL schema. PostgreSQL is the replacement system's sole business authority; Alembic's version bookkeeping is separate from the six business tables.
 
-## Project boundary
+| Table             | Authority                                                                           |
+| ----------------- | ----------------------------------------------------------------------------------- |
+| `projects`        | Anonymous owner, idea, current/published pointers, public slug and active-run fence |
+| `messages`        | Conversation, including stable ordering for equal timestamps                        |
+| `versions`        | Immutable source/HTML snapshots, project-local numbers and generation ancestry      |
+| `runs`            | Status, request/baseline, deadline, lease and durable event cursor                  |
+| `run_events`      | Sequence-addressed observations with idempotent event identities                    |
+| `run_checkpoints` | Immutable named completed-step results                                              |
 
-A project belongs to an anonymous browser owner. All private operations resolve the project under that owner before accessing its messages or versions. Public publication is a separate lookup and exposes only the selected HTML. Anonymous ownership is a demo boundary, not a full account/session system.
+IDs retain their historical text identity and timestamps remain epoch milliseconds. JSONB stores structured source/events/checkpoints. Schema changes require explicit Alembic migrations; application startup and requests never create tables.
 
-## Conversation and generation
+## Ownership and execution
 
-Messages preserve user requests, agent output and system feedback. D1 `runs` stores status, active-run fencing, the persisted 15-minute deadline and executor lease fields. `run_events` stores sequence-addressed observations with idempotent event identities. The Node executor owns model/browser execution; SSE reads events. Reconnect requests events after the last cursor without starting a new run.
+Every private operation first resolves the project under its anonymous browser owner. Public slug lookup exposes only explicitly published HTML, never private conversation, source or ownership capabilities.
 
-The bearer-authenticated executor API grants a 60-second lease refreshed every 10 seconds. Lease tokens condition checkpoint/event/completion writes; an expired lease can be reclaimed. `run_checkpoints` stores immutable named step results, persisted before advancing and reused after restart. A checkpoint is not a provider token-stream snapshot, and an interrupted step can repeat provider calls.
+The worker claims a 60-second lease refreshed every 10 seconds. PostgreSQL transactions, locking and conditional checks protect active-run exclusion, events, checkpoints and completion. Stale, expired or cancelled producers cannot write, including late tool results. The persisted 15-minute deadline survives restart/reclaim. SSE only reads persisted observations; reconnect does not start a run.
 
-Cancellation fences writes immediately; the executor aborts when heartbeat authority is lost. Conditional writes reject stale, cancelled and expired producers, including late tool results. Timeout, provider failure and validation failure differ from explicit cancellation. Draft artifacts are not successful versions; completion requires current-artifact browser evidence and independent review.
+Checkpoints preserve completed steps, not an interrupted provider token stream. In-flight model calls can repeat. Failure categories distinguish timeout, provider, validation, step-limit and internal failures from cancellation. Successful completion requires current-source build, implementation validation, independent browser validation and explicit review; drafts never become successful versions by themselves.
 
-The server repository/service boundary uses `db/schema.ts`. Preserve migration history through `0005_project_sources.sql`, which backfills old versions into explicit Vanilla source snapshots while retaining their original HTML and IDs. Stop old executors and drain active runs before the source-aware cutover; legacy checkpoints do not contain the new source/build contract. Requests do not create schema. See [deployment](../operations/deployment.md) for cutover ordering.
+## Version selections and ancestry
 
-## Three version selections
+- **Current** (`currentVersionId`) selects the immutable source baseline for the next follow-up.
+- **Viewed** is local historical inspection and does not mutate persisted pointers.
+- **Published** (`publishedVersionId`) pins the public slug to one explicitly chosen saved result.
 
-- **Current:** `currentVersionId`, the immutable source snapshot used as the starting point for a follow-up.
-- **Viewed:** local UI selection when inspecting history; viewing alone does not change persisted current state.
-- **Published:** `publishedVersionId`, the explicit saved result exposed by the public slug.
+Completion atomically saves source, compiled HTML and recorded parent and updates current. Restore selects an existing version without deleting later versions or publishing it. Undo directly selects the current version's recorded generation parent: generating v4 after restoring v1 makes v1 its parent, regardless of version numbering. Republish updates the frozen public selection; unpublish revokes it without deleting history.
 
-A built, browser-validated and independently accepted generation atomically saves immutable source plus its compiled preview and updates current. A failed generation leaves the previous complete current version intact. Restore selects both parts of a saved version as current; it does not rewrite that version or change the published pointer. Republish deliberately updates the public pointer. Unpublish clears public access without deleting private history.
+Remix creates independent project/message/version identities, maps ancestry within its copied history and selects the requested historical/current version. It does not inherit public ownership. Downloads contain the authorized selected version's complete runnable source. Generated applications' interactive state remains in-memory preview state, separate from persisted project history.
 
-Undo selects the current version's recorded generation parent directly, without a confirmation dialog. It does not use version-number order: generating v4 after restoring v1 from v3 makes v1 the undo target. The parent is saved atomically with completion and retained across reloads. Remix maps parent IDs into its own copied history. Migration `0006_version_ancestry.sql` recovers ancestry from retained originating runs; legacy copies without such records have no inferred undo target and remain accessible through manual history restore. The toolbar keeps Undo visible and disables it when no parent is available or a conflicting operation is active.
+## D1 migration fidelity
 
-Remix creates independent project/message/version identities and selects the requested historical version, or current version when omitted. It must not share mutable pointers with the source or accidentally inherit public ownership. Download returns the complete source ZIP for the requested authorized saved version. Public links expose only its frozen compiled preview, never its private conversation or source API.
+The [importer](../../apps/backend/src/formlane/import_d1.py) accepts exact six-table exports from the source-aware D1 schema (historical migrations 0005/0006). It preserves owners, IDs, timestamps, source/HTML, current/published/active-run pointers, messages, event sequence/history and checkpoints. PostgreSQL-specific message positions retain export ordering for timestamp ties; run cursors match the retained event maxima.
 
-## D1 implementation constraints
+Only a missing pre-0006 `parent_version_id` is normalized. Match the version's recorded originating run and its retained same-project previous version; otherwise retain a null parent. Explicit parents are preserved. Never infer ancestry from numbering or fabricate parents for legacy remix roots. Hash manifests state this policy so normalization is visible rather than mistaken for byte-for-byte raw schema equality.
 
-Use Drizzle's SQLite/D1 schema and supported D1 operations. Enforce unique project-local version numbers and publication slugs with database constraints where represented in the schema. Multi-write publication/version operations require supported atomic batches or equivalent conditional operations; PostgreSQL row locks and advisory locks are not available.
-
-Schema migrations are explicit local or authorized remote operations. Do not create tables inside request handlers or use startup SQL as a replacement for migration history. See [ADR-0010](../adr/0010-server-on-workers.md) for the decision to retain D1 rather than transplant the reference database platform.
+Import uses one transaction and verifies canonical per-table hashes/counts, source/HTML hashes, message ordering and cursors. A populated target must already match exactly; differing data is rejected rather than merged or overwritten. `--verify-only` never inserts rows. Use an empty production target after fencing/draining/exporting the old authority; staging rehearsal data is not the final production snapshot. See [deployment](../operations/deployment.md#static-pages-python-api-cutover) for the cutover and coherent rollback boundary.

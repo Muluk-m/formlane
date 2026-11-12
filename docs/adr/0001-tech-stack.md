@@ -1,6 +1,6 @@
 # ADR 0001: Atoms monorepo engineering baseline
 
-Status: accepted, 2026-11-10.
+Status: accepted baseline, 2026-11-10; backend runtime/storage superseded by the Python cutover decision in the [ADR index](README.md).
 
 ## Context
 
@@ -8,12 +8,12 @@ Atoms began as a single-package browser/Worker demo. The requested migration inh
 
 ## Decision
 
-Use pnpm workspaces and Turbo with `apps/web`, `apps/server`, and shared contracts, UI, i18n, and runtime-independent core packages under the `@atoms-demo/*` namespace. Keep strict shared TypeScript, including `noUncheckedIndexedAccess`, and targeted Biome/test tooling.
+Use pnpm workspaces and Turbo for `apps/web`, the isolated `apps/compiler` and shared contracts, UI, i18n and runtime-independent core under the `@atoms-demo/*` namespace. Keep strict shared TypeScript, including `noUncheckedIndexedAccess`, and targeted Biome/test tooling. `apps/backend` uses Python/uv, FastAPI, native CrewAI, SQLAlchemy/PostgreSQL and explicit Alembic migrations.
 
-The browser uses React/Vite, TanStack Router/Query, and React Hook Form/Zod. The Worker uses Hono with contract-first oRPC and Drizzle D1. UI uses the complete shadcn base-nova/Base UI component family, Hugeicons, and Skyline. Exact dependency versions belong in manifests/lockfile, not this document.
+The browser retains React/Vite, TanStack Router/Query and React Hook Form/Zod. Pages is static only. The Python API preserves the shared oRPC wire contract; Node is restricted to trusted preview compilation. UI retains shadcn base-nova/Base UI, Hugeicons and Skyline. Exact dependency versions belong in manifests/lockfiles.
 
 ## Consequences
 
-Shared packages never import applications. API types do not originate from server implementation imports. Pure parsing and prompt helpers can be consumed by both runtimes without React or database dependencies. The original idea/generation/version/publication loop remains the acceptance boundary; a monorepo skeleton alone does not complete the migration. The historical mock scaffold is superseded by the real-only [durable harness](0012-durable-agent-harness.md).
+Shared packages never import applications. API types do not originate from server implementation imports. Pure TypeScript helpers remain runtime-independent, with Python source/hash parity maintained at the language boundary. The original idea/generation/version/publication loop remains the acceptance boundary. PostgreSQL owns all six business tables; the durable runner preserves the acceptance and replay invariants of [ADR-0012](0012-durable-agent-harness.md).
 
-Related: [UI](0002-shadcn-only-ui.md), [oRPC](0009-orpc-contract-first.md), [D1](0010-server-on-workers.md), [i18n](0011-i18n-catalog.md).
+Related: [UI](0002-shadcn-only-ui.md), [contract](0009-orpc-contract-first.md), [historical D1 decision](0010-server-on-workers.md), [i18n](0011-i18n-catalog.md), [current architecture](../internals/architecture.md).

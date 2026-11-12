@@ -10,7 +10,7 @@ Copying a palette while leaving native controls or reducing the shared library t
 
 Use `@atoms-demo/ui` as the sole application control source, retaining shadcn base-nova primitives and their full variants. Base UI is the underlying primitive implementation; polymorphism uses `render`. Use Hugeicons Stroke Rounded at 1.5 stroke width and the complete Skyline frontmatter/visual rules in root DESIGN.md.
 
-Preserve reusable composites, including generic tables, dates, intl selectors, numbers, QR, page headers, and statuses. Remove domain-specific status vocabulary with no Atoms use. Application-specific chat/preview composition stays in web. All labels come from i18n. Atoms Demo is the product name; the inherited AD monogram now represents that name.
+Preserve reusable composites, including generic tables, dates, intl selectors, numbers, QR, page headers, and statuses. Remove domain-specific status vocabulary with no Formlane use. Application-specific chat/preview composition stays in web. All labels and branding come from the shared i18n catalog and Logo; Formlane is the current product name.
 
 ## Consequences
 

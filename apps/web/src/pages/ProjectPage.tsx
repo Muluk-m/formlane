@@ -78,6 +78,7 @@ import {
   cancelRun,
   downloadProject,
   latestRun,
+  publishedUrl,
   RunConnectionError,
   startRun,
   streamRunEvents,
@@ -569,7 +570,7 @@ export function ProjectPage() {
 
   async function publish() {
     const result = await publishMutation.mutateAsync({ id })
-    setShare(result)
+    setShare({ ...result, url: publishedUrl(result.slug) })
     setProject((current) =>
       current
         ? { ...current, publishedSlug: result.slug, publishedVersionId: result.versionId }
