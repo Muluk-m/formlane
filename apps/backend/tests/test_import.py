@@ -71,6 +71,8 @@ def test_legacy_failed_run_import_preserves_recovery(pg_store, project, owner, r
 
 def raw_d1_json(data):
     raw = deepcopy(data)
+    for row in raw["runs"]:
+        row["deadline_at"] = row["created_at"] + 900_000
     for name, columns in JSON_COLUMNS.items():
         for row in raw[name]:
             for column in columns:
@@ -93,7 +95,7 @@ def sqlite_dump(data):
                 ]
             )
             definitions = [
-                f'"{column}" {"INTEGER" if isinstance(TABLES[name].c[column].type, Integer) else "TEXT"}'
+                f'"{column}" {"INTEGER" if column == "deadline_at" or isinstance(TABLES[name].c[column].type, Integer) else "TEXT"}'
                 for column in columns
             ]
             connection.execute(f'CREATE TABLE "{name}" ({", ".join(definitions)})')

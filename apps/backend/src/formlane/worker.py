@@ -47,11 +47,6 @@ def provider_retryable(error: BaseException) -> bool:
 
 def failure_for(error: BaseException) -> dict:
     code = getattr(error, "code", None)
-    if code == "timeout":
-        return {
-            "code": "timeout",
-            "message": "Generation made no progress for 15 minutes. Your previous version is unchanged.",
-        }
     if code == "step_limit":
         return {
             "code": "step_limit",
@@ -401,7 +396,6 @@ def run_worker(settings: Settings, shutdown: threading.Event | None = None) -> N
     try:
         while not shutdown.is_set():
             try:
-                store.expire_runs()
                 job = store.claim_run(worker_id)
                 if job:
                     execute_job(settings, store, job, shutdown)

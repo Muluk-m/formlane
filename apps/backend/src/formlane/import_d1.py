@@ -115,9 +115,18 @@ def normalize_export(payload: Any, *, decode_json: bool = True) -> dict[str, lis
                 and isinstance(original, dict)
                 and set(original) == columns - {"parent_version_id"}
             )
-            if not isinstance(original, dict) or (set(original) != columns and not legacy_version):
-                raise ValueError(f"{name} must match D1 migration 0005 or 0006 schema columns.")
+            legacy_run = (
+                name == "runs"
+                and isinstance(original, dict)
+                and set(original) == columns | {"deadline_at"}
+            )
+            if not isinstance(original, dict) or (
+                set(original) != columns and not legacy_version and not legacy_run
+            ):
+                raise ValueError("Export columns do not match the supported D1 schema.")
             row = dict(original)
+            if legacy_run:
+                row.pop("deadline_at")
             for column in JSON_COLUMNS.get(name, set()):
                 # Raw D1 rows encode JSON columns as text. Decode exactly once.
                 if decode_json and isinstance(row[column], str):

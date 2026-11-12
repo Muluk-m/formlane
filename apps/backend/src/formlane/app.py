@@ -205,7 +205,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
                 revision = connection.execute(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar()
-                if revision != "0002_run_recovery":
+                if revision != "0003_remove_run_deadline":
                     return JSONResponse({"ok": False}, status_code=503)
             return {"ok": True}
         except Exception:
