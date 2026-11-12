@@ -99,6 +99,7 @@ function harness(
 ) {
   const queue = [...steps]
   const modelInputs: unknown[] = []
+  const managerInputs: unknown[] = []
   let sequence = 0
   const response = (output: ModelResponse['output']): ModelResponse => ({
     output,
@@ -108,6 +109,18 @@ function harness(
   const model: Model = {
     async getResponse(request) {
       modelInputs.push(request.input)
+      const input =
+        typeof request.input === 'string'
+          ? request.input
+          : request.input
+              .flatMap((item) => {
+                if (!('role' in item) || item.role !== 'user') return []
+                return typeof item.content === 'string'
+                  ? [item.content]
+                  : item.content.flatMap((part) => (part.type === 'input_text' ? [part.text] : []))
+              })
+              .join('')
+      managerInputs.push(JSON.parse(input))
       const step = queue.shift() ?? dispatch('complete')
       if (step.kind !== 'manager')
         throw new Error(`Expected a manager decision, received ${step.kind}`)
@@ -177,6 +190,7 @@ function harness(
     events,
     checkpoints,
     modelInputs,
+    managerInputs,
     queue,
     run: (signal = new AbortController().signal) =>
       executeHarness(
@@ -368,6 +382,146 @@ it('requires Alex validation even if a built project later passes independent re
   ])
   await expect(run.run()).rejects.toMatchObject({ code: 'validation' })
   expect(execution.validate).toHaveBeenCalledTimes(1)
+})
+
+it('recovers missing Alex evidence after David corrects expectations without changing the accepted build', async () => {
+  const incorrectChecks = checks.map((check) => ({
+    ...check,
+    assertions: check.assertions.map((assertion) => ({
+      ...assertion,
+      expected: check.name === 'increments' ? '2' : assertion.expected,
+    })),
+  }))
+  const failedReport = {
+    valid: false,
+    artifactHash: await artifactHash(preview),
+    issues: ['increments: expected 2, received 1'],
+    checks: [],
+  }
+  execution.validate.mockResolvedValueOnce(failedReport).mockResolvedValueOnce(failedReport)
+  const run = harness([
+    ...initialize(),
+    dispatch('alex'),
+    call('set_acceptance_checks', { checks: incorrectChecks }),
+    call('build_project'),
+    call('validate_preview'),
+    dispatch('alex'),
+    call('validate_preview'),
+    dispatch('david'),
+    call('set_acceptance_checks', { checks }),
+    call('validate_preview'),
+    call('record_review', { accepted: true, findings: 'Corrected arithmetic; source is correct.' }),
+    dispatch('complete'),
+    dispatch('alex'),
+    call('read_workspace'),
+    call('validate_preview'),
+    dispatch('david'),
+    call('read_workspace'),
+    call('validate_preview'),
+    call('record_review', { accepted: true, findings: 'Independent revalidation passes.' }),
+    dispatch('complete'),
+  ])
+  const result = await run.run()
+  const sourceHash = await projectSourceHash(result.source)
+  expect(execution.compile).toHaveBeenCalledOnce()
+  expect(execution.validate).toHaveBeenCalledTimes(5)
+  for (const [, actual] of execution.validate.mock.calls.slice(2)) {
+    expect(actual).toMatchObject(checks)
+  }
+  expect(outputs(run.events, 'read_workspace')).toMatchObject([
+    {
+      checks,
+      validatedBy: 'david',
+      implementationValidation: null,
+      review: { accepted: true, sourceHash },
+      completion: { ready: false, missing: ['alex_validation'], nextRole: 'alex' },
+    },
+    {
+      validatedBy: 'alex',
+      implementationValidation: { sourceHash },
+      review: null,
+      completion: {
+        ready: false,
+        missing: ['david_validation', 'david_acceptance'],
+        nextRole: 'david',
+      },
+    },
+  ])
+  expect(outputs(run.events, 'record_review')).toMatchObject([
+    {
+      accepted: true,
+      completion: { ready: false, missing: ['alex_validation'], nextRole: 'alex' },
+    },
+    { accepted: true, completion: { ready: true, missing: [], nextRole: 'complete' } },
+  ])
+  expect(run.managerInputs).toContainEqual(
+    expect.objectContaining({
+      turnsRemaining: 4,
+      workspace: expect.objectContaining({
+        validatedBy: 'david',
+        implementationValidation: null,
+        checks: expect.arrayContaining(checks.map((check) => expect.objectContaining(check))),
+        completion: { ready: false, missing: ['alex_validation'], nextRole: 'alex' },
+      }),
+      history: expect.arrayContaining([
+        expect.objectContaining({
+          role: 'david',
+          result: expect.stringContaining('"implementationValidation":null'),
+        }),
+      ]),
+    }),
+  )
+  expect(run.managerInputs).toHaveLength(8)
+  expect(run.queue).toHaveLength(0)
+})
+
+it('invalidates all acceptance evidence after a source edit even when the compiler emits identical HTML', async () => {
+  const run = harness([
+    ...initialize(),
+    dispatch('alex'),
+    call('set_acceptance_checks', { checks }),
+    call('build_project'),
+    call('validate_preview'),
+    dispatch('david'),
+    call('validate_preview'),
+    call('record_review', { accepted: true, findings: 'Original source passes.' }),
+    dispatch('alex'),
+    call('write_file', { path: 'src/new.ts', content: 'export const changed = true' }),
+    call('read_workspace'),
+    call('validate_preview'),
+    dispatch('alex'),
+    call('build_project'),
+    call('validate_preview'),
+    ...review(),
+  ])
+  const result = await run.run()
+  expect(outputs(run.events, 'read_workspace')).toMatchObject([
+    {
+      build: null,
+      checks,
+      report: null,
+      validatedBy: null,
+      implementationValidation: null,
+      review: null,
+      completion: {
+        ready: false,
+        missing: ['current_build', 'alex_validation', 'david_validation', 'david_acceptance'],
+        nextRole: 'alex',
+      },
+    },
+  ])
+  expect(outputs(run.events, 'validate_preview')[2]).toHaveProperty('error')
+  expect(execution.compile).toHaveBeenCalledTimes(2)
+  expect(execution.validate).toHaveBeenCalledTimes(4)
+  expect(result.html).toBe(preview)
+  expect(result.source.files['src/new.ts']).toContain('changed')
+  const accepted = outputs(run.events, 'record_review')
+  expect(accepted).toMatchObject([
+    { accepted: true, artifactHash: await artifactHash(preview) },
+    { accepted: true, sourceHash: await projectSourceHash(result.source) },
+  ])
+  expect(accepted[0]).not.toHaveProperty('sourceHash', await projectSourceHash(result.source))
+  expect(run.queue).toHaveLength(0)
 })
 
 it.each(['source', 'html'])(

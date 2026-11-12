@@ -198,69 +198,77 @@ export async function validateArtifact(
         const assertions = check.assertion
           ? [check.assertion, ...check.assertions]
           : check.assertions
-        // Share the polling budget so adding assertions cannot multiply the timeout.
+        // Poll together so one failure cannot consume the other assertions' shared budget.
         const deadline = Date.now() + 5000
-        const results: string[] = []
-        let passed = true
-        for (const [index, assertion] of assertions.entries()) {
-          const element = frame.locator(assertion.selector)
-          let actual: string | null = null
-          let sampled = false
-          let matches = false
-          let sampleError: unknown
-          do {
-            signal.throwIfAborted()
-            const timeout = Math.max(1, Math.min(500, deadline - Date.now()))
-            try {
-              if (assertion.kind === 'no-horizontal-overflow') {
-                actual = String(
-                  await frame.evaluate(() => {
-                    const root = document.documentElement
-                    return (
-                      Math.max(root.scrollWidth, document.body?.scrollWidth ?? 0) <=
-                      root.clientWidth
-                    )
-                  }),
-                )
-              } else if (assertion.kind === 'attribute') {
-                if (!assertion.attribute) throw new Error('Attribute assertion requires a name.')
-                actual = await element.getAttribute(assertion.attribute, { timeout })
-              } else if (assertion.kind === 'count') {
-                actual = String(await element.count())
-              } else if (assertion.kind === 'value') {
-                actual = await element.inputValue({ timeout })
-              } else {
-                actual = (await element.textContent({ timeout }))?.trim() ?? ''
+        const outcomes = await Promise.all(
+          assertions.map(async (assertion, index) => {
+            const element = frame.locator(assertion.selector)
+            let actual: string | null = null
+            let sampled = false
+            let matches = false
+            let sampleError: unknown
+            do {
+              signal.throwIfAborted()
+              const timeout = Math.max(1, Math.min(500, deadline - Date.now()))
+              try {
+                if (assertion.kind === 'no-horizontal-overflow') {
+                  actual = String(
+                    await frame.evaluate(() => {
+                      const root = document.documentElement
+                      return (
+                        Math.max(root.scrollWidth, document.body?.scrollWidth ?? 0) <=
+                        root.clientWidth
+                      )
+                    }),
+                  )
+                } else if (assertion.kind === 'attribute') {
+                  if (!assertion.attribute) throw new Error('Attribute assertion requires a name.')
+                  actual = await element.getAttribute(assertion.attribute, { timeout })
+                } else if (assertion.kind === 'count') {
+                  actual = String(await element.count())
+                } else if (assertion.kind === 'value') {
+                  actual = await element.inputValue({ timeout })
+                } else {
+                  actual = (await element.textContent({ timeout }))?.trim() ?? ''
+                }
+                sampled = true
+                signal.throwIfAborted()
+                matches =
+                  assertion.kind === 'text'
+                    ? (actual?.includes(assertion.expected) ?? false)
+                    : actual === assertion.expected
+                if (matches) break
+              } catch (error) {
+                signal.throwIfAborted()
+                sampleError = error
               }
-              sampled = true
-              signal.throwIfAborted()
-              matches =
-                assertion.kind === 'text'
-                  ? (actual?.includes(assertion.expected) ?? false)
-                  : actual === assertion.expected
-              if (matches) break
-            } catch (error) {
-              signal.throwIfAborted()
-              sampleError = error
+              const remaining = deadline - Date.now()
+              if (remaining <= 0) break
+              const pause = Promise.withResolvers<void>()
+              setTimeout(pause.resolve, Math.min(100, remaining))
+              await pause.promise
+            } while (Date.now() < deadline)
+            signal.throwIfAborted()
+            const detail = sampled
+              ? JSON.stringify(actual?.slice(0, 300) ?? null)
+              : sampleError instanceof Error
+                ? sampleError.message.slice(0, 300)
+                : 'No assertion result.'
+            return {
+              actual: sampled ? (actual?.slice(0, 1000) ?? 'null') : detail,
+              issue:
+                sampled && matches
+                  ? null
+                  : `${check.name} assertion ${index + 1} (${assertion.kind}, ${assertion.selector}): expected ${JSON.stringify(assertion.expected)}, got ${detail}.`,
             }
-            const remaining = deadline - Date.now()
-            if (remaining <= 0) break
-            const pause = Promise.withResolvers<void>()
-            setTimeout(pause.resolve, Math.min(100, remaining))
-            await pause.promise
-          } while (Date.now() < deadline)
-          signal.throwIfAborted()
-          const detail = sampled
-            ? JSON.stringify(actual?.slice(0, 300) ?? null)
-            : sampleError instanceof Error
-              ? sampleError.message.slice(0, 300)
-              : 'No assertion result.'
-          results.push(sampled ? (actual?.slice(0, 1000) ?? 'null') : detail)
-          if (!sampled || !matches) {
+          }),
+        )
+        const results = outcomes.map((outcome) => outcome.actual)
+        let passed = true
+        for (const outcome of outcomes) {
+          if (outcome.issue) {
             passed = false
-            report.issues.push(
-              `${check.name} assertion ${index + 1} (${assertion.kind}, ${assertion.selector}): expected ${JSON.stringify(assertion.expected)}, got ${detail}.`,
-            )
+            report.issues.push(outcome.issue)
           }
         }
         if (errors.length) {
