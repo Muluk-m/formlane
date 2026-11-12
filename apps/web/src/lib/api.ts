@@ -13,15 +13,22 @@ import type { JsonifiedClient } from '@orpc/openapi-client'
 import { OpenAPILink } from '@orpc/openapi-client/fetch'
 import { createTanstackQueryUtils } from '@orpc/tanstack-query'
 
+const apiOrigin = import.meta.env.VITE_API_ORIGIN
+const publicOrigin = import.meta.env.VITE_API_PUBLIC_ORIGIN
+
+export function publishedUrl(slug: string): string {
+  return new URL(`/p/${encodeURIComponent(slug)}`, publicOrigin).href
+}
+
 const link = new OpenAPILink(contract, {
-  url: () => new URL('/api', window.location.origin),
+  url: () => new URL('/api', apiOrigin),
   headers: () => {
     const headers = new Headers()
     const owner = localStorage.getItem('atoms_uid')
     if (owner) headers.set('x-owner-id', owner)
     return headers
   },
-  fetch: (request, init) => fetch(request, { ...init, credentials: 'same-origin' }),
+  fetch: (request, init) => fetch(request, { ...init, credentials: 'omit' }),
 })
 
 export const api: JsonifiedClient<ContractRouterClient<typeof contract>> = createORPCClient(link)
@@ -36,7 +43,10 @@ let ownerPromise: Promise<string> | null = null
 export function ensureOwner(): Promise<string> {
   if (!ownerPromise) {
     ownerPromise = (async () => {
+      const existingOwner = localStorage.getItem('atoms_uid')
       const data = await api.me({})
+      // A backend transition must never replace an existing ownership capability.
+      if (existingOwner && data.ownerId !== existingOwner) throw new Error(requestError())
       localStorage.setItem('atoms_uid', data.ownerId)
       return data.ownerId
     })().catch((error: unknown) => {
@@ -52,7 +62,7 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   const headers = new Headers(init.headers)
   headers.set('x-owner-id', ownerId)
   if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
-  return fetch(path, { ...init, headers, credentials: 'include' })
+  return fetch(new URL(path, apiOrigin), { ...init, headers, credentials: 'omit' })
 }
 
 async function readError(response: Response): Promise<string> {

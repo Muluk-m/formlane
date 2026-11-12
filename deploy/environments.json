@@ -6,15 +6,17 @@
   "test": {
     "branch": "test",
     "pagesProject": "atoms-demo-web-test",
-    "worker": "atoms-demo-server-test",
-    "databaseName": "atoms-demo-test",
-    "databaseId": null
+    "frontendOrigin": null,
+    "apiOrigin": null,
+    "apiPublicOrigin": null,
+    "backendReady": false
   },
   "production": {
     "branch": "main",
     "pagesProject": "formlane",
-    "worker": "formlane-api",
-    "databaseName": "atoms-demo",
-    "databaseId": "ffd1afdb-33f4-4063-ae97-4a624c034cd7"
+    "frontendOrigin": "https://formlane-9dp.pages.dev",
+    "apiOrigin": "https://136.65.182.87",
+    "apiPublicOrigin": "https://136.65.182.87",
+    "backendReady": true
   }
 }

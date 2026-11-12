@@ -1,6 +1,16 @@
 # ADR-0012: Durable multi-agent execution
 
-Status: accepted; the original Cloudflare Workflows/browser execution choice is superseded by the GCP executor decision below.
+Status: durable execution/acceptance invariants retained; Worker/D1 and Node/OpenAI Agents SDK implementation superseded by the Python cutover decision in the [ADR index](README.md).
+
+## Current implementation
+
+FastAPI and a native hierarchical CrewAI worker now implement the replacement in `apps/backend`, with PostgreSQL authoritative for all six business tables, leases, events and checkpoints. Mike delegates through CrewAI's manager/specialist machinery; completed work is persisted by the durable runner. Node remains only in `apps/compiler` as an isolated trusted source compiler. Explicit Alembic replaces D1 runtime migrations. See [architecture](../internals/architecture.md) and [data model](../internals/data-model.md).
+
+Preserve the persisted deadline, cancellation fences, replay semantics, immutable baseline, role-scoped tools, sandboxed browser, current-source build, implementation validation and independent acceptance below. Check-set changes also invalidate affected acceptance evidence; a real-model check-hash regression is under repair before production activation. The HTTPS Python API is staged; [deployment](../operations/deployment.md) owns final acceptance and cutover status.
+
+## Historical decision and evidence
+
+The remaining sections record the predecessor decision, alternatives and evidence at that time. References to `apps/executor`, D1, control-plane bearer polling and OpenAI Agents SDK apply only to [historical revision b8af77af1bb2](https://github.com/Muluk-m/formlane/tree/b8af77af1bb2). They are not current implementation instructions or evidence that Python production activation passed.
 
 ## Problem
 

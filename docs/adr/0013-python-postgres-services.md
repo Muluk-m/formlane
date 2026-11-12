@@ -1,0 +1,11 @@
+# Python services with PostgreSQL and static Pages
+
+Status: accepted and deployed; release evidence is recorded in [deployment](../operations/deployment.md).
+
+The user chose to replace the Worker/D1 business backend and Node agent runtime with FastAPI, CrewAI and PostgreSQL on the existing GCP VM. Cloudflare Pages will serve only the React application. Python API and durable task execution run as separate non-root processes, sharing PostgreSQL authority for ownership, runs, replayable events, leases, immutable checkpoints and versions. SQLAlchemy and Alembic replace Drizzle for this explicitly selected Python service. A restricted Node compiler remains a local subprocess because generated React/Vite source still needs JavaScript compilation; it never executes generated configuration, plugins or package scripts.
+
+The backend is implemented and verified beside the live stack first. Its staging, test and final production databases are separate. The Pages migration is maintained on its own branch and cannot deploy against an unverified API origin. Data imports preserve IDs, anonymous owners, source snapshots, event cursors, checkpoints and current/parent/published version relationships. Final cutover must fence old writers and drain in-flight runs before taking the authoritative snapshot; a rehearsal snapshot is never silently treated as current production data. Retain the old release and an export as recovery evidence, but do not allow concurrent independent production writes to D1 and PostgreSQL.
+
+CrewAI role delegation does not replace application evidence gates. Completion still requires a current source-bound build, Alex's browser validation, David's independent browser validation and explicit acceptance. PostgreSQL checkpoints must commit before execution advances. Automatic framework checkpoint persistence is not sufficient authority. The CrewAI 1.15.40 provider stream observer uses its pinned argument-chunk hook; upgrades require regression evidence that file deltas precede tool execution, preserve JSON chunk boundaries and never expose raw reasoning.
+
+This decision supersedes the target runtime in ADR-0010 and ADR-0012 after cutover. Those documents and the old deployment remain historical/rollback context until the new release is verified. It does not authorize deleting production data or upgrading cloud billing.

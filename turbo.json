@@ -5,10 +5,20 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"],
       "cache": false,
-      "env": ["BUILD_VERSION", "BUILD_COMMIT", "GITHUB_SHA"]
+      "env": [
+        "BUILD_VERSION",
+        "BUILD_COMMIT",
+        "GITHUB_SHA",
+        "VITE_API_ORIGIN",
+        "VITE_API_PUBLIC_ORIGIN"
+      ]
     },
     "typecheck": { "dependsOn": ["^typecheck"], "outputs": [] },
-    "test": { "cache": false, "env": ["CI", "CHROMIUM_EXECUTABLE_PATH"] },
-    "dev": { "cache": false, "persistent": true }
+    "test": { "cache": false, "env": ["CI"] },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "env": ["VITE_API_ORIGIN", "VITE_API_PUBLIC_ORIGIN"]
+    }
   }
 }

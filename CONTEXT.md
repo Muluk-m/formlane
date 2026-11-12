@@ -1,37 +1,38 @@
 # Product terminology
 
-| Term              | Code / boundary            | Meaning                                                                                                            |
-| ----------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Browser owner     | Anonymous owner identity   | The browser-local identity used to authorize private projects; not a registered user account                       |
-| Project           | `Project` / `projects`     | An idea, its conversation, generated versions, current selection, and optional published link                      |
-| Idea              | `Project.idea`             | The original app request; not the full conversation                                                                |
-| Agent             | SDK Agent / Runner         | Mike manages delegation; Emma, Bob, Alex and David execute scoped specialist work                                  |
-| Initial build     | Durable harness            | Manager decisions and specialist turns execute on GCP and checkpoint separately in D1                              |
-| Follow-up         | Durable revision run       | Revises the current source snapshot with fresh build, browser-validation and review evidence                       |
-| Message           | `ChatMessage` / `messages` | A persisted user, agent, or system entry in the project conversation                                               |
-| Stream            | SSE event subscription     | Observation of D1 run events, replayable by sequence cursor; not execution ownership                               |
-| Candidate         | Draft project              | Unaccepted source files and checks; writing or building them does not create a successful version                  |
-| Run               | D1 `runs`                  | Durable execution with status, ownership fence and persisted 15-minute deadline                                    |
-| Cursor            | D1 `run_events` sequence   | Last observed event sequence used for reconnect replay                                                             |
-| Validation        | Native Playwright          | Isolated sandboxed Chromium checks against the current artifact hash                                               |
-| Review            | David's role-scoped tool   | Explicit acceptance or repair findings independent of implementation                                               |
-| Cancel            | Run/lease fence            | Writes stop immediately; executor aborts on heartbeat rejection; disconnect closes observation only                |
-| Executor          | `apps/executor`            | Node 24 SDK/browser process on the approved GCP VM, polling the Cloudflare API                                     |
-| Lease             | D1 executor authority      | 60-second claim refreshed every 10 seconds; expired work can be reclaimed                                          |
-| Checkpoint        | D1 `run_checkpoints`       | Immutable named result reused after restart; not a provider token-stream snapshot                                  |
-| Version           | `AppVersion` / `versions`  | An immutable source snapshot and its compiled preview, with a project-local number and originating prompt          |
-| Current version   | `currentVersionId`         | The version selected as the project's current editable result                                                      |
-| Viewed version    | Browser workspace state    | The historical version currently inspected, which may differ from current or published                             |
-| Restore           | Current pointer update     | Select a saved version as current; it does not republish the public link                                           |
-| Published version | `publishedVersionId`       | The saved version deliberately exposed through the project's public slug                                           |
-| Public link       | `/p/:slug`                 | Public access to published HTML only, not private chat or project management                                       |
-| Remix             | Project duplication        | A new owned project with independent history and the chosen current or historical source version                   |
-| Preview           | Sandboxed iframe           | Interactive generated HTML isolated from the application owner session                                             |
-| Project template  | `ProjectSource.template`   | The demand-selected Vanilla or React + TypeScript starting point and its fixed dependency manifest                 |
-| Build             | Trusted preview compiler   | Compiles the current source tree into one isolated preview; the source hash binds subsequent validation and review |
-| Provider          | OpenAI-compatible endpoint | Real model execution through OpenAI Agents SDK 0.21; no mock mode                                                  |
-| Skyline           | Shared design system       | The inherited white canvas, sky wash, black actions, semantic statuses, Base UI controls, and Hugeicons            |
+| Term              | Boundary                              | Meaning                                                                                            |
+| ----------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Browser owner     | Anonymous ownership capability        | Existing browser-local `atoms_uid`, sent as `x-owner-id`; not a registered account                 |
+| Project           | `projects`                            | Idea, conversation, source versions, current selection and optional publication                    |
+| Idea              | `Project.idea`                        | Original request; not a requirement to replay over later accepted edits                            |
+| Agent             | Native CrewAI Agent / Crew            | Mike delegates to Emma, Bob, Alex and David through role-scoped tools                              |
+| Initial build     | Durable Python worker                 | Creates a source project from the request and checkpoints completed agent work in PostgreSQL       |
+| Follow-up         | Durable revision run                  | Revises the current immutable source baseline with fresh build, browser and review evidence        |
+| Message           | `messages`                            | Persisted user, agent or system conversation entry                                                 |
+| Run               | `runs`                                | Durable execution with status, ownership fence, lease and persisted 15-minute deadline             |
+| Stream            | Owned SSE subscription                | Replayable observation of persisted events; never execution ownership                              |
+| Cursor            | `run_events` sequence                 | Last observed sequence for reconnect replay                                                        |
+| Candidate         | Worker workspace                      | Unaccepted source and checks; writing or compiling it does not save a successful version           |
+| Validation        | Native Playwright                     | Sandboxed browser checks bound to current source, artifact and check-set evidence                  |
+| Review            | David's scoped tools                  | Independent validation and explicit acceptance or repair findings                                  |
+| Cancel            | Run/lease fence                       | Invalidates producer writes; closing a tab only stops observation                                  |
+| Worker            | `apps/backend/src/formlane/worker.py` | Python process on the approved GCP VM that claims PostgreSQL work and runs CrewAI                  |
+| Lease             | PostgreSQL producer authority         | 60-second claim refreshed every 10 seconds; expired work is reclaimable                            |
+| Checkpoint        | `run_checkpoints`                     | Immutable named result reused after restart; not a provider token-stream snapshot                  |
+| Version           | `versions`                            | Immutable source plus compiled preview, project-local number and originating prompt                |
+| Current version   | `currentVersionId`                    | Saved version used as the editable baseline                                                        |
+| Viewed version    | Browser workspace state               | Historical version being inspected; may differ from current and published                          |
+| Restore           | Current pointer update                | Selects a saved version without publishing it or deleting later history                            |
+| Undo              | Recorded ancestry                     | Selects the current version's generation parent, not the preceding numbered version                |
+| Published version | `publishedVersionId`                  | Saved version explicitly exposed through the project's public slug                                 |
+| Public link       | `/p/:slug`                            | Anonymous published HTML access; never private chat or source management                           |
+| Remix             | Independent project copy              | New owned identities/history with copied ancestry and selected source                              |
+| Preview           | Opaque sandboxed iframe               | Generated HTML isolated from owner credentials and browser storage                                 |
+| Template          | `ProjectSource.template`              | Demand-selected Vanilla or React + TypeScript project with fixed dependencies                      |
+| Compiler          | `apps/compiler`                       | Isolated Node subprocess that compiles virtual source; owns no business routes, database or agents |
+| Provider          | Compatible Chat Completions endpoint  | Real configured model used by native CrewAI; secrets remain server-side                            |
+| Skyline           | Shared design system                  | White canvas, sky wash, black actions, semantic statuses, Base UI and Hugeicons                    |
 
-`idle`, `generating`, and `error` are project execution states. “Published” describes a separate pointer, not an execution state. A project can retain a published or current version while a later generation attempt fails.
+Project execution states are `idle`, `generating` and `error`. Publication is a separate pointer. Run states are queued, running, completed, failed or cancelled; timeout, provider, validation, step-limit and internal failures remain distinct. A later failure preserves current and published versions.
 
-Run states are separate from project state: queued, running, completed, failed or cancelled. Failures distinguish timeout, provider, validation and internal errors. See [ADR-0012](docs/adr/0012-durable-agent-harness.md).
+The production architecture is Python/FastAPI/CrewAI/PostgreSQL with static Pages. [Deployment](docs/operations/deployment.md) owns rollout status, exact migration evidence and recovery boundaries.
