@@ -21,7 +21,13 @@ input {
 }
 
 .landing-bg {
-  background: linear-gradient(to bottom, var(--sky-wash), transparent 260px), var(--background);
+  background:
+    radial-gradient(
+      ellipse 420px 240px at 50% 100px,
+      color-mix(in oklch, var(--sky-wash), transparent 55%),
+      transparent
+    ),
+    var(--background);
 }
 
 .code-sheet {
