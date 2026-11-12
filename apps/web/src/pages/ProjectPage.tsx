@@ -7,6 +7,7 @@ import { slugify } from '@atoms-demo/core/html'
 import type { ProjectSource } from '@atoms-demo/core/project'
 import type { AppVersion, Project } from '@atoms-demo/core/types'
 import { useI18n } from '@atoms-demo/i18n/react'
+import { Badge } from '@atoms-demo/ui/components/badge'
 import { Button } from '@atoms-demo/ui/components/button'
 import { ButtonGroup } from '@atoms-demo/ui/components/button-group'
 import {
@@ -20,6 +21,8 @@ import {
 import { Input } from '@atoms-demo/ui/components/input'
 import { ExternalLink } from '@atoms-demo/ui/components/link'
 import { Spinner } from '@atoms-demo/ui/components/spinner'
+import { Clock01Icon, RefreshIcon, ViewIcon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import {
@@ -89,6 +92,12 @@ export function ProjectPage() {
   const [mobilePanel, setMobilePanel] = useState<'chat' | 'preview'>('chat')
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [expandedVersion, setExpandedVersion] = useState<string | null>(null)
+  const [historyAction, setHistoryAction] = useState<{
+    id: string
+    kind: 'preview' | 'restore'
+  } | null>(null)
+  const [historyError, setHistoryError] = useState<string | null>(null)
   const [viewing, setViewing] = useState<
     (AppVersion & { html: string; source: ProjectSource }) | null
   >(null)
@@ -445,9 +454,13 @@ export function ProjectPage() {
   }
 
   async function openVersion(versionId: string) {
-    const { version } = await client.fetchQuery(versionQuery(id, versionId))
-    setViewing(version)
+    if (versionId === project?.currentVersionId) setViewing(null)
+    else {
+      const { version } = await client.fetchQuery(versionQuery(id, versionId))
+      setViewing(version)
+    }
     setTab('preview')
+    setMobilePanel('preview')
   }
 
   async function restore(versionId: string) {
@@ -457,6 +470,21 @@ export function ProjectPage() {
     setWorkspace(projectWorkspace(result.source))
     setViewing(null)
     await refresh()
+  }
+
+  async function selectHistoryVersion(versionId: string, kind: 'preview' | 'restore') {
+    if (historyAction) return
+    setHistoryAction({ id: versionId, kind })
+    setHistoryError(null)
+    try {
+      if (kind === 'restore') await restore(versionId)
+      else await openVersion(versionId)
+      setHistoryOpen(false)
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : t('atoms.requestError'))
+    } finally {
+      setHistoryAction(null)
+    }
   }
 
   async function publish() {
@@ -729,64 +757,125 @@ export function ProjectPage() {
           />
         </div>
       </div>
-      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+      <Dialog
+        open={historyOpen}
+        onOpenChange={(open) => {
+          setHistoryOpen(open)
+          if (!open) setHistoryError(null)
+        }}
+      >
         <DialogContent
           showCloseButton={false}
-          className="max-h-[85dvh] overflow-y-auto"
+          className="flex max-h-[85dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
           data-testid="version-drawer"
         >
-          <DialogHeader>
-            <DialogTitle>{t('atoms.history')}</DialogTitle>
+          <DialogHeader className="shrink-0 border-b px-5 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <DialogTitle className="flex items-center gap-2">
+                <HugeiconsIcon icon={Clock01Icon} size={18} strokeWidth={1.5} />
+                {t('atoms.historyTitle')}
+              </DialogTitle>
+              <Badge variant="secondary">
+                {t('atoms.versionCount', { count: versions.length })}
+              </Badge>
+            </div>
             <DialogDescription>{t('atoms.historyNote')}</DialogDescription>
           </DialogHeader>
-          <ul className="flex flex-col gap-2">
+          <ul
+            className="min-h-0 overflow-y-auto overscroll-contain divide-y"
+            aria-label={t('atoms.historyTitle')}
+          >
             {versions.length === 0 && (
-              <li className="text-sm text-muted-foreground">{t('atoms.emptyCode')}</li>
+              <li className="px-5 py-10 text-center text-sm text-muted-foreground">
+                {t('atoms.historyEmpty')}
+              </li>
             )}
             {[...versions].reverse().map((version) => (
-              <li key={version.id} className="rounded-lg border p-3">
-                <Button
-                  variant="ghost"
-                  className="h-auto w-full flex-col items-start whitespace-normal text-left"
-                  onClick={() =>
-                    void act(async () => {
-                      await openVersion(version.id)
-                      setHistoryOpen(false)
-                    })
-                  }
-                >
-                  <span className="font-semibold">
+              <li key={version.id} className="space-y-3 px-5 py-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold">
                     {t('atoms.versionLabel', { number: version.number })}
-                    {version.id === project.currentVersionId && (
-                      <span className="ml-2 text-xs text-link">{t('atoms.current')}</span>
-                    )}
                   </span>
-                  <span className="text-sm text-muted-foreground">{version.prompt}</span>
-                  <span className="text-xs text-muted-foreground">
+                  {version.id === project.currentVersionId && (
+                    <Badge variant="secondary">{t('atoms.current')}</Badge>
+                  )}
+                  <time
+                    className="ml-auto text-xs text-muted-foreground"
+                    dateTime={new Date(version.createdAt).toISOString()}
+                    title={new Date(version.createdAt).toLocaleString(locale, {
+                      timeZoneName: 'short',
+                    })}
+                  >
                     {relativeTime(version.createdAt, locale)}
-                  </span>
-                </Button>
-                {version.id !== project.currentVersionId && (
-                  <Button
-                    variant="outline"
-                    className="mt-2"
-                    disabled={running || busy}
-                    data-testid={`restore-${version.number}`}
-                    onClick={() =>
-                      void act(async () => {
-                        await restore(version.id)
-                        setHistoryOpen(false)
-                      })
+                  </time>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  <p
+                    id={`version-prompt-${version.id}`}
+                    className={
+                      expandedVersion === version.id ? 'break-words' : 'line-clamp-2 break-words'
                     }
                   >
-                    {t('atoms.restore')}
+                    {version.prompt}
+                  </p>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto px-0 py-1 text-xs text-link"
+                    aria-expanded={expandedVersion === version.id}
+                    aria-controls={`version-prompt-${version.id}`}
+                    onClick={() =>
+                      setExpandedVersion(expandedVersion === version.id ? null : version.id)
+                    }
+                  >
+                    {t(
+                      expandedVersion === version.id
+                        ? 'atoms.historyCollapse'
+                        : 'atoms.historyExpand',
+                    )}
                   </Button>
-                )}
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={Boolean(historyAction)}
+                    data-testid={`preview-${version.number}`}
+                    onClick={() => void selectHistoryVersion(version.id, 'preview')}
+                  >
+                    {historyAction?.id === version.id && historyAction.kind === 'preview' ? (
+                      <Spinner />
+                    ) : (
+                      <HugeiconsIcon icon={ViewIcon} size={16} strokeWidth={1.5} />
+                    )}
+                    {t('atoms.preview')}
+                  </Button>
+                  {version.id !== project.currentVersionId && (
+                    <Button
+                      size="sm"
+                      disabled={running || busy || Boolean(historyAction)}
+                      data-testid={`restore-${version.number}`}
+                      onClick={() => void selectHistoryVersion(version.id, 'restore')}
+                    >
+                      {historyAction?.id === version.id && historyAction.kind === 'restore' ? (
+                        <Spinner />
+                      ) : (
+                        <HugeiconsIcon icon={RefreshIcon} size={16} strokeWidth={1.5} />
+                      )}
+                      {t('atoms.restore')}
+                    </Button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setHistoryOpen(false)}>
+          {historyError && (
+            <p role="alert" className="shrink-0 border-t px-5 py-3 text-sm text-destructive">
+              {historyError}
+            </p>
+          )}
+          <DialogFooter className="m-0 shrink-0 flex-row justify-end bg-background px-5 py-3">
+            <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(false)}>
               {t('atoms.close')}
             </Button>
           </DialogFooter>
