@@ -4,6 +4,8 @@ Read before changing a related area. Entries distinguish observed migration mist
 
 ## This migration
 
+- **2026-11-12 — A visual-only follow-up reverted an accepted feature.** The saved source used +2, but the manager repeated +1 from the original creation prompt and both implementation and QA followed it. On follow-ups, omit that obsolete prompt from active context, derive preserved behavior from the saved source, and give independent QA read access to the immutable baseline.
+
 - **2026-11-12 — Independent review accepted a corrected check set while completion lacked implementation evidence.** Manager context hid the implementation-validation stamp, so it repeatedly chose completion after David accepted. Expose the same unmet completion requirements to every role. Obtain Alex's validation on the unchanged build and then a fresh independent review; do not weaken the acceptance gate or rewrite correct application code to match an incorrect expectation.
 - **2026-11-12 — A failed assertion starved subsequent checks.** Sequential polling shared one five-second deadline, leaving later selectors only 1 ms and producing misleading missing-element errors. Poll independent assertions together under the bounded deadline and preserve each observed result. Boolean `disabled` is presence-based; use `:disabled`/`:enabled` selector counts, not a literal `"false"` attribute expectation.
 
