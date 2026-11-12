@@ -68,7 +68,7 @@ input {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--background);
+  background: var(--card);
   box-shadow: var(--shadow-card);
 }
 .device.desktop {
@@ -85,12 +85,13 @@ input {
   min-height: 0;
   width: 100%;
   border: 0;
-  background: var(--background);
+  background: var(--card);
 }
 .splitter {
   width: 0.5rem;
   cursor: col-resize;
   background: transparent;
+  touch-action: none;
   flex: none;
 }
 .splitter:hover,

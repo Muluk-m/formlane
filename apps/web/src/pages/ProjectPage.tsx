@@ -42,12 +42,14 @@ import {
 } from '@atoms-demo/ui/components/dropdown-menu'
 import { Input } from '@atoms-demo/ui/components/input'
 import { ExternalLink } from '@atoms-demo/ui/components/link'
+import { SidebarTrigger } from '@atoms-demo/ui/components/sidebar'
 import { Spinner } from '@atoms-demo/ui/components/spinner'
 import {
   Alert02Icon,
   ArrowDown01Icon,
   Clock01Icon,
   MoreHorizontalIcon,
+  SidebarLeftIcon,
   UndoIcon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -125,6 +127,7 @@ export function ProjectPage() {
   const [mobilePanel, setMobilePanel] = useState<'chat' | 'preview'>('chat')
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [chatHidden, setChatHidden] = useState(false)
   const [restoreTarget, setRestoreTarget] = useState<AppVersion | null>(null)
   const [historyAction, setHistoryAction] = useState<{
     id: string
@@ -136,7 +139,11 @@ export function ProjectPage() {
   >(null)
   const [share, setShare] = useState<{ slug: string; url: string; versionId: string } | null>(null)
   const [copied, setCopied] = useState(false)
-  const [split, setSplit] = useState(() => Number(localStorage.getItem('atoms-split')) || 420)
+  const [split, setSplit] = useState(
+    () =>
+      Number(localStorage.getItem('atoms-split')) ||
+      Math.min(440, Math.max(320, Math.round(window.innerWidth * 0.29))),
+  )
   const [wide, setWide] = useState(() => window.matchMedia('(min-width: 860px)').matches)
   const startPending = useRef(false)
   const undoPending = useRef(false)
@@ -657,24 +664,28 @@ export function ProjectPage() {
   const currentVersion = versions.find((version) => version.id === project.currentVersionId)
   const undoVersion = versions.find((version) => version.id === currentVersion?.parentVersionId)
   return (
-    <div className="flex h-[calc(100dvh-3rem)] min-h-0 flex-col bg-background">
-      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b px-4 py-3">
+    <div className="flex h-dvh min-h-0 flex-col bg-background">
+      <header className="flex min-h-16 shrink-0 items-center gap-2 px-3 py-3 sm:gap-3 sm:px-5">
+        <SidebarTrigger />
+        <span className="hidden text-sm font-semibold lg:inline">{t('brand.name')}</span>
+        <span className="hidden h-4 border-l lg:block" aria-hidden />
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-semibold" title={project.title}>
             {project.title}
           </h1>
-          <p className="truncate text-xs text-muted-foreground">
+          <p className="hidden truncate text-xs text-muted-foreground sm:block">
             {t('atoms.versionCount', { count: versions.length })}
             {project.publishedVersionId &&
               ` · ${t('atoms.versionReview.publishedVersion', { number: versions.find((version) => version.id === project.publishedVersionId)?.number ?? '—' })}`}
           </p>
         </div>
         {(busy || starting || stopping) && <Spinner />}
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           <Button
             variant="ghost"
-            size="sm"
+            size="icon-sm"
             data-testid="undo-version"
+            aria-label={t('atoms.versionReview.undo')}
             disabled={
               !undoVersion ||
               busy ||
@@ -695,21 +706,24 @@ export function ProjectPage() {
             ) : (
               <HugeiconsIcon icon={UndoIcon} size={16} strokeWidth={1.5} />
             )}
-            {t('atoms.versionReview.undo')}
+            <span className="sr-only">{t('atoms.versionReview.undo')}</span>
           </Button>
           <Button
             ref={historyButton}
             variant={historyOpen ? 'secondary' : 'ghost'}
             data-testid="history-button"
-            size="sm"
+            size="icon-sm"
+            aria-label={t('atoms.history')}
+            title={t('atoms.history')}
             aria-pressed={historyOpen}
             onClick={() => {
               setHistoryOpen(!historyOpen)
+              setChatHidden(false)
               setMobilePanel('chat')
             }}
           >
             <HugeiconsIcon icon={Clock01Icon} size={16} strokeWidth={1.5} />
-            {t('atoms.history')}
+            <span className="sr-only">{t('atoms.history')}</span>
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -855,11 +869,15 @@ export function ProjectPage() {
           </Button>
         </ButtonGroup>
       )}
-      <div className="flex min-h-0 flex-1" style={{ flexDirection: wide ? 'row' : 'column' }}>
+      <div
+        className="flex min-h-0 flex-1 px-2 pb-3 sm:pr-4 sm:pb-4"
+        style={{ flexDirection: wide ? 'row' : 'column' }}
+      >
         <div
+          id="project-conversation"
           className="min-h-0 min-w-0 shrink-0"
           style={wide ? { width: split, maxWidth: '60%' } : { flex: 1 }}
-          hidden={!wide && mobilePanel !== 'chat'}
+          hidden={wide ? chatHidden : mobilePanel !== 'chat'}
         >
           <div className="h-full" hidden={!historyOpen}>
             <VersionHistory
@@ -894,7 +912,7 @@ export function ProjectPage() {
             />
           </div>
         </div>
-        {wide && (
+        {wide && !chatHidden && (
           <Button
             variant="ghost"
             className="splitter h-auto rounded-none p-0"
@@ -928,6 +946,22 @@ export function ProjectPage() {
             tab={tab}
             device={device}
             running={running}
+            toolbarAction={
+              wide ? (
+                <Button
+                  variant={chatHidden ? 'secondary' : 'ghost'}
+                  size="icon-sm"
+                  data-testid="toggle-chat"
+                  aria-label={t(chatHidden ? 'atoms.showChat' : 'atoms.hideChat')}
+                  title={t(chatHidden ? 'atoms.showChat' : 'atoms.hideChat')}
+                  aria-expanded={!chatHidden}
+                  aria-controls="project-conversation"
+                  onClick={() => setChatHidden((hidden) => !hidden)}
+                >
+                  <HugeiconsIcon icon={SidebarLeftIcon} size={16} strokeWidth={1.5} />
+                </Button>
+              ) : undefined
+            }
             phaseLabel={
               running
                 ? Object.values(activeAgents)
@@ -1000,6 +1034,7 @@ export function ProjectPage() {
                   <DropdownMenuItem
                     onClick={() => {
                       setHistoryOpen(true)
+                      setChatHidden(false)
                       setMobilePanel('chat')
                     }}
                   >

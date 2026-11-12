@@ -68,6 +68,31 @@
   --radius: 0.5rem;
 }
 
+/* Approved project-only light split; :root also themes portalled controls. */
+:root:has([data-workspace="project"]) {
+  --background: #f7f7f9;
+  --foreground: #27282c;
+  --primary: #7661ad;
+  --primary-foreground: #ffffff;
+  --secondary: #ebeaf0;
+  --secondary-foreground: #27282c;
+  --muted: #ebeaf0;
+  --muted-foreground: #6e6e7b;
+  --accent: #eeebf6;
+  --accent-foreground: #27282c;
+  --border: #e5e5ec;
+  --input: #dedee6;
+  --ring: #7661ad;
+  --surface-sunken: #f0f1f5;
+  --link: #6b579e;
+  --sidebar: #f7f7f9;
+  --sidebar-foreground: #27282c;
+  --sidebar-accent: #eeebf6;
+  --sidebar-accent-foreground: #6b579e;
+  --sidebar-border: #e5e5ec;
+  --sidebar-ring: #7661ad;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
