@@ -32,7 +32,7 @@ export function ChatPane({
   running,
   disabled,
   stopping,
-  runStatus,
+  run,
   activeAgents,
   activity,
   versions,
@@ -44,7 +44,7 @@ export function ChatPane({
   running: boolean
   disabled: boolean
   stopping: boolean
-  runStatus: HarnessRun['status'] | null
+  run: Pick<HarnessRun, 'id' | 'status'> | null
   activeAgents: Record<string, string>
   activity: HarnessEvent[]
   versions: AppVersion[]
@@ -54,8 +54,8 @@ export function ChatPane({
 }) {
   const { t } = useI18n()
   const converted = useMemo(
-    () => groupExecutionMessages(toAssistantMessages(messages, activity, runStatus, versions)),
-    [messages, activity, runStatus, versions],
+    () => groupExecutionMessages(toAssistantMessages(messages, activity, run, versions)),
+    [messages, activity, run, versions],
   )
   const schema = z
     .string()
@@ -115,10 +115,10 @@ export function ChatPane({
           ) : null
         }}
         status={
-          runStatus && (
+          run && (
             <AssistantRunStatus
-              label={stopping ? t('atoms.stopping') : t(`atoms.runStatus.${runStatus}`)}
-              state={runStatus}
+              label={stopping ? t('atoms.stopping') : t(`atoms.runStatus.${run.status}`)}
+              state={run.status}
               agents={agents}
               note={running ? t('atoms.durableRun') : undefined}
             />

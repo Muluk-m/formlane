@@ -105,6 +105,11 @@ export function ProjectPage() {
   const [source, setSource] = useState<ProjectSource | null>(null)
   const [workspace, setWorkspace] = useState(() => projectWorkspace(null))
   const [banner, setBanner] = useState<string | null>(null)
+  const [failedAction, setFailedAction] = useState<{
+    action: () => Promise<unknown>
+    label: string
+  } | null>(null)
+  const [actionPending, setActionPending] = useState(false)
   const [run, setRun] = useState<HarnessRun | null>(null)
   const [starting, setStarting] = useState(false)
   const [loadingRun, setLoadingRun] = useState(true)
@@ -200,6 +205,7 @@ export function ProjectPage() {
     retryRequest.current = content
     setStarting(true)
     setBanner(null)
+    setFailedAction(null)
     selectCurrentVersion()
     try {
       const receipt = await startRun(id, !project?.currentVersionId, content)
@@ -300,6 +306,7 @@ export function ProjectPage() {
     } else if (event.type === 'message_start') {
       const message: ConversationMessage = {
         id: String(data.id),
+        runId: event.runId,
         role: data.role === 'system' ? 'system' : data.role === 'user' ? 'user' : 'agent',
         agent: typeof data.agent === 'string' ? data.agent : null,
         content: typeof data.content === 'string' ? data.content : '',
@@ -501,6 +508,8 @@ export function ProjectPage() {
   }
 
   async function restore(versionId: string) {
+    setBanner(null)
+    setFailedAction(null)
     historySelection.current++
     const result = await restoreMutation.mutateAsync({ id, versionId })
     setProject(result.project)
@@ -585,12 +594,17 @@ export function ProjectPage() {
     await navigate({ to: '/project/$id', params: { id: copy.id } })
   }
 
-  async function act(action: () => Promise<unknown>) {
+  async function act(action: () => Promise<unknown>, label: string) {
     setBanner(null)
+    setFailedAction(null)
+    setActionPending(true)
     try {
       await action()
     } catch (error) {
+      setFailedAction({ action, label })
       setBanner(error instanceof Error ? error.message : t('atoms.requestError'))
+    } finally {
+      setActionPending(false)
     }
   }
 
@@ -631,6 +645,7 @@ export function ProjectPage() {
     starting ||
     loadingRun ||
     reconciling ||
+    actionPending ||
     historyAction?.kind === 'undo' ||
     restoreMutation.isPending ||
     publishMutation.isPending ||
@@ -672,7 +687,7 @@ export function ProjectPage() {
                 ? t('atoms.versionReview.undoToVersion', { number: undoVersion.number })
                 : t('atoms.versionReview.nothingToUndo')
             }
-            onClick={() => void act(undoVersionChange)}
+            onClick={() => void act(undoVersionChange, t('atoms.versionReview.undo'))}
           >
             {historyAction?.kind === 'undo' ? (
               <Spinner />
@@ -712,7 +727,7 @@ export function ProjectPage() {
               <DropdownMenuItem
                 data-testid="remix-button"
                 disabled={busy || running}
-                onClick={() => void act(remix)}
+                onClick={() => void act(remix, t('atoms.remix'))}
               >
                 {t('atoms.remix')}
               </DropdownMenuItem>
@@ -720,12 +735,14 @@ export function ProjectPage() {
                 data-testid="download-button"
                 disabled={!project.currentVersionId}
                 onClick={() =>
-                  void act(() =>
-                    downloadProject(
-                      id,
-                      `${slugify(project.title)}-v${viewing?.number ?? versions.find((version) => version.id === project.currentVersionId)?.number ?? 1}.zip`,
-                      viewing?.id,
-                    ),
+                  void act(
+                    () =>
+                      downloadProject(
+                        id,
+                        `${slugify(project.title)}-v${viewing?.number ?? versions.find((version) => version.id === project.currentVersionId)?.number ?? 1}.zip`,
+                        viewing?.id,
+                      ),
+                    t('atoms.download'),
                   )
                 }
               >
@@ -737,7 +754,7 @@ export function ProjectPage() {
             size="sm"
             data-testid="publish-button"
             disabled={!project.currentVersionId || running || busy}
-            onClick={() => void act(publish)}
+            onClick={() => void act(publish, publishLabel)}
           >
             {publishLabel}
           </Button>
@@ -761,15 +778,17 @@ export function ProjectPage() {
             />
             <div className="min-w-0 space-y-1">
               <p>
-                {connection === 'reconnecting'
-                  ? t('atoms.reconnecting')
-                  : run?.status === 'failed'
-                    ? t(`atoms.runError.${run.errorCode ?? 'internal'}`)
-                    : run?.status === 'cancelled'
-                      ? t('atoms.runCancelled')
-                      : banner || projectError}
+                {failedAction
+                  ? banner
+                  : connection === 'reconnecting'
+                    ? t('atoms.reconnecting')
+                    : run?.status === 'failed'
+                      ? t(`atoms.runError.${run.errorCode ?? 'internal'}`)
+                      : run?.status === 'cancelled'
+                        ? t('atoms.runCancelled')
+                        : banner || projectError}
               </p>
-              {run?.status === 'failed' && (run.error || banner) && (
+              {!failedAction && run?.status === 'failed' && (run.error || banner) && (
                 <Collapsible className="text-xs text-muted-foreground">
                   <CollapsibleTrigger
                     render={
@@ -788,6 +807,15 @@ export function ProjectPage() {
           {connection === 'error' ? (
             <Button variant="outline" onClick={() => void reconnectRun()}>
               {t('atoms.reconnect')}
+            </Button>
+          ) : failedAction ? (
+            <Button
+              variant="outline"
+              disabled={busy || running}
+              onClick={() => void act(failedAction.action, failedAction.label)}
+              data-testid="retry-action-button"
+            >
+              {failedAction.label}
             </Button>
           ) : (
             !running &&
@@ -853,7 +881,7 @@ export function ProjectPage() {
               running={running}
               disabled={busy || connection === 'error'}
               stopping={stopping}
-              runStatus={run?.status ?? null}
+              run={run}
               activeAgents={activeAgents}
               activity={activity}
               onSend={(text) => void begin(text)}
@@ -1060,7 +1088,7 @@ export function ProjectPage() {
                     await navigator.clipboard.writeText(share.url)
                     setCopied(true)
                   }
-                })
+                }, t('atoms.copyLink'))
               }
             >
               {copied ? t('atoms.copied') : t('atoms.copyLink')}
@@ -1074,7 +1102,11 @@ export function ProjectPage() {
                 {t('atoms.preview')}
               </Button>
             )}
-            <Button variant="outline" disabled={busy} onClick={() => void act(unpublish)}>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => void act(unpublish, t('atoms.unpublish'))}
+            >
               {t('atoms.unpublish')}
             </Button>
             <Button variant="ghost" onClick={() => setShare(null)}>

@@ -5,6 +5,7 @@ import type { AppVersion, ChatMessage } from '@atoms-demo/core/types'
 export type ConversationMessage = Omit<ChatMessage, 'agent'> & {
   agent: string | null
   pending?: boolean
+  runId?: Run['id']
 }
 
 type Activity = {
@@ -187,7 +188,7 @@ function messageContent(message: ConversationMessage): ThreadMessageLike['conten
 export function toAssistantMessages(
   messages: readonly ConversationMessage[],
   activity: readonly RunEvent[],
-  runStatus: Run['status'] | null,
+  observedRun: Pick<Run, 'id' | 'status'> | null,
   versions: readonly AppVersion[] = [],
 ): ThreadMessageLike[] {
   const converted: ThreadMessageLike[] = messages.map((message) => {
@@ -224,7 +225,13 @@ export function toAssistantMessages(
       content: messageContent(message),
       createdAt: new Date(message.createdAt),
       ...(message.role === 'agent'
-        ? { status: message.pending ? unfinishedStatus(runStatus) : complete }
+        ? {
+            status: message.pending
+              ? unfinishedStatus(
+                  observedRun && message.runId === observedRun.id ? observedRun.status : null,
+                )
+              : complete,
+          }
         : {}),
       metadata: {
         custom: {
@@ -235,20 +242,14 @@ export function toAssistantMessages(
     }
   })
 
-  // The supplied status belongs to the currently observed run. Older runs can
-  // have unfinished attempts, but must not inherit a later run's running state.
-  const latestEvent = activity.reduce<RunEvent | undefined>(
-    (latest, event) =>
-      !latest ||
-      event.createdAt > latest.createdAt ||
-      (event.createdAt === latest.createdAt && event.sequence >= latest.sequence)
-        ? event
-        : latest,
-    undefined,
-  )
+  // A replacement run may be observed before any of its events arrive. Only
+  // explicit identity can connect unfinished activity to that run's lifecycle.
   for (const item of pairActivity(activity)) {
     converted.push(
-      activityMessage(item, item.start.runId === latestEvent?.runId ? runStatus : null),
+      activityMessage(
+        item,
+        observedRun && item.start.runId === observedRun.id ? observedRun.status : null,
+      ),
     )
   }
 
