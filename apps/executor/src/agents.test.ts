@@ -308,6 +308,56 @@ it('preserves follow-up source and rejects resets, manifest changes, required-fi
   )
 })
 
+it('keeps the saved baseline available to review after working files change or disappear', async () => {
+  const previous = createProjectSource('vanilla')
+  previous.files['src/feature.js'] = 'export const increment = 2'
+  const original = structuredClone(previous)
+  const run = harness(
+    [
+      dispatch('alex'),
+      call('read_workspace'),
+      call('write_file', { path: 'src/feature.js', content: 'export const increment = 1' }),
+      call('delete_file', { path: 'src/feature.js' }),
+      call('set_acceptance_checks', { checks }),
+      call('build_project'),
+      call('validate_preview'),
+      dispatch('david'),
+      call('read_previous_file', { path: 'src/feature.js' }),
+      call('read_file', { path: 'src/feature.js' }),
+      call('read_previous_file', { path: 'src/missing.js' }),
+      call('validate_preview'),
+      call('record_review', {
+        accepted: false,
+        findings: 'The existing increment behavior was removed.',
+      }),
+      dispatch('alex'),
+      call('write_file', { path: 'src/feature.js', content: original.files['src/feature.js'] }),
+      call('build_project'),
+      call('validate_preview'),
+      ...review(),
+    ],
+    previous,
+  )
+  const result = await run.run()
+  expect(result.source.files['src/feature.js']).toBe(original.files['src/feature.js'])
+  expect(previous).toEqual(original)
+  expect(JSON.stringify(run.modelInputs)).toContain('export const increment = 2')
+  expect(JSON.stringify(run.modelInputs)).toContain('File does not exist: src/feature.js')
+  expect(JSON.stringify(run.modelInputs)).toContain(
+    'File does not exist in the saved baseline: src/missing.js',
+  )
+  expect(outputs(run.events, 'record_review')).toMatchObject([
+    { accepted: false },
+    { accepted: true },
+  ])
+  expect(
+    run.managerInputs.every(
+      (input) => input !== null && typeof input === 'object' && !Object.hasOwn(input, 'idea'),
+    ),
+  ).toBe(true)
+  expect(outputs(run.events, 'read_workspace')[0]).not.toHaveProperty('originalIdea')
+})
+
 it('returns actual build errors to the model and emits evidence before a repaired build is accepted', async () => {
   execution.compile.mockRejectedValueOnce(new Error('src/App.tsx: unresolved ./missing'))
   const run = harness([
