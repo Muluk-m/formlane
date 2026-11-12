@@ -132,7 +132,7 @@ function AssistantMessage({
     return (
       <MessagePrimitive.Root className="flex flex-col items-end gap-1.5" data-testid="user-message">
         <span className="text-xs font-medium text-muted-foreground">{t('ui.assistant.you')}</span>
-        <div className="max-w-[92%] rounded-2xl rounded-tr-sm bg-secondary px-4 py-3 text-secondary-foreground">
+        <div className="max-w-[92%] rounded-2xl rounded-br-sm bg-secondary px-4 py-3 text-secondary-foreground">
           <MessagePrimitive.Parts components={messageParts} />
         </div>
       </MessagePrimitive.Root>
@@ -141,21 +141,21 @@ function AssistantMessage({
   if (custom.kind === 'execution') {
     return (
       <MessagePrimitive.Root className="min-w-0" data-testid="execution-message">
-        <Collapsible className="min-w-0 rounded-xl border border-border bg-surface-sunken/30">
-          <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left outline-none hover:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-ring">
+        <Collapsible className="min-w-0">
+          <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded-lg py-2 text-left text-muted-foreground outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring">
             <AssistantExecutionSummary />
-            <span className="text-xs tabular-nums text-muted-foreground">
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
               {t('ui.assistant.steps', { count: stepCount })}
             </span>
             <HugeiconsIcon
               icon={ArrowDown02Icon}
               strokeWidth={1.5}
               aria-hidden
-              className="size-3.5 text-muted-foreground transition-transform group-aria-expanded:rotate-180 motion-reduce:transition-none"
+              className="size-3.5 shrink-0 text-muted-foreground transition-transform group-aria-expanded:rotate-180 motion-reduce:transition-none"
             />
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <div className="mx-3 mb-3 border-l border-border pl-2" data-testid="execution-steps">
+            <div className="mb-3 ml-2 border-l border-border pl-3" data-testid="execution-steps">
               <MessagePrimitive.Parts components={messageParts} />
             </div>
           </CollapsibleContent>
@@ -165,9 +165,9 @@ function AssistantMessage({
   }
   return (
     <MessagePrimitive.Root className="min-w-0 space-y-3" data-testid="assistant-message">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span
-          className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-sunken text-foreground"
+          className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-foreground"
           aria-hidden
         >
           <HugeiconsIcon icon={User02Icon} strokeWidth={1.5} className="size-4" />
@@ -213,7 +213,7 @@ export function AssistantRunStatus({
   const tone = state === 'completed' ? 'complete' : state === 'queued' ? 'waiting' : state
   return (
     <div
-      className="space-y-2 border-b border-border px-5 py-3"
+      className="flex flex-wrap items-center gap-x-3 gap-y-2 px-6 py-3"
       role="status"
       aria-live="polite"
       data-testid="run-status"
@@ -223,11 +223,11 @@ export function AssistantRunStatus({
         <span>{label}</span>
       </div>
       {agents.length > 0 && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           {agents.map((agent) => (
             <span
               key={agent.id}
-              className="inline-flex items-center gap-1.5 rounded-full bg-info-bg px-2 py-1 text-xs text-info"
+              className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2 py-1 text-xs text-secondary-foreground"
               data-testid="agent-status"
             >
               <span className="size-1.5 rounded-full bg-current" aria-hidden />
@@ -237,7 +237,7 @@ export function AssistantRunStatus({
           ))}
         </div>
       )}
-      {note && <p className="text-xs leading-5 text-muted-foreground">{note}</p>}
+      {note && <p className="basis-full text-xs leading-5 text-muted-foreground">{note}</p>}
     </div>
   )
 }
@@ -254,7 +254,7 @@ export function AssistantSavedVersion({
   const { t } = useI18n()
   return (
     <section
-      className="rounded-xl border border-border bg-card p-3 shadow-card"
+      className="rounded-2xl border border-border bg-card p-4 shadow-card"
       aria-label={t('atoms.savedVersion', { number })}
       data-testid="saved-result"
     >
@@ -302,13 +302,11 @@ export function AssistantComposer({
         ? t(mode === 'idea' ? 'atoms.ideaRequired' : 'atoms.messageRequired')
         : null
   return (
-    <div
-      className={cn('shrink-0 bg-card', mode === 'conversation' && 'border-t border-border p-3')}
-    >
+    <div className={cn('shrink-0', mode === 'idea' ? 'bg-card' : 'px-6 pb-6 pt-3')}>
       <ComposerPrimitive.Root
         className={cn(
-          'rounded-2xl border border-input bg-background shadow-card transition-shadow focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/10',
-          mode === 'idea' ? 'p-4 sm:p-5' : 'p-3',
+          'rounded-2xl border border-input shadow-card transition-shadow focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/10',
+          mode === 'idea' ? 'bg-background p-4 sm:p-5' : 'bg-card p-3',
         )}
         data-testid={mode === 'idea' ? 'idea-composer' : 'chat-composer'}
         onSubmit={(event) => {
@@ -402,12 +400,12 @@ export function AssistantThread({
   const { t } = useI18n()
   return (
     <ThreadPrimitive.Root
-      className="flex h-full min-h-0 flex-col bg-card"
+      className="flex h-full min-h-0 flex-col bg-transparent"
       aria-label={t('atoms.chat')}
     >
       {status}
       <ThreadPrimitive.Viewport
-        className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6"
+        className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-6"
         autoScroll
         data-testid="chat-log"
       >
@@ -427,7 +425,7 @@ export function AssistantThread({
             </p>
           </div>
         </AuiIf>
-        <div className="flex min-w-0 flex-col gap-5" data-testid="run-activity">
+        <div className="flex min-w-0 flex-col gap-6" data-testid="run-activity">
           <ThreadPrimitive.Messages>
             {() => (
               <AssistantMessage
