@@ -1,10 +1,11 @@
 import type { MessageStatus, ThreadMessageLike } from '@assistant-ui/react'
 import type { Run, RunEvent } from '@atoms-demo/contracts'
-import type { ChatMessage } from '@atoms-demo/core/types'
+import type { AppVersion, ChatMessage } from '@atoms-demo/core/types'
 
 export type ConversationMessage = Omit<ChatMessage, 'agent'> & {
   agent: string | null
   pending?: boolean
+  runId?: Run['id']
 }
 
 type Activity = {
@@ -187,7 +188,8 @@ function messageContent(message: ConversationMessage): ThreadMessageLike['conten
 export function toAssistantMessages(
   messages: readonly ConversationMessage[],
   activity: readonly RunEvent[],
-  runStatus: Run['status'] | null,
+  observedRun: Pick<Run, 'id' | 'status'> | null,
+  versions: readonly AppVersion[] = [],
 ): ThreadMessageLike[] {
   const converted: ThreadMessageLike[] = messages.map((message) => {
     const terminal =
@@ -223,7 +225,13 @@ export function toAssistantMessages(
       content: messageContent(message),
       createdAt: new Date(message.createdAt),
       ...(message.role === 'agent'
-        ? { status: message.pending ? unfinishedStatus(runStatus) : complete }
+        ? {
+            status: message.pending
+              ? unfinishedStatus(
+                  observedRun && message.runId === observedRun.id ? observedRun.status : null,
+                )
+              : complete,
+          }
         : {}),
       metadata: {
         custom: {
@@ -234,20 +242,14 @@ export function toAssistantMessages(
     }
   })
 
-  // The supplied status belongs to the currently observed run. Older runs can
-  // have unfinished attempts, but must not inherit a later run's running state.
-  const latestEvent = activity.reduce<RunEvent | undefined>(
-    (latest, event) =>
-      !latest ||
-      event.createdAt > latest.createdAt ||
-      (event.createdAt === latest.createdAt && event.sequence >= latest.sequence)
-        ? event
-        : latest,
-    undefined,
-  )
+  // A replacement run may be observed before any of its events arrive. Only
+  // explicit identity can connect unfinished activity to that run's lifecycle.
   for (const item of pairActivity(activity)) {
     converted.push(
-      activityMessage(item, item.start.runId === latestEvent?.runId ? runStatus : null),
+      activityMessage(
+        item,
+        observedRun && item.start.runId === observedRun.id ? observedRun.status : null,
+      ),
     )
   }
 
@@ -274,6 +276,17 @@ export function toAssistantMessages(
         runId: first.runId,
         custom: { kind: 'reasoning', agent: first.data.agent },
       },
+    })
+  }
+
+  for (const version of versions) {
+    converted.push({
+      id: `version:${version.id}`,
+      role: 'assistant',
+      createdAt: new Date(version.createdAt),
+      status: complete,
+      metadata: { custom: { kind: 'saved-version', versionId: version.id } },
+      content: [{ type: 'data', name: 'saved-version', data: { id: version.id } }],
     })
   }
 

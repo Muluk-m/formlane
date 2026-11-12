@@ -33,7 +33,7 @@ it('deduplicates replay and pairs repeated tool IDs in durable sequence order', 
   const messages = toAssistantMessages(
     [],
     [secondEnd, firstStart, firstEnd, secondStart, firstStart, secondEnd],
-    'completed',
+    { id: firstRun, status: 'completed' },
   )
 
   expect(messages).toHaveLength(2)
@@ -61,7 +61,7 @@ it('leaves interrupted attempts unfinished and never pairs events across runs', 
       event(3, 'tool_end', { ...toolData, output: { revision: 2 } }),
       event(1, 'tool_end', { ...toolData, output: { revision: 3 } }, secondRun, 400),
     ],
-    'completed',
+    { id: secondRun, status: 'completed' },
   )
 
   expect(messages).toHaveLength(3)
@@ -96,12 +96,13 @@ it.each(lifecycleCases)(
       content: 'Partial response',
       createdAt: 50,
       pending: true,
+      runId: firstRun,
     }
     const saved: ConversationMessage = { ...pending, id: 'saved-message', pending: false }
     const messages = toAssistantMessages(
       [pending, saved],
       [event(1, 'tool_start', toolData)],
-      runStatus,
+      runStatus === null ? null : { id: firstRun, status: runStatus },
     )
 
     expect(messages[0]).toMatchObject({
@@ -132,7 +133,7 @@ it('keeps a failed validation result failed even if the run later completes', ()
       validation,
       event(3, 'tool_end', { ...validationTool, output: report }),
     ],
-    'completed',
+    { id: firstRun, status: 'completed' },
   )
 
   expect(tool(messages[0])).toMatchObject({ result: report, isError: true })
@@ -155,7 +156,7 @@ it('pairs agent retries without inventing identity or completion for repair noti
       event(3, 'repair', repair),
       event(4, 'agent_end', agentData),
     ],
-    'running',
+    { id: firstRun, status: 'running' },
   )
 
   expect(messages).toHaveLength(3)
@@ -187,7 +188,7 @@ it('discloses complete structured agent output without rewriting user text or pa
       { ...report, id: 'partial', content: '{"accepted":' },
     ],
     [],
-    'completed',
+    { id: firstRun, status: 'completed' },
   )
   expect(output[0]?.content).toEqual([
     {
@@ -209,7 +210,7 @@ it('groups execution without promoting an interrupted attempt to a later success
       event(2, 'tool_start', toolData),
       event(3, 'tool_end', { ...toolData, output: { revision: 2 } }),
     ],
-    'completed',
+    { id: firstRun, status: 'completed' },
   )
   const grouped = groupExecutionMessages(converted)
   expect(grouped).toHaveLength(1)
@@ -242,7 +243,7 @@ it('keeps user turns and separate runs outside a shared execution group', () => 
         event(2, 'tool_end', { ...toolData, output: { revision: 1 } }),
         event(1, 'tool_start', toolData, secondRun, 300),
       ],
-      'cancelled',
+      { id: secondRun, status: 'cancelled' },
     ),
   )
   expect(grouped.map((message) => message.role)).toEqual(['assistant', 'user', 'assistant'])
@@ -273,7 +274,7 @@ it('retains the delegated task after agent completion and removes empty writing 
         }),
         event(2, 'agent_end', { id: 'alex', name: 'Alex' }),
       ],
-      'completed',
+      { id: firstRun, status: 'completed' },
     ),
   )
   expect(grouped).toHaveLength(1)
@@ -303,7 +304,7 @@ it('replays only public reasoning summaries without duplicating chunks or exposi
       summary,
       event(1, 'reasoning', { id: 'message', agent: 'alex', text: 'PRIVATE_RAW_CONTENT' }),
     ],
-    'completed',
+    { id: firstRun, status: 'completed' },
   )
   expect(converted).toHaveLength(1)
   expect(converted[0]?.content).toEqual([
@@ -328,7 +329,7 @@ it('shows actual project tool inputs and build failures without source prose', (
       event(5, 'tool_end', { ...build, output: failure }),
       event(6, 'file_delta', { path: 'src/App.tsx', text: 'private source draft' }),
     ],
-    'failed',
+    { id: firstRun, status: 'failed' },
   )
   expect(messages).toHaveLength(3)
   expect(tool(messages[0])?.argsText).toBe(JSON.stringify({ path: 'src/App.tsx' }))
@@ -360,7 +361,7 @@ it('summarizes active tools without exposing delegation instructions in the summ
           input: { path: 'src/App.tsx' },
         }),
       ],
-      'running',
+      { id: firstRun, status: 'running' },
     ),
   )
 
@@ -381,7 +382,10 @@ it.each([
   ['cancelled', 'cancelled'],
 ] as const)('keeps a %s execution group terminal when observation ends', (runStatus, reason) => {
   const grouped = groupExecutionMessages(
-    toAssistantMessages([], [event(1, 'tool_start', toolData)], runStatus),
+    toAssistantMessages([], [event(1, 'tool_start', toolData)], {
+      id: firstRun,
+      status: runStatus,
+    }),
   )
 
   expect(grouped[0]?.status).toEqual({ type: 'incomplete', reason })
@@ -399,7 +403,7 @@ it('keeps failed attempts visible in a settled summary after a successful retry'
         event(3, 'tool_start', toolData),
         event(4, 'tool_end', { ...toolData, output: { revision: 2 } }),
       ],
-      'completed',
+      { id: firstRun, status: 'completed' },
     ),
   )
 
@@ -437,7 +441,7 @@ it('moves only known system terminal notices into execution evidence and preserv
         event(1, 'tool_start', toolData),
         event(3, 'run_state', { status: 'failed', error: failure }),
       ],
-      'failed',
+      { id: firstRun, status: 'failed' },
     ),
   )
 
@@ -499,7 +503,7 @@ it('does not summarize a rejected independent review as completed execution', ()
           output: { accepted: false, findings: 'Reset is broken' },
         }),
       ],
-      'completed',
+      { id: firstRun, status: 'completed' },
     ),
   )
 
@@ -514,7 +518,7 @@ it('keeps step-limit failures in terminal execution details without losing the d
     toAssistantMessages(
       [{ id: 'step-limit', role: 'system', agent: null, content, createdAt: 100 }],
       [],
-      'failed',
+      { id: firstRun, status: 'failed' },
     ),
   )
 
@@ -531,4 +535,153 @@ it('keeps step-limit failures in terminal execution details without losing the d
       },
     ],
   })
+})
+
+it('keeps saved results at their original turn while the next version is running', () => {
+  const versions = [
+    { id: 'version-1', parentVersionId: null, number: 1, prompt: 'Build', createdAt: 200 },
+  ]
+  const messages: ConversationMessage[] = [
+    { id: 'follow-up', role: 'user', agent: null, content: 'Make it blue', createdAt: 300 },
+  ]
+  const activity = [event(1, 'tool_start', toolData, secondRun, 400)]
+  const grouped = groupExecutionMessages(
+    toAssistantMessages(messages, activity, { id: secondRun, status: 'running' }, versions),
+  )
+
+  expect(grouped.map((message) => message.id)).toEqual([
+    'version:version-1',
+    'follow-up',
+    `execution:activity:${secondRun}:1`,
+  ])
+  expect(grouped[0]).toMatchObject({
+    status: { type: 'complete', reason: 'stop' },
+    metadata: { custom: { kind: 'saved-version', versionId: 'version-1' } },
+  })
+  expect(grouped[2]?.status).toEqual({ type: 'running' })
+
+  const saved = [
+    ...versions,
+    {
+      id: 'version-2',
+      parentVersionId: 'version-1',
+      number: 2,
+      prompt: 'Make it blue',
+      createdAt: 600,
+    },
+  ]
+  const replay = groupExecutionMessages(
+    toAssistantMessages(messages, [], { id: secondRun, status: 'completed' }, saved),
+  )
+  expect(replay.map((message) => message.id)).toEqual([
+    'version:version-1',
+    'follow-up',
+    'version:version-2',
+  ])
+})
+
+it.each(['queued', 'running'] as const)(
+  'does not revive old validation when a new %s run has no events yet',
+  (status) => {
+    const validation = { id: 'validate', name: 'validate_preview', agent: 'alex' }
+    const start = event(1, 'tool_start', validation)
+    const versions = [
+      { id: 'version-1', parentVersionId: null, number: 1, prompt: 'Build', createdAt: 50 },
+    ]
+    const messages: ConversationMessage[] = [
+      { id: 'follow-up', role: 'user', agent: null, content: 'Make it blue', createdAt: 200 },
+    ]
+    const observedRun = { id: secondRun, status }
+    const grouped = groupExecutionMessages(
+      toAssistantMessages(messages, [start, start], observedRun, versions),
+    )
+
+    expect(grouped.map((message) => message.id)).toEqual([
+      'version:version-1',
+      `execution:activity:${firstRun}:1`,
+      'follow-up',
+    ])
+    expect(grouped[0]?.status).toEqual({ type: 'complete', reason: 'stop' })
+    expect(grouped[1]?.status).toEqual({ type: 'incomplete', reason: 'other' })
+    expect(grouped[1]?.metadata?.custom?.focus).toBeUndefined()
+    expect(tool(grouped[1])).not.toHaveProperty('result')
+  },
+)
+
+it.each(lifecycleCases)(
+  'applies $runStatus only to pending text belonging to the observed run',
+  ({ runStatus, status }) => {
+    const pending: ConversationMessage = {
+      id: 'old',
+      role: 'agent',
+      agent: 'alex',
+      content: 'Partial response',
+      createdAt: 50,
+      pending: true,
+      runId: firstRun,
+    }
+    const messages = toAssistantMessages(
+      [
+        pending,
+        { ...pending, id: 'current', runId: secondRun },
+        { ...pending, id: 'unattributed', runId: undefined },
+        { ...pending, id: 'saved', pending: false },
+      ],
+      [],
+      runStatus === null ? null : { id: secondRun, status: runStatus },
+    )
+
+    expect(messages.map((message) => message.status)).toEqual([
+      { type: 'incomplete', reason: 'other' },
+      status,
+      { type: 'incomplete', reason: 'other' },
+      { type: 'complete', reason: 'stop' },
+    ])
+  },
+)
+
+it.each(['completed', 'failed', 'cancelled'] as const)(
+  'keeps %s observation terminal through replay and a replacement run',
+  (status) => {
+    const validation = { id: 'validate', name: 'validate_preview', agent: 'alex' }
+    const failedStart = event(1, 'tool_start', validation)
+    const failedEnd = event(2, 'tool_end', { ...validation, output: { valid: false } })
+    const interrupted = event(3, 'tool_start', validation)
+    const terminal = event(4, 'run_state', { status })
+    const activity = [terminal, interrupted, failedEnd, failedStart, interrupted, failedEnd]
+    const settled = toAssistantMessages([], activity, { id: firstRun, status })
+
+    expect(settled).toHaveLength(2)
+    expect(settled[0]?.status).toEqual({ type: 'incomplete', reason: 'error' })
+    expect(settled[1]?.status).toEqual({
+      type: 'incomplete',
+      reason: status === 'failed' ? 'error' : status === 'cancelled' ? 'cancelled' : 'other',
+    })
+    expect(tool(settled[1])).not.toHaveProperty('result')
+
+    const replay = toAssistantMessages([], activity, { id: secondRun, status: 'running' })
+    expect(replay.map((message) => message.status)).toEqual([
+      { type: 'incomplete', reason: 'error' },
+      { type: 'incomplete', reason: 'other' },
+    ])
+    expect(tool(replay[0])).toMatchObject({ result: { valid: false }, isError: true })
+    expect(tool(replay[1])).not.toHaveProperty('result')
+  },
+)
+
+it('uses observed identity even when an older run has a later event timestamp', () => {
+  const messages = toAssistantMessages(
+    [],
+    [
+      event(1, 'tool_start', toolData, secondRun, 100),
+      event(8, 'tool_start', toolData, firstRun, 500),
+    ],
+    { id: secondRun, status: 'running' },
+  )
+
+  expect(messages.map((message) => message.status)).toEqual([
+    { type: 'running' },
+    { type: 'incomplete', reason: 'other' },
+  ])
+  expect(messages.every((message) => !Object.hasOwn(tool(message) ?? {}, 'result'))).toBe(true)
 })
