@@ -37,14 +37,17 @@ export function AppShell({ children }: { children: ReactNode }) {
     >
       <Sidebar collapsible="icon">
         <SidebarHeader className="p-4 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-0">
-          <Logo className="group-data-[collapsible=icon]:hidden" />
-          <div
-            className="hidden group-data-[collapsible=icon]:block"
-            role="img"
-            aria-label={t('brand.name')}
+          <Link
+            to="/"
+            aria-label={t('atoms.home')}
+            data-testid="sidebar-home"
+            className="inline-flex rounded-md outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
           >
-            <LogoMark />
-          </div>
+            <Logo className="group-data-[collapsible=icon]:hidden" />
+            <span className="hidden group-data-[collapsible=icon]:block">
+              <LogoMark />
+            </span>
+          </Link>
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>

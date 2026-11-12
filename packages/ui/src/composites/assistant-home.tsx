@@ -14,7 +14,6 @@ import {
   ToolsIcon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { cn } from 'cn'
 import type { ComponentProps } from 'react'
 import { Badge } from '#components/badge'
 import { Button } from '#components/button'
@@ -30,21 +29,85 @@ const suggestions = [
 ] as const
 
 export function AssistantHomeIntro() {
-  const { t, locale } = useI18n()
+  const { t } = useI18n()
   return (
     <header className="text-center">
-      <h1
-        className={cn(
-          'text-balance text-4xl leading-tight font-semibold sm:text-5xl lg:text-6xl',
-          locale === 'en' && 'tracking-tight',
-        )}
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 320 144"
+        fill="none"
+        className="mx-auto mb-6 h-28 w-64 sm:h-36 sm:w-80"
       >
-        <span className="block">{t('atoms.landing.headline')}</span>
-        <span className="block text-muted-foreground">{t('atoms.landing.headlineAccent')}</span>
+        <ellipse cx="160" cy="124" rx="104" ry="8" fill="var(--muted)" opacity="0.6" />
+        <g transform="rotate(-12 76 80)" stroke="var(--input)">
+          <rect x="26" y="38" width="100" height="82" rx="10" fill="var(--card)" />
+          <path d="M26 60h100" />
+          <path d="M42 49h20" stroke="var(--muted-foreground)" strokeLinecap="round" />
+          <rect x="42" y="73" width="15" height="13" rx="3" fill="var(--sky-wash)" stroke="none" />
+          <rect x="65" y="73" width="15" height="13" rx="3" />
+          <rect x="88" y="73" width="15" height="13" rx="3" />
+          <path d="M42 99h15m8 0h15m8 0h15" strokeLinecap="round" />
+        </g>
+        <g transform="rotate(12 244 80)" stroke="var(--input)">
+          <rect x="194" y="38" width="100" height="82" rx="10" fill="var(--card)" />
+          <path d="M194 60h100" />
+          <path d="M210 49h20" stroke="var(--muted-foreground)" strokeLinecap="round" />
+          <path
+            d="M210 103l18-16 15 8 28-22"
+            stroke="var(--chart-2)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <circle cx="271" cy="73" r="3" fill="var(--chart-2)" stroke="none" />
+        </g>
+        <rect
+          x="97"
+          y="17"
+          width="126"
+          height="106"
+          rx="12"
+          fill="var(--card)"
+          stroke="var(--input)"
+        />
+        <path d="M97 40h126" stroke="var(--input)" />
+        <circle cx="109" cy="29" r="2" fill="var(--muted-foreground)" opacity="0.45" />
+        <circle cx="117" cy="29" r="2" fill="var(--muted-foreground)" opacity="0.25" />
+        <circle cx="125" cy="29" r="2" fill="var(--muted-foreground)" opacity="0.15" />
+        <rect x="109" y="52" width="42" height="58" rx="5" fill="var(--sky-wash)" />
+        <path
+          d="M117 94l9-16 8 7 9-19"
+          stroke="var(--link)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M163 57h34m-34 9h22"
+          stroke="var(--muted-foreground)"
+          strokeWidth="3"
+          strokeLinecap="round"
+          opacity="0.35"
+        />
+        <rect x="161" y="79" width="49" height="31" rx="5" fill="var(--muted)" />
+        <path
+          d="M176 94h19m-9-9v19"
+          stroke="var(--muted-foreground)"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+        <path
+          d="M250 15v10m-5-5h10M63 19v6m-3-3h6"
+          stroke="var(--link)"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          opacity="0.5"
+        />
+        <circle cx="284" cy="119" r="2" fill="var(--chart-2)" opacity="0.5" />
+      </svg>
+      <h1 className="text-balance text-3xl leading-tight font-semibold tracking-tight sm:text-4xl">
+        {t('atoms.landing.headline')}
       </h1>
-      <p className="mx-auto mt-5 max-w-lg text-pretty text-base leading-relaxed text-muted-foreground">
-        {t('atoms.landing.subtitle')}
-      </p>
     </header>
   )
 }
@@ -53,9 +116,6 @@ export function AssistantHomeSuggestions({ disabled }: { disabled: boolean }) {
   const { t } = useI18n()
   return (
     <section aria-label={t('atoms.examples')} className="text-center">
-      <h2 className="mb-3 text-xs font-medium text-muted-foreground">
-        {t('atoms.landing.inspiration')}
-      </h2>
       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-center">
         {suggestions.map(({ key, icon }, index) => (
           <ThreadPrimitive.Suggestion
