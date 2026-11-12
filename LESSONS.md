@@ -4,6 +4,8 @@ Read before changing a related area. Entries distinguish observed migration mist
 
 ## This migration
 
+- **2026-11-12 — Collapsed sidebar label intercepted New project clicks.** The project group label combined a negative margin with opacity zero, placing an invisible box over the preceding navigation link. Disable pointer events for the label in icon mode. Verify the actual hit target and navigation after collapse; visibility alone does not prove a control is clickable.
+
 - **2026-11-12 — Independent QA treated DOM attributes as computed CSS.** A real-provider visual-follow-up replay repeatedly asserted nonexistent style attributes and exhausted its review turns even though behavior checks passed. Role contracts must state that attribute assertions read literal markup, distinguish source-inspected CSS from browser-observed behavior, forbid probing imaginary assertion APIs, and direct QA to record its verdict once meaningful coverage and current-build evidence are complete. Verify prompt revisions with the failing real-provider workflow; string-matching prompt tests cannot establish model behavior.
 
 - **2026-11-12 — Native QA retried unsupported keyboard actions.** A real CrewAI replay repeatedly submitted character keys and aliases such as `+`, `r` and `Add`, although the validator accepts only its fixed `KEYS` vocabulary. List the exact supported operations in the role contract, distinguish application shortcuts from test-tool capabilities, and require correction of rejected arguments instead of speculative retries. Preserve working source and disclose unobserved shortcut behavior rather than changing the app to fit the test tool.
