@@ -6,10 +6,10 @@ The production architecture is **FastAPI + native CrewAI + PostgreSQL on the exi
 
 The frontend stays at [formlane-9dp.pages.dev](https://formlane-9dp.pages.dev), preserving existing anonymous browser ownership and shared links. Historical published examples include the [React counter](https://formlane-9dp.pages.dev/p/8tq3mrv54j) and [market app](https://formlane-9dp.pages.dev/p/7e2g3qqnnd).
 
-![Idea workspace](docs/screenshots/home-redesign-desktop.png)
-![Version history and source comparison](docs/screenshots/workspace-history-diff.png)
+![Production workspace and history](docs/screenshots/python-cutover-desktop.png)
+![Production mobile preview](docs/screenshots/python-cutover-mobile.png)
 
-These screenshots document earlier deployed product behavior, not acceptance of the Python cutover.
+These production screenshots show release `f7dfcb3`, with saved v2 retained after the cancellation acceptance check.
 
 ## Features
 
