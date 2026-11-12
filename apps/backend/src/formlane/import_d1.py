@@ -37,7 +37,17 @@ TABLES = {
     "run_events": RunEvent.__table__,
     "run_checkpoints": RunCheckpoint.__table__,
 }
-EXTRA_COLUMNS = {"messages": {"position"}, "runs": {"event_cursor"}}
+EXTRA_COLUMNS = {
+    "messages": {"position"},
+    "runs": {
+        "event_cursor",
+        "attempt",
+        "attempt_started_at",
+        "execution_version",
+        "recovery_eligible",
+    },
+    "run_events": {"attempt"},
+}
 JSON_COLUMNS = {"versions": {"source"}, "run_events": {"data"}, "run_checkpoints": {"result"}}
 KEYS = {name: tuple(column.name for column in table.primary_key) for name, table in TABLES.items()}
 
@@ -242,7 +252,37 @@ def import_data(store: Store, data: dict[str, list[dict]], *, verify_only: bool 
         for name, table in TABLES.items():
             rows = data[name]
             if name == "runs":
-                rows = [{**row, "event_cursor": cursor[row["id"]]} for row in rows]
+                projects = {project["id"]: project for project in data["projects"]}
+                rows = [
+                    {
+                        **row,
+                        "event_cursor": cursor[row["id"]],
+                        "attempt": 1,
+                        "attempt_started_at": row["created_at"],
+                        "execution_version": "crew-v1",
+                        "recovery_eligible": (
+                            projects[row["project_id"]]["run_id"] in {None, row["id"]}
+                            and projects[row["project_id"]]["current_version_id"]
+                            == row["previous_version_id"]
+                            and row["status"] != "completed"
+                            and not any(
+                                other["project_id"] == row["project_id"]
+                                and other["id"] != row["id"]
+                                and other["created_at"] >= row["created_at"]
+                                for other in rows
+                            )
+                            and not any(
+                                message["project_id"] == row["project_id"]
+                                and message["role"] == "system"
+                                and message["content"].startswith("Restored version ")
+                                and message["content"].endswith(".")
+                                and message["created_at"] >= row["created_at"]
+                                for message in data["messages"]
+                            )
+                        ),
+                    }
+                    for row in rows
+                ]
             # Message identity allocation follows the D1 export order even for timestamp ties.
             for row in rows:
                 connection.execute(insert(table).values(**row))

@@ -53,11 +53,11 @@ CI uses a per-run password only for its isolated loopback PostgreSQL container. 
 
 The root [deploy script](../../scripts/deploy.mjs) builds and uploads **static Pages assets only**. It does not deploy a business Worker, migrate a database, change services or upload Functions. No `API` service binding or runtime API-origin binding is needed. Target settings live in [deploy/environments.json](../../deploy/environments.json).
 
-Keep the canonical Pages hostname so existing localStorage `atoms_uid` capabilities survive. New clients send that capability as `x-owner-id`, omit cookies and reject bootstrap identity replacement; Python prioritizes the supplied owner header over legacy cookies. Backend `ALLOWED_ORIGINS` must explicitly include the canonical frontend and approved preview/local origins, including preflight for `Content-Type`, `X-Owner-ID` and `Last-Event-ID`. Preserve exact-origin credentialed support for older clients during transition.
+Keep both the custom frontend and original Pages hostname available: anonymous `atoms_uid` capabilities are local to each browser origin and do not transfer between domains. Clients send that capability as `x-owner-id`, omit cookies and reject bootstrap identity replacement. Backend `ALLOWED_ORIGINS` must include `https://formlane.nainma.online`, the original Pages hostname and approved preview/local origins, including preflight for `Content-Type`, `X-Owner-ID` and `Last-Event-ID`. Public viewers fetch anonymously without owner bootstrap.
 
-`apiOrigin` and `apiPublicOrigin` select `https://136.65.182.87`; `PUBLIC_ORIGIN` agrees with the public origin. The guard maps these to public build-time `VITE_API_ORIGIN` / `VITE_API_PUBLIC_ORIGIN`. Builds require explicit validated origins; deployed targets require HTTPS. Changing a runtime Pages setting does not rewrite built assets. Test target fields remain unset until that separate target is verified. `backendReady` is an acceptance gate, not deployment authorization.
+`apiOrigin` selects the Python server; `frontendOrigin` and `apiPublicOrigin` select `https://formlane.nainma.online`. Set backend `PUBLIC_ORIGIN` to that same public frontend origin. The guard maps origins to public build-time `VITE_API_ORIGIN` / `VITE_API_PUBLIC_ORIGIN`; changing runtime settings does not rewrite built assets. `backendReady` is an acceptance gate, not deployment authorization.
 
-Vite generates temporary `/api/* <apiOrigin>/api/:splat 307` and `/p/* <apiPublicOrigin>/p/:splat 302` redirects. The first preserves methods and bodies for older loaded SPA clients; the second retains shared public links. New clients call Python directly. Pages serves static files with SPA fallback for `/project/...`; no Functions or `_routes.json` participate. Local Vite dev/preview mirrors redirects including queries. [Cloudflare's redirect rules](https://developers.cloudflare.com/pages/configuration/redirects/) describe supported statuses and splats.
+Vite retains `/api/* <apiOrigin>/api/:splat 307` for older loaded clients. `/p/:slug` is a static public route that anonymously fetches the published HTML from Python and renders an opaque full-screen iframe; the address bar stays on the custom domain. It neither redirects to the IP nor grants generated content access to frontend ownership storage. Missing/revoked links render an unavailable state; the SPA document itself has Pages' HTTP status. Pages remains static with SPA fallback, without Functions or a business Worker.
 
 ### Required release sequence
 
@@ -83,7 +83,11 @@ Before PostgreSQL accepts production writes, a failed cutover can remain fenced 
 
 After PostgreSQL accepts writes, restoring old Pages assets alone can send writes to stale D1 and split project history. Keep forwarding to the authoritative Python/PostgreSQL backend, or fence **all** writers and perform an explicitly reviewed data/backend recovery before reopening traffic. The importer is one-way exact snapshot migration, not an automatic reverse sync. Never replace production with stage data or an earlier export after new writes without a coordinated recovery decision.
 
-A worker restart preserves completed checkpoints; lease expiry permits reclaim, while cancelled/expired work stays fenced. A stale checkpoint does not justify accepting stale build/check/review evidence. Preserve Chromium sandboxing and private environment isolation during recovery.
+A worker restart reuses completed durable operations. Explicit owner-authorized resume continues the same eligible run with a new attempt and bounded deadline; old attempts and producers remain fenced. Superseded runs and changed baselines cannot resume. A stale checkpoint never permits stale build/check/review acceptance. Preserve Chromium sandboxing and private environment isolation during recovery.
+
+### DBOS recovery release
+
+Apply the application Alembic migration and `uv run python -m formlane.durable_execution migrate` explicitly against the intended database before activating the new worker. Runtime uses `run_migrations=False`. Preserve the business tables, legacy checkpoint rows and DBOS system schema together in recovery backups. Workflow code/config compatibility is pinned: retain the matching worker release or perform a reviewed migration instead of replaying old operations under incompatible code. Verify process termination/reclaim, same-run resume, completed-operation reuse, stale-token rejection and browser replay before activating the client resume action.
 
 ## Historical releases — Worker/D1 and Node executor
 

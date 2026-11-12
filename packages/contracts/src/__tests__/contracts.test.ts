@@ -4,6 +4,7 @@ import {
   followupSchema,
   generateSchema,
   projectSchema,
+  runEventSchema,
   runSchema,
 } from '../index'
 
@@ -19,7 +20,7 @@ describe('Atoms DTO validation', () => {
     expect(followupSchema.parse({ content: '  Make it blue  ' }).content).toBe('Make it blue')
     expect(followupSchema.safeParse({ content: '' }).success).toBe(false)
   })
-  it('allows an initial run to use the idea or a fresh retry instruction', () => {
+  it('allows an initial run to use the idea or an explicit new instruction', () => {
     expect(generateSchema.parse({})).toEqual({})
     expect(generateSchema.parse({ content: '  Build a calendar instead  ' })).toEqual({
       content: 'Build a calendar instead',
@@ -41,9 +42,30 @@ describe('Atoms DTO validation', () => {
       cursor: 4,
     }
     expect(runSchema.parse(run).errorCode).toBe('timeout')
+    expect(runSchema.parse(run)).toMatchObject({ attempt: 1, resumable: false })
+    expect(runSchema.parse({ ...run, attempt: 2, resumable: true })).toMatchObject({
+      attempt: 2,
+      resumable: true,
+    })
+    for (const attempt of [0, -1, 1.5])
+      expect(runSchema.safeParse({ ...run, attempt }).success).toBe(false)
+    expect(runSchema.safeParse({ ...run, resumable: 'true' }).success).toBe(false)
     expect(runSchema.parse({ ...run, errorCode: 'step_limit' }).errorCode).toBe('step_limit')
     expect(runSchema.safeParse({ ...run, status: 'idle' }).success).toBe(false)
     expect(runSchema.safeParse({ ...run, errorCode: 'stopped' }).success).toBe(false)
+  })
+  it('defaults historical event attempts and preserves resumed event identity', () => {
+    const event = {
+      runId: crypto.randomUUID(),
+      sequence: 3,
+      type: 'run_state',
+      data: { status: 'failed' },
+      createdAt: 1,
+    }
+    expect(runEventSchema.parse(event).attempt).toBe(1)
+    expect(runEventSchema.parse({ ...event, attempt: 2 }).attempt).toBe(2)
+    for (const attempt of [0, -1, 1.5])
+      expect(runEventSchema.safeParse({ ...event, attempt }).success).toBe(false)
   })
   it('rejects foreign project status values', () => {
     expect(

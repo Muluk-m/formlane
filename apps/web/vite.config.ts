@@ -22,15 +22,12 @@ function versionFile(): Plugin {
   }
 }
 
-/** Preserve old API requests and published links without an edge function. */
-function backendRedirects(origin: string, publicOrigin: string): Plugin {
+/** Preserve old API requests without an edge function. */
+function backendRedirects(origin: string): Plugin {
   const redirect: Connect.NextHandleFunction = (request, response, next) => {
     const path = request.url ?? '/'
-    const api = path.startsWith('/api/')
-    if (!api && !path.startsWith('/p/')) return next()
-    response.writeHead(api ? 307 : 302, {
-      Location: `${api ? origin : publicOrigin}${path}`,
-    })
+    if (!path.startsWith('/api/')) return next()
+    response.writeHead(307, { Location: `${origin}${path}` })
     response.end()
   }
   return {
@@ -39,7 +36,7 @@ function backendRedirects(origin: string, publicOrigin: string): Plugin {
       this.emitFile({
         type: 'asset',
         fileName: '_redirects',
-        source: `/api/* ${origin}/api/:splat 307\n/p/* ${publicOrigin}/p/:splat 302\n`,
+        source: `/api/* ${origin}/api/:splat 307\n`,
       })
     },
     configureServer(server) {
@@ -60,7 +57,7 @@ export default defineConfig(({ command, mode, isPreview }) => {
   )
   const publicOrigin = apiOrigin(env.VITE_API_PUBLIC_ORIGIN ?? origin, 'VITE_API_PUBLIC_ORIGIN')
   return {
-    plugins: [react(), tailwindcss(), versionFile(), backendRedirects(origin, publicOrigin)],
+    plugins: [react(), tailwindcss(), versionFile(), backendRedirects(origin)],
     define: {
       'import.meta.env.VITE_API_ORIGIN': JSON.stringify(origin),
       'import.meta.env.VITE_API_PUBLIC_ORIGIN': JSON.stringify(publicOrigin),

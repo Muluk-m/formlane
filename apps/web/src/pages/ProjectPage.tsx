@@ -1,8 +1,4 @@
-import {
-  type RunEvent as HarnessEvent,
-  type Run as HarnessRun,
-  runSchema,
-} from '@atoms-demo/contracts'
+import type { RunEvent as HarnessEvent, Run as HarnessRun } from '@atoms-demo/contracts'
 import { slugify } from '@atoms-demo/core/html'
 import type { ProjectSource } from '@atoms-demo/core/project'
 import type { AppVersion, Project } from '@atoms-demo/core/types'
@@ -75,6 +71,12 @@ import {
   unpublishProjectMutation,
 } from '../features/projects/mutations'
 import { projectQuery, projectsQuery, versionQuery } from '../features/projects/queries'
+import {
+  hasReplayedRun,
+  isActiveRun,
+  reconcileRun,
+  reconcileRunEvent,
+} from '../features/projects/run'
 import { projectWorkspace, reduceProjectEvent } from '../features/projects/workspace'
 import {
   cancelRun,
@@ -82,13 +84,10 @@ import {
   latestRun,
   publishedUrl,
   RunConnectionError,
+  resumeRun,
   startRun,
   streamRunEvents,
 } from '../lib/api'
-
-function isActiveRun(run: HarnessRun | null) {
-  return run?.status === 'queued' || run?.status === 'running'
-}
 
 export function ProjectPage() {
   const { id } = useParams({ from: '/project/$id' })
@@ -148,12 +147,18 @@ export function ProjectPage() {
   const startPending = useRef(false)
   const undoPending = useRef(false)
   const cursorRef = useRef({ runId: '', sequence: 0 })
+  const runRef = useRef<HarnessRun | null>(null)
   const mounted = useRef(true)
-  const retryRequest = useRef<string | undefined>(undefined)
   const reconciliationPending = useRef(false)
   const subscription = useRef<AbortController | null>(null)
   const historySelection = useRef(0)
   const historyButton = useRef<HTMLButtonElement>(null)
+
+  function applyRun(incoming: HarnessRun | null) {
+    const next = incoming ? reconcileRun(runRef.current, incoming) : null
+    runRef.current = next
+    setRun(next)
+  }
 
   function selectCurrentVersion() {
     historySelection.current++
@@ -210,7 +215,6 @@ export function ProjectPage() {
     if (startPending.current || undoPending.current || running || reconciliationPending.current)
       return
     startPending.current = true
-    retryRequest.current = content
     setStarting(true)
     setBanner(null)
     setFailedAction(null)
@@ -221,7 +225,7 @@ export function ProjectPage() {
       setActivity([])
       setActiveAgents({})
       setWorkspace(projectWorkspace(source))
-      setRun(receipt)
+      applyRun(receipt)
       if (content)
         setMessages((current) => [
           ...current,
@@ -241,9 +245,57 @@ export function ProjectPage() {
       try {
         const accepted = await latestRun(id)
         if (mounted.current && accepted && (isActiveRun(accepted) || accepted.id !== run?.id))
-          setRun(accepted)
+          applyRun(accepted)
       } catch {
         /* Keep the actionable request error. */
+      }
+    } finally {
+      startPending.current = false
+      if (mounted.current) setStarting(false)
+    }
+  }
+
+  async function resume() {
+    if (
+      !run?.resumable ||
+      startPending.current ||
+      undoPending.current ||
+      running ||
+      reconciliationPending.current
+    )
+      return
+    const previous = run
+    startPending.current = true
+    setStarting(true)
+    setBanner(null)
+    setFailedAction(null)
+    subscription.current?.abort()
+    selectCurrentVersion()
+    const attach = (receipt: HarnessRun) => {
+      applyRun(receipt)
+      setActiveAgents({})
+      setWorkspace((current) => ({ ...current, drafts: {}, activePath: null }))
+      setConnection('connected')
+      setReconnect((value) => value + 1)
+    }
+    try {
+      const receipt = await resumeRun(id, previous.id)
+      if (mounted.current) attach(receipt)
+    } catch (error) {
+      if (!mounted.current) return
+      setBanner(error instanceof Error ? error.message : t('atoms.requestError'))
+      // The server may have accepted resume before its receipt was lost.
+      try {
+        const accepted = await latestRun(id)
+        if (!mounted.current) return
+        if (accepted?.id === previous.id && accepted.attempt > previous.attempt) {
+          attach(accepted)
+          setBanner(null)
+        } else {
+          setConnection('error')
+        }
+      } catch {
+        setConnection('error')
       }
     } finally {
       startPending.current = false
@@ -255,7 +307,7 @@ export function ProjectPage() {
     try {
       const existing = await latestRun(id, signal)
       if (signal.aborted) return
-      setRun(existing)
+      applyRun(existing)
       setLoadingRun(false)
       if (autostart) {
         void navigate({ to: '/project/$id', params: { id }, search: {}, replace: true })
@@ -280,10 +332,12 @@ export function ProjectPage() {
   const receive = useEffectEvent((event: HarnessEvent, signal: AbortSignal) => {
     const data = event.data
     if (event.type === 'run_state') {
-      const state = runSchema.parse(data)
-      setRun((current) =>
-        current?.id === state.id && !isActiveRun(current) && isActiveRun(state) ? current : state,
-      )
+      setActivity((current) => [...current, event])
+      const current = runRef.current
+      const state = reconcileRunEvent(current, event)
+      if (!state || state === current) return
+      runRef.current = state
+      setRun(state)
       if (!isActiveRun(state)) {
         reconciliationPending.current = true
         setReconciling(true)
@@ -304,17 +358,20 @@ export function ProjectPage() {
           })
       }
     } else if (event.type === 'agent_start') {
-      setActiveAgents((current) => ({ ...current, [String(data.id)]: String(data.name) }))
+      if (event.attempt === runRef.current?.attempt)
+        setActiveAgents((current) => ({ ...current, [String(data.id)]: String(data.name) }))
     } else if (event.type === 'agent_end') {
-      setActiveAgents((current) => {
-        const next = { ...current }
-        delete next[String(data.id)]
-        return next
-      })
+      if (event.attempt === runRef.current?.attempt)
+        setActiveAgents((current) => {
+          const next = { ...current }
+          delete next[String(data.id)]
+          return next
+        })
     } else if (event.type === 'message_start') {
       const message: ConversationMessage = {
         id: String(data.id),
         runId: event.runId,
+        attempt: event.attempt,
         role: data.role === 'system' ? 'system' : data.role === 'user' ? 'user' : 'agent',
         agent: typeof data.agent === 'string' ? data.agent : null,
         content: typeof data.content === 'string' ? data.content : '',
@@ -353,6 +410,11 @@ export function ProjectPage() {
         'build_result',
       ].includes(event.type)
     ) {
+      if (
+        event.attempt < (runRef.current?.attempt ?? 1) &&
+        (event.type === 'file_start' || event.type === 'file_delta')
+      )
+        return
       setWorkspace((current) => reduceProjectEvent(current, event))
     } else if (event.type === 'version') {
       const version: AppVersion = {
@@ -370,7 +432,11 @@ export function ProjectPage() {
       const title = data.title
       setProject((current) => (current ? { ...current, title } : current))
       document.title = `${title} · ${t('brand.name')}`
-    } else if (event.type === 'error') {
+    } else if (
+      event.type === 'error' &&
+      event.attempt === runRef.current?.attempt &&
+      isActiveRun(runRef.current)
+    ) {
       setBanner(String(data.message ?? t('atoms.streamError')))
     }
     if (
@@ -389,9 +455,9 @@ export function ProjectPage() {
     }
   })
 
-  const observation = useMemo(() => ({ runId: run?.id, reconnect }), [run?.id, reconnect])
-  const hasReplayedTerminal = useEffectEvent(
-    () => !isActiveRun(run) && cursorRef.current.sequence >= (run?.cursor ?? 0),
+  const observation = useMemo(
+    () => ({ runId: run?.id, attempt: run?.attempt, reconnect }),
+    [run?.id, run?.attempt, reconnect],
   )
 
   useEffect(() => {
@@ -400,7 +466,7 @@ export function ProjectPage() {
     const controller = new AbortController()
     subscription.current = controller
     if (cursorRef.current.runId !== runId) cursorRef.current = { runId, sequence: 0 }
-    let terminal = hasReplayedTerminal()
+    let terminal = hasReplayedRun(runRef.current, cursorRef.current)
     let delay = 500
     const observe = async () => {
       while (!controller.signal.aborted && !terminal) {
@@ -421,7 +487,7 @@ export function ProjectPage() {
               setConnection('connected')
               receive(event, controller.signal)
               cursorRef.current.sequence = event.sequence
-              if (event.type === 'run_state') terminal = !isActiveRun(runSchema.parse(event.data))
+              terminal = hasReplayedRun(runRef.current, cursorRef.current)
               delay = 500
             },
           )
@@ -471,9 +537,12 @@ export function ProjectPage() {
     try {
       const current = await latestRun(id)
       if (!mounted.current) return
-      await refresh(undefined, !current || current.status === 'completed')
+      await refresh(undefined, true)
       if (!mounted.current) return
-      setRun(current)
+      cursorRef.current = { runId: current?.id ?? '', sequence: 0 }
+      setActivity([])
+      setActiveAgents({})
+      applyRun(current)
       reconciliationPending.current = false
       setReconciling(false)
       setConnection('connected')
@@ -793,7 +862,7 @@ export function ProjectPage() {
             />
             <div className="min-w-0 space-y-1">
               <p>
-                {failedAction
+                {banner
                   ? banner
                   : connection === 'reconnecting'
                     ? t('atoms.reconnecting')
@@ -801,7 +870,7 @@ export function ProjectPage() {
                       ? t(`atoms.runError.${run.errorCode ?? 'internal'}`)
                       : run?.status === 'cancelled'
                         ? t('atoms.runCancelled')
-                        : banner || projectError}
+                        : projectError}
               </p>
               {!failedAction && run?.status === 'failed' && (run.error || banner) && (
                 <Collapsible className="text-xs text-muted-foreground">
@@ -833,15 +902,15 @@ export function ProjectPage() {
               {failedAction.label}
             </Button>
           ) : (
-            !running &&
+            run?.resumable &&
             !loadingRun && (
               <Button
                 variant="outline"
                 disabled={busy}
-                onClick={() => void begin(retryRequest.current ?? run?.request)}
-                data-testid="retry-button"
+                onClick={() => void resume()}
+                data-testid="resume-button"
               >
-                {t('atoms.retry')}
+                {starting ? t('atoms.resuming') : t('atoms.resume')}
               </Button>
             )
           )}

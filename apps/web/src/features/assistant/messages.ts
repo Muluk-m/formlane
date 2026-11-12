@@ -6,6 +6,7 @@ export type ConversationMessage = Omit<ChatMessage, 'agent'> & {
   agent: string | null
   pending?: boolean
   runId?: Run['id']
+  attempt?: Run['attempt']
 }
 
 type Activity = {
@@ -59,6 +60,7 @@ function identity(event: RunEvent): string | undefined {
   if (typeof event.data.id !== 'string') return undefined
   return JSON.stringify([
     event.runId,
+    event.attempt,
     event.type.startsWith('tool_') ? 'tool' : 'agent',
     event.data.id,
     event.data.name,
@@ -188,9 +190,22 @@ function messageContent(message: ConversationMessage): ThreadMessageLike['conten
 export function toAssistantMessages(
   messages: readonly ConversationMessage[],
   activity: readonly RunEvent[],
-  observedRun: Pick<Run, 'id' | 'status'> | null,
+  observedRun: Pick<Run, 'id' | 'status' | 'attempt'> | null,
   versions: readonly AppVersion[] = [],
 ): ThreadMessageLike[] {
+  const settledAttempts = new Map<string, Run['status']>()
+  for (const event of activity) {
+    const status = event.data.status
+    if (
+      event.type === 'run_state' &&
+      (status === 'failed' || status === 'cancelled' || status === 'completed')
+    )
+      settledAttempts.set(`${event.runId}:${event.attempt}`, status)
+  }
+  const attemptStatus = (runId: string | undefined, attempt = 1) =>
+    observedRun && runId === observedRun.id && attempt === observedRun.attempt
+      ? observedRun.status
+      : (settledAttempts.get(`${runId}:${attempt}`) ?? null)
   const converted: ThreadMessageLike[] = messages.map((message) => {
     const terminal =
       message.role === 'system' && Object.hasOwn(terminalNotices, message.content)
@@ -227,9 +242,7 @@ export function toAssistantMessages(
       ...(message.role === 'agent'
         ? {
             status: message.pending
-              ? unfinishedStatus(
-                  observedRun && message.runId === observedRun.id ? observedRun.status : null,
-                )
+              ? unfinishedStatus(attemptStatus(message.runId, message.attempt))
               : complete,
           }
         : {}),
@@ -245,12 +258,7 @@ export function toAssistantMessages(
   // A replacement run may be observed before any of its events arrive. Only
   // explicit identity can connect unfinished activity to that run's lifecycle.
   for (const item of pairActivity(activity)) {
-    converted.push(
-      activityMessage(
-        item,
-        observedRun && item.start.runId === observedRun.id ? observedRun.status : null,
-      ),
-    )
+    converted.push(activityMessage(item, attemptStatus(item.start.runId, item.start.attempt)))
   }
 
   const summaries = new Map<string, { first: RunEvent; text: string }>()
@@ -260,7 +268,7 @@ export function toAssistantMessages(
     const eventKey = `${event.runId}:${event.sequence}`
     if (seen.has(eventKey)) continue
     seen.add(eventKey)
-    const key = `${event.runId}:${String(event.data.id)}`
+    const key = `${event.runId}:${event.attempt}:${String(event.data.id)}`
     const summary = summaries.get(key)
     if (summary) summary.text += event.data.text
     else summaries.set(key, { first: event, text: event.data.text })

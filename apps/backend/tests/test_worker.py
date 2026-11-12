@@ -6,10 +6,9 @@ import subprocess
 import sys
 import time
 from concurrent.futures import CancelledError
-from uuid import uuid4
+from types import SimpleNamespace
 
 import pytest
-from test_storage import postgres_store, start
 
 from formlane.storage import LeaseLost
 from formlane.worker import (
@@ -23,11 +22,38 @@ from formlane.worker import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolated_step_boundary(monkeypatch):
+    """Unit-test the lease/retry adapter; DBOS integration uses real PostgreSQL separately."""
+    results = {}
+    api = SimpleNamespace(workflow_id="unit-workflow", step_id=None)
+
+    def run_step(options, function):
+        name = options["name"]
+        if name in results:
+            return copy.deepcopy(results[name])
+        api.step_id = 1
+        try:
+            result = function()
+            results[name] = copy.deepcopy(result)
+            return result
+        finally:
+            api.step_id = None
+
+    api.run_step = run_step
+    monkeypatch.setattr("formlane.worker.DBOS", api)
+    return api
+
+
 class MemoryStore:
     def __init__(self):
         self.checkpoints = {}
         self.events = []
         self.writable = True
+
+    def check_authority(self, run, lease):
+        if not self.writable:
+            raise LeaseLost()
 
     def get_checkpoint(self, run, lease, name):
         if not self.writable:
@@ -80,7 +106,7 @@ def test_nested_event_scopes_and_execution_namespaces_are_distinct():
         durable.run("child", lambda: durable.emit("file_delta", {"text": "live"}))
         durable.emit("agent_end", {"id": "alex"})
 
-    durable.run("parent", parent)
+    durable.orchestrate("parent", parent)
     keys = [entry[0] for entry in store.events]
     assert len(set(keys)) == 3
     assert keys[0].endswith(":parent:0:0")
@@ -136,21 +162,34 @@ def test_deadline_is_persisted_budget_and_errors_are_public_safe():
     assert not provider_retryable(type("AuthenticationError", (Exception,), {})())
 
 
-def test_real_postgresql_durable_restart_and_cancellation_fence():
-    with postgres_store() as store:
-        owner = str(uuid4())
-        project = store.create_project(owner, "Durable checkpoint")
-        claimed = start(store, project, owner)
-        first = Durable(store, claimed, lambda: False)
-        first.run("completed-step", lambda: {"source": {"files": {"a.js": "saved"}}})
-        restarted = Durable(store, claimed, lambda: False)
-        value = restarted.run(
-            "completed-step", lambda: pytest.fail("Restart repeated a completed step")
-        )
-        assert value["source"]["files"]["a.js"] == "saved"
-        store.cancel_run(project["id"], owner, claimed["id"])
-        with pytest.raises(LeaseLost):
-            restarted.run("late-step", lambda: "must not run")
+def test_cached_dbos_result_still_checks_lease_authority():
+    store = MemoryStore()
+    durable = Durable(store, job(), lambda: False)
+    assert durable.run("saved", lambda: "result") == "result"
+    store.writable = False
+    with pytest.raises(LeaseLost):
+        durable.run("saved", lambda: pytest.fail("Cached operation ran"))
+
+
+def test_nested_operation_is_rejected_instead_of_swallowed():
+    durable = Durable(MemoryStore(), job(), lambda: False)
+    with pytest.raises(RuntimeError, match="never an outer step"):
+        durable.run("outer", lambda: durable.run("inner", lambda: None))
+
+
+def test_legacy_aggregate_import_does_not_run_completed_effects():
+    store = MemoryStore()
+    store.checkpoints["crew-v1/delegate-0-alex"] = {"value": {"result": "saved"}}
+    durable = Durable(store, job(), lambda: False)
+    assert durable.orchestrate(
+        "crew-v1/delegate-0-alex", lambda: pytest.fail("Completed delegation repeated")
+    ) == {"result": "saved"}
+
+
+def test_without_workflow_cannot_silently_run_nondurable(isolated_step_boundary):
+    isolated_step_boundary.workflow_id = None
+    with pytest.raises(RuntimeError, match="require a workflow"):
+        Durable(MemoryStore(), job(), lambda: False).run("missing", lambda: None)
 
 
 def _stubborn_tree(connection):

@@ -25,8 +25,8 @@ if (
 const origin = apiOrigin(settings.apiOrigin, `${target}.apiOrigin`, false)
 const publicOrigin = apiOrigin(settings.apiPublicOrigin, `${target}.apiPublicOrigin`, false)
 const frontendOrigin = apiOrigin(settings.frontendOrigin, `${target}.frontendOrigin`, false)
-if (origin === frontendOrigin || publicOrigin === frontendOrigin) {
-  throw new Error('The static frontend must use a separate Python API/public origin.')
+if (origin === frontendOrigin) {
+  throw new Error('The static frontend must use a separate Python API origin.')
 }
 if (flags.includes('--apply') && settings.backendReady !== true) {
   throw new Error(

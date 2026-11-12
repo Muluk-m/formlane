@@ -10,10 +10,11 @@ import json
 import re
 import secrets
 import time
+from contextlib import contextmanager
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import create_engine, func, or_, select, text
+from sqlalchemy import create_engine, func, or_, select, text, update
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -101,6 +102,12 @@ def run_json(row: Run) -> dict:
         "id": row.id,
         "projectId": row.project_id,
         "status": row.status,
+        "attempt": row.attempt,
+        "resumable": (
+            row.recovery_eligible
+            and row.execution_version in {"crew-v1", "dbos-v1"}
+            and row.status in {"failed", "cancelled"}
+        ),
         "request": row.request,
         "createdAt": row.created_at,
         "startedAt": row.started_at,
@@ -116,6 +123,7 @@ def event_json(row: RunEvent) -> dict:
     return {
         "runId": row.run_id,
         "sequence": row.sequence,
+        "attempt": row.attempt,
         "type": row.type,
         "data": row.data,
         "createdAt": row.created_at,
@@ -208,6 +216,7 @@ class Store:
             run_id=run.id,
             sequence=run.event_cursor,
             event_key=key,
+            attempt=run.attempt,
             type=kind,
             data=data,
             created_at=now,
@@ -217,7 +226,7 @@ class Store:
         return event
 
     def _state(self, s: Session, run: Run, now: int) -> None:
-        self._event(s, run, f"state:{run.status}", "run_state", run_json(run), now)
+        self._event(s, run, f"state:{run.attempt}:{run.status}", "run_state", run_json(run), now)
 
     def _finish(
         self,
@@ -229,18 +238,23 @@ class Store:
         now: int,
         *,
         message: bool = True,
+        safe_error: str | None = None,
     ) -> bool:
         if run.status in TERMINAL:
             return False
         code = (code if code in ERRORS else "internal") if status == "failed" else None
-        safe = ERRORS[code] if code else "Generation cancelled."
+        safe = safe_error or (ERRORS[code] if code else "Generation cancelled.")
         run.status, run.error_code = status, code
         run.error = safe if status == "failed" else None
         run.finished_at, run.lease_expires_at = now, None
         if message:
             s.add(
                 Message(
-                    id=stable_uuid(f"{run.id}:terminal"),
+                    id=stable_uuid(
+                        f"{run.id}:terminal"
+                        if run.attempt == 1
+                        else f"{run.id}:terminal:{run.attempt}"
+                    ),
                     project_id=run.project_id,
                     role="system",
                     content=safe,
@@ -379,6 +393,9 @@ class Store:
             if version is None:
                 raise StoreError(404, "Version not found.")
             now = timestamp()
+            s.execute(
+                update(Run).where(Run.project_id == project_id).values(recovery_eligible=False)
+            )
             active = s.scalars(
                 select(Run)
                 .where(Run.project_id == project_id, Run.status.in_(["queued", "running"]))
@@ -492,6 +509,9 @@ class Store:
                     self._expire(s, project, previous, clock)
             if project.run_id:
                 raise StoreError(409, "A generation is already running for this project.")
+            s.execute(
+                update(Run).where(Run.project_id == project_id).values(recovery_eligible=False)
+            )
             run = Run(
                 id=str(uuid4()),
                 project_id=project_id,
@@ -500,6 +520,10 @@ class Store:
                 previous_version_id=project.current_version_id,
                 created_at=clock,
                 deadline_at=clock + RUN_BUDGET_MS,
+                attempt=1,
+                attempt_started_at=clock,
+                execution_version="dbos-v1",
+                recovery_eligible=True,
                 event_cursor=0,
             )
             s.add(run)
@@ -597,7 +621,22 @@ class Store:
                 "idea": project.idea,
                 "request": run.request,
                 "previousSource": version.source if version else None,
+                "attempt": run.attempt,
+                "executionVersion": run.execution_version,
+                "deadlineAt": run.deadline_at,
             }
+
+    def check_authority(self, run_id: str, lease_token: str) -> None:
+        with self.sessions.begin() as s:
+            self._require_lease(s, run_id, lease_token)
+
+    @contextmanager
+    def scheduling_authority(self, run_id: str, lease_token: str):
+        """Keep reclaim/cancellation serialized with DBOS ownership transfer."""
+        with self.sessions.begin() as session:
+            self._require_lease(session, run_id, lease_token)
+            yield session.connection()
+            self._require_lease(session, run_id, lease_token)
 
     def heartbeat(self, run_id: str, lease_token: str, now: int | None = None) -> bool:
         with self.sessions.begin() as s:
@@ -752,6 +791,22 @@ class Store:
                 return False
             return self._finish(s, *pair, status, error_code, now)
 
+    def fail_incompatible_run(self, run_id: str, lease_token: str) -> bool:
+        with self.sessions.begin() as s:
+            pair = self._locked_run(s, run_id)
+            now = timestamp()
+            if pair is None or not self._active(*pair, lease_token, now):
+                return False
+            pair[1].recovery_eligible = False
+            return self._finish(
+                s,
+                *pair,
+                "failed",
+                "internal",
+                now,
+                safe_error="This run requires its original execution version and cannot resume on this deployment.",
+            )
+
     def expire_runs(self) -> None:
         with self.sessions() as s:
             ids = list(
@@ -779,7 +834,9 @@ class Store:
             query = (
                 query.where(Run.id == run_id)
                 if run_id
-                else query.order_by(Run.created_at.desc(), Run.id.desc()).limit(1)
+                else query.order_by(
+                    Run.recovery_eligible.desc(), Run.created_at.desc(), Run.id.desc()
+                ).limit(1)
             )
             run = s.scalar(query.with_for_update())
             if run is None:
@@ -787,6 +844,42 @@ class Store:
                     raise StoreError(404, "Run not found.")
                 return None
             self._expire(s, project, run, timestamp())
+            return run_json(run)
+
+    def resume_run(
+        self, project_id: str, owner_id: str, run_id: str, now: int | None = None
+    ) -> dict:
+        with self.sessions.begin() as s:
+            try:
+                project = self._project(s, project_id, owner_id)
+            except StoreError:
+                raise StoreError(404, "Run not found.") from None
+            run = s.scalar(
+                select(Run).where(Run.id == run_id, Run.project_id == project_id).with_for_update()
+            )
+            if run is None:
+                raise StoreError(404, "Run not found.")
+            if (
+                not run.recovery_eligible
+                or run.execution_version not in {"crew-v1", "dbos-v1"}
+                or project.current_version_id != run.previous_version_id
+                or project.run_id not in {None, run.id}
+                or run.status == "completed"
+            ):
+                raise StoreError(409, "This run can no longer be resumed.")
+            if run.status in {"queued", "running"}:
+                if project.run_id != run.id or project.status != "generating":
+                    raise StoreError(409, "This run can no longer be resumed.")
+                return run_json(run)
+            clock = timestamp(now)
+            run.attempt += 1
+            run.attempt_started_at, run.deadline_at = clock, clock + RUN_BUDGET_MS
+            run.status = "queued"
+            run.finished_at = run.error_code = run.error = None
+            run.lease_token = run.lease_owner = run.lease_expires_at = None
+            project.run_id, project.status = run.id, "generating"
+            project.error, project.updated_at = None, clock
+            self._state(s, run, clock)
             return run_json(run)
 
     def cancel_run(self, project_id: str, owner_id: str, run_id: str | None = None) -> None:
