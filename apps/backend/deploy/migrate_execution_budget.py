@@ -17,6 +17,7 @@ from formlane.durable_execution import compatibility_manifest
 from formlane.settings import Settings
 
 PREVIOUS_SOURCE = "3e9c507a767d77551a9d0d00293c1e38c43686d771d7c13f4058546a66c45567"
+IDLE_SOURCE = "60a2fbe83b015bab1b04264860c8a2d62465a20f6b54ab094a7d49082d3ae029"
 ACCEPTED_SOURCE = "dd925e141f35b719b18f5888c84e089349afd4c662ae3dca1931e0347af7c5fb"
 NAME = "dbos-v1/execution-manifest"
 
@@ -60,7 +61,7 @@ def main() -> None:
             for row in rows:
                 prior = row["result"]
                 if (
-                    source_hash(prior) not in {PREVIOUS_SOURCE, ACCEPTED_SOURCE}
+                    source_hash(prior) not in {PREVIOUS_SOURCE, IDLE_SOURCE, ACCEPTED_SOURCE}
                     or {**prior, "source": target["source"]} != target
                 ):
                     raise SystemExit("Unexpected prior manifest for " + row["run_id"])

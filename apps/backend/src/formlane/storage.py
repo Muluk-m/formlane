@@ -583,6 +583,8 @@ class Store:
                     or (run.lease_expires_at or 0) > clock
                 ):
                     continue
+                if run.status == "queued":
+                    run.attempt_started_at = clock
                 run.status, run.started_at = (
                     "running",
                     run.started_at if run.started_at is not None else clock,
@@ -697,7 +699,8 @@ class Store:
             self._require_lease(s, run_id, lease_token)
             row = s.get(RunCheckpoint, (run_id, name))
             if row is None:
-                row = RunCheckpoint(run_id=run_id, name=name, result=value, created_at=timestamp())
+                clock = timestamp()
+                row = RunCheckpoint(run_id=run_id, name=name, result=value, created_at=clock)
                 s.add(row)
             return {"value": row.result, "createdAt": row.created_at}
 

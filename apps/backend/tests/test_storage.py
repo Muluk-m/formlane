@@ -10,11 +10,12 @@ from uuid import uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, func, select, text
+from sqlalchemy import create_engine, event, func, select, text
 from sqlalchemy.engine import make_url
 
 from formlane.models import Run, RunCheckpoint, RunEvent
 from formlane.storage import (
+    LEASE_DURATION_MS,
     LeaseLost,
     Store,
     StoreError,
@@ -90,6 +91,84 @@ def test_concurrent_creation_claim_replay_and_single_global_lease(pg_store, proj
     assert pg_store.claim_run("other") is None
     assert pg_store.complete_run(winner["id"], winner["lease_token"], result)
     assert pg_store.claim_run("other")["id"] == next_run["id"]
+
+
+@pytest.mark.parametrize("resumed", [False, True])
+def test_queued_and_resumed_work_survives_long_wait(pg_store, project, owner, monkeypatch, resumed):
+    clock = 1_000_000
+    monkeypatch.setattr(
+        "formlane.storage.timestamp", lambda now=None: clock if now is None else now
+    )
+    if resumed:
+        previous = start(pg_store, project, owner)
+        pg_store.cancel_run(project["id"], owner, previous["id"])
+        receipt = pg_store.resume_run(project["id"], owner, previous["id"])
+    else:
+        receipt = pg_store.create_run(project["id"], owner, "Build")
+    clock += 1_800_000
+    assert pg_store.get_run(project["id"], owner, receipt["id"])["status"] == "queued"
+    with pytest.raises(StoreError) as duplicate:
+        pg_store.create_run(project["id"], owner, "Another instruction")
+    assert duplicate.value.status == 409
+    claimed = pg_store.claim_run("worker")
+    assert claimed["id"] == receipt["id"]
+    assert claimed["attempt_started_at"] == clock
+    assert claimed["lease_expires_at"] == clock + LEASE_DURATION_MS
+    assert claimed["started_at"] == (previous["started_at"] if resumed else clock)
+    assert claimed["attempt"] == (2 if resumed else 1)
+
+
+def test_failed_checkpoint_commit_leaves_no_partial_result(pg_store, project, owner, monkeypatch):
+    clock = 1_000_000
+    monkeypatch.setattr(
+        "formlane.storage.timestamp", lambda now=None: clock if now is None else now
+    )
+    run = start(pg_store, project, owner)
+    clock += 1_000
+
+    def fail_commit(session):
+        session.flush()
+        assert session.get(RunCheckpoint, (run["id"], "uncommitted")) is not None
+        raise RuntimeError("checkpoint commit unavailable")
+
+    event.listen(pg_store.sessions, "before_commit", fail_commit)
+    try:
+        with pytest.raises(RuntimeError, match="checkpoint commit unavailable"):
+            pg_store.put_checkpoint(run["id"], run["lease_token"], "uncommitted", {})
+    finally:
+        event.remove(pg_store.sessions, "before_commit", fail_commit)
+    with pg_store.sessions() as session:
+        assert session.get(RunCheckpoint, (run["id"], "uncommitted")) is None
+
+
+@pytest.mark.parametrize("authority_loss", ["reclaimed", "cancelled"])
+def test_fenced_checkpoint_cannot_change_committed_history(
+    pg_store, project, owner, result, monkeypatch, authority_loss
+):
+    clock = 1_000_000
+    monkeypatch.setattr(
+        "formlane.storage.timestamp", lambda now=None: clock if now is None else now
+    )
+    run = start(pg_store, project, owner)
+    clock += 1_000
+    checkpoint = pg_store.put_checkpoint(
+        run["id"], run["lease_token"], "committed", {"first": True}
+    )
+    clock += LEASE_DURATION_MS
+    if authority_loss == "reclaimed":
+        replacement = pg_store.claim_run("replacement")
+        assert replacement["lease_token"] != run["lease_token"]
+        assert replacement["attempt_started_at"] == run["attempt_started_at"]
+    else:
+        pg_store.cancel_run(project["id"], owner, run["id"])
+    for name in ["committed", "late"]:
+        with pytest.raises(LeaseLost):
+            pg_store.put_checkpoint(run["id"], run["lease_token"], name, {"stale": True})
+    assert not pg_store.heartbeat(run["id"], run["lease_token"])
+    assert not pg_store.complete_run(run["id"], run["lease_token"], result)
+    with pg_store.sessions() as session:
+        assert session.get(RunCheckpoint, (run["id"], "committed")).result == checkpoint["value"]
+        assert session.get(RunCheckpoint, (run["id"], "late")) is None
 
 
 def test_reclaimed_lease_checkpoint_null_and_late_producer_fences(pg_store, project, owner, result):
@@ -359,10 +438,11 @@ def test_resume_preserves_checkpoint_source_history_and_fences_old_attempt(
     ]:
         with pytest.raises(LeaseLost):
             operation()
-    claimed = pg_store.claim_run("resumed-worker")
+    claimed = pg_store.claim_run("resumed-worker", now=clock)
     assert claimed["lease_token"] != run["lease_token"]
     assert claimed["previous_version_id"] == baseline["id"]
     assert claimed["attempt_started_at"] == clock
+
     assert claimed["execution_version"] == run["execution_version"] == "dbos-v1"
     assert (
         pg_store.get_checkpoint(run["id"], claimed["lease_token"], "source:committed") == checkpoint

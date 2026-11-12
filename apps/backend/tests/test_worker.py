@@ -155,12 +155,36 @@ def test_errors_are_public_safe():
     assert not provider_retryable(type("AuthenticationError", (Exception,), {})())
 
 
-def test_cached_dbos_result_still_checks_lease_authority():
+@pytest.mark.parametrize("fence", ["lease", "cancellation"])
+@pytest.mark.parametrize("during_replay", [False, True])
+def test_cached_dbos_result_still_checks_authority_and_cancellation(
+    monkeypatch, isolated_step_boundary, fence, during_replay
+):
     store = MemoryStore()
-    durable = Durable(store, job(), lambda: False)
+    cancelled = [False]
+    snapshot = job()
+    durable = Durable(store, snapshot, lambda: cancelled[0])
     assert durable.run("saved", lambda: "result") == "result"
-    store.writable = False
-    with pytest.raises(LeaseLost):
+
+    def revoke():
+        if fence == "lease":
+            store.writable = False
+        else:
+            cancelled[0] = True
+
+    if during_replay:
+        run_step = isolated_step_boundary.run_step
+
+        def replay_then_revoke(options, function):
+            result = run_step(options, function)
+            revoke()
+            return result
+
+        monkeypatch.setattr(isolated_step_boundary, "run_step", replay_then_revoke)
+    else:
+        revoke()
+
+    with pytest.raises(LeaseLost if fence == "lease" else CancelledError):
         durable.run("saved", lambda: pytest.fail("Cached operation ran"))
 
 

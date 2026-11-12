@@ -416,9 +416,11 @@ it('keeps failed attempts visible in a settled summary after a successful retry'
   })
 })
 
-it('moves only known system terminal notices into execution evidence and preserves actual replies', () => {
-  const failure =
-    'Generation could not complete. Your previous version is unchanged. Please try again.'
+it.each([
+  'Generation could not complete. Your previous version is unchanged. Please try again.',
+  'Generation exceeded its 15-minute execution budget. Your previous version is unchanged.',
+  'Generation made no progress for 15 minutes. Your previous version is unchanged.',
+])('groups the system failure notice %s while preserving actual replies', (failure) => {
   const base: ConversationMessage = {
     id: 'terminal',
     role: 'system',

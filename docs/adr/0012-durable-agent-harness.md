@@ -6,7 +6,7 @@ Status: durable execution/acceptance invariants retained; Worker/D1 and Node/Ope
 
 FastAPI and a native hierarchical CrewAI worker now implement the replacement in `apps/backend`, with PostgreSQL authoritative for all six business tables, leases, events and checkpoints. Mike delegates through CrewAI's manager/specialist machinery; completed work is persisted by the durable runner. Node remains only in `apps/compiler` as an isolated trusted source compiler. Explicit Alembic replaces D1 runtime migrations. See [architecture](../internals/architecture.md) and [data model](../internals/data-model.md).
 
-Preserve the persisted deadline, cancellation fences, replay semantics, immutable baseline, role-scoped tools, sandboxed browser, current-source build, implementation validation and independent acceptance below. Check-set changes also invalidate affected acceptance evidence; a real-model check-hash regression is under repair before production activation. The HTTPS Python API is staged; [deployment](../operations/deployment.md) owns final acceptance and cutover status.
+Preserve cancellation fences, replay semantics, immutable baseline, role-scoped tools, sandboxed browser, current-source build, implementation validation and independent acceptance below. The historical task deadline is superseded by [ADR-0014](0014-dbos-node-recovery.md): runs have no fixed wall-clock deadline; per-operation timeouts and renewable leases remain enforced. [Deployment](../operations/deployment.md) owns final acceptance and cutover status.
 
 ## Historical decision and evidence
 
