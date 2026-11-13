@@ -2,7 +2,7 @@
 
 ## Current rollout status
 
-**Python/PostgreSQL with DBOS is the production authority.** [PR #16](https://github.com/Muluk-m/formlane/pull/16) shipped release `a7cc7ca84762885cd3b683465830e509b384836e`; static Pages deployment `31b9079c` reports `a7cc7ca84762` from `/version.json`. The backend passed readiness after explicit Alembic/DBOS migrations. Python CI, JavaScript CI and GitGuardian passed before merge.
+**Python/PostgreSQL with DBOS and the flow-first delivery workflow is the production authority.** [PR #19](https://github.com/Muluk-m/formlane/pull/19) shipped release `685d07f30b09faf08eb01d09a061b2911c2e3cbb` as `/opt/formlane/python-backend/releases/flow-v1-20261113`; static Pages deployment `0c52f500` reports `685d07f30b09` from `/version.json`. See [flow-first delivery](#flow-first-delivery-flow-v1) for the activation record.
 
 | Resource                    | Current identity / boundary                                                                                 |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -12,7 +12,7 @@
 | Reserved GCP address        | `formlane-api`, region `us-central1`                                                                        |
 | GCP identity                | `maqiqian@roibest.com`, project `roibest-internal-apps`                                                     |
 | Existing VM                 | `formlane-agent`, zone `us-central1-c`                                                                      |
-| Backend release             | `/opt/formlane/python-backend/releases/durable-recovery-20261112`, selected by `current`                    |
+| Backend release             | `/opt/formlane/python-backend/releases/flow-v1-20261113`, selected by `current`                             |
 | systemd services            | `formlane-python-api`, `formlane-python-worker`, non-root user `formlane`                                   |
 | Current service environment | Private `/etc/formlane/backend.env`; production database `formlane`                                         |
 | Databases                   | Production `formlane`; isolated `formlane_stage` and `formlane_test` retained                               |
@@ -109,7 +109,7 @@ Integration with PR #17 passed another 50 PostgreSQL storage, worker and process
 
 ### Flow-first delivery (`flow-v1`)
 
-[ADR-0015](../adr/0015-flow-first-delivery.md) replaces the hierarchical Crew. Its durable history is not interchangeable with `crew-v1`/`dbos-v1`: on the new worker those runs fail closed as incompatible and are not resumable. Not yet released. Activation sequence:
+[ADR-0015](../adr/0015-flow-first-delivery.md) replaces the hierarchical Crew. Its durable history is not interchangeable with `crew-v1`/`dbos-v1`: on the new worker those runs fail closed as incompatible and are not resumable. Activation sequence:
 
 1. Stop new run creation and let active runs finish, or record each unfinished run that will be failed as incompatible. Retain a complete PostgreSQL backup and the previous release.
 2. With API and worker stopped, apply `0004_version_acceptance_checks`. Readiness requires this revision. The `migrate_execution_budget.py` manifest script is pinned to the previous release and does not apply.
@@ -117,6 +117,22 @@ Integration with PR #17 passed another 50 PostgreSQL storage, worker and process
 4. Verify with the real provider: an initial build, a quick-edit follow-up that reuses saved checks, a plan follow-up, cancellation, and a worker restart during build. Record run IDs, model-call counts, time to first file event, wall time and repair rounds.
 
 Rollback restores the database backup and previous release together. The previous API's readiness requires revision `0003_remove_run_deadline`, so restore or downgrade before switching executables.
+
+#### Activation record (2026-11-13)
+
+- Zero queued/running production runs before stopping services. Backup `/var/lib/formlane/backups/before-flow-v1-20261113T041650Z.dump`, SHA-256 `d703bf6999f6fee62cdff38982821bc13fb38b56857c308e68d87badd5bde84d`, contains all business and DBOS tables. Environment backup `/etc/formlane/backend.env.before-flow-v1-20261113T041840Z`; previous release `replay-budget-20261113` retained.
+- Alembic reached `0004_version_acceptance_checks`; `current` points to `flow-v1-20261113` (built with the staging-verified virtualenv, unchanged lockfile, compiler link unchanged); the worker's working directory was verified as the new release. `/healthz`, public `/api/health`, the custom-domain frontend and published link `8tq3mrv54j` returned 200.
+- Pages was built on macmini2 with the pinned pnpm 11.24.0 and `BUILD_COMMIT` set to the release SHA, then uploaded after `wrangler whoami` matched the designated account. Both frontend origins report `685d07f30b09`; SPA reload, public viewer and the legacy `/api` 307 forward passed.
+
+Production smoke used a fresh anonymous owner and a request unrelated to the staging samples:
+
+| Run                                                         | Route                 |  Wall | First file | Result                                                                                                              |
+| ----------------------------------------------------------- | --------------------- | ----: | ---------: | ------------------------------------------------------------------------------------------------------------------- |
+| `1ffa11f0-7378-47a5-9e0d-df23a529aa97` ledger initial build | plan → build → review | 235 s |       96 s | Saved; plan 53 s; month total computed from `new Date()` and checked at two clocks                                  |
+| `46679514-29de-4c76-bbdb-2336f9820037` color/title change   | quick edit            | 139 s |       42 s | Saved; validation, filter and totals preserved                                                                      |
+| `d52767d5-026d-4289-ab2b-b554c3609bcd` add delete           | plan follow-up        | 275 s |       84 s | Saved; an ambiguous planned selector was disputed by Alex, corrected by David and revalidated without a repair loop |
+
+Staging (`formlane_workflow_stage`, release `flow-release-20261113b`) reproduced the reported production failure: the identical 2048 night-style request that failed or was cancelled three times in production (`1e28f623…`, `9edbdb6b…`, `a2717c46…`) saved through quick edit in 108 s with game logic untouched. A tool-library build (`32ed3c52-c38e-4277-bf31-d5cf880ed001`, 415 s) computed dates from `new Date()` and was checked at three clocks including Sunday and the following Monday.
 
 ## Historical releases — Worker/D1 and Node executor
 
