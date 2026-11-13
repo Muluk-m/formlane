@@ -194,7 +194,11 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
             with store.engine.connect() as connection:
                 connection.execute(text("SELECT 1 FROM projects LIMIT 0"))
                 connection.execute(text("SELECT 1 FROM messages LIMIT 0"))
-                connection.execute(text("SELECT source, parent_version_id, acceptance_checks FROM versions LIMIT 0"))
+                connection.execute(
+                    text(
+                        "SELECT source, parent_version_id, acceptance_checks FROM versions LIMIT 0"
+                    )
+                )
                 connection.execute(
                     text(
                         "SELECT event_cursor, lease_token, attempt, attempt_started_at, execution_version, recovery_eligible FROM runs LIMIT 0"

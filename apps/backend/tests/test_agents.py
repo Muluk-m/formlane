@@ -108,7 +108,7 @@ def test_completion_requires_each_exact_evidence_stamp():
         lambda s: s["implementationValidation"].update(sourceHash="stale"),
         lambda s: s["review"].update(checksHash="stale"),
         lambda s: s["review"].update(accepted=False),
-        lambda s: s["report"].update(artifactHash="stale"),
+        lambda s: s["independentValidation"].update(artifactHash="stale"),
         lambda s: s.update(revision=1),
     ]
     for mutate in mutations:
