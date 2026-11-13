@@ -370,16 +370,22 @@ class Runtime:
             if item["status"] != "unchanged"
         }
         independent = current["independentValidation"]
-        if args["accepted"] and (
-            not built
-            or not independent
-            or independent["artifactHash"] != built["artifactHash"]
-            or independent["checksHash"] != checks_hash(current["checks"])
-            or not changed.issubset(current["reviewedPaths"])
-        ):
-            raise ValueError(
-                "Acceptance requires your own passing current-artifact browser validation and inspection of every changed baseline file."
-            )
+        if args["accepted"]:
+            missing = []
+            if not built:
+                missing.append("a successful build of the current source")
+            if (
+                not built
+                or not independent
+                or independent["artifactHash"] != built["artifactHash"]
+                or independent["checksHash"] != checks_hash(current["checks"])
+            ):
+                missing.append("your own passing validate_preview on the current build and checks")
+            unread = sorted(changed - set(current["reviewedPaths"]))
+            if unread:
+                missing.append("read_review_files inspection of: " + ", ".join(unread))
+            if missing:
+                raise ValueError("Acceptance requires " + "; ".join(missing) + ".")
         current["review"] = {
             **args,
             "sourceHash": built["sourceHash"] if built else "",

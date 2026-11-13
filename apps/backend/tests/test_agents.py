@@ -214,6 +214,65 @@ def test_review_requires_own_browser_and_changed_file_inspection():
         rt.record_review(args)
 
 
+def test_native_review_recovers_missing_files_and_replays_without_provider(monkeypatch):
+    rt = accepted_workspace()
+    rt.previous = None
+    state = rt.workspace
+    state["source"] = create_source("react-ts")
+    state["build"]["sourceHash"] = source_hash(state["source"])
+    state["implementationValidation"] = dict(state["build"])
+    state["review"] = None
+    missing = ["package.json", "tsconfig.json"]
+    rt.read_review_files({"paths": sorted(set(state["source"]["files"]) - set(missing))})
+    initial = copy.deepcopy(state)
+    turns = 0
+
+    def transport(**kwargs):
+        nonlocal turns
+        turns += 1
+        if turns == 1:
+            name, args = "record_review", {"accepted": True, "findings": "Browser passed"}
+        elif turns == 2:
+            feedback = next(
+                item["content"] for item in reversed(kwargs["messages"])
+                if item["role"] == "tool"
+            )
+            assert all(path in feedback for path in missing)
+            name, args = "read_review_files", {"paths": missing}
+        elif turns == 3:
+            name, args = "record_review", {"accepted": True, "findings": "Reviewed all files"}
+        else:
+            pytest.fail("A recorded verdict must end the review stage")
+        yield ChatCompletionChunk(
+            id=f"review-{turns}", created=0, model="review-model",
+            object="chat.completion.chunk",
+            choices=[{"index": 0, "delta": {"tool_calls": [{
+                "index": 0, "id": f"call-{turns}", "type": "function",
+                "function": {"name": name, "arguments": json.dumps(args)},
+            }]}, "finish_reason": "tool_calls"}],
+        )
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=transport)))
+    monkeypatch.setattr(OpenAICompletion, "_get_sync_client", lambda _: client)
+    model = ObservedOpenAI(
+        model="review-model", api_key="recorded-transport", base_url="http://127.0.0.1:1/v1",
+        custom_openai=True, stream=True, max_retries=0,
+        additional_params={"parallel_tool_calls": False},
+    ).bind(rt)
+    delivery = Delivery(rt, lambda effort: model)
+    delivery.stage("review-0", "reviewer", "Review", {}, lambda output: output)
+    assert completion_status(rt.workspace)["ready"]
+    assert turns == 3
+    assert set(missing).issubset(rt.workspace["reviewedPaths"])
+    saved_steps = list(rt.durable.values)
+
+    rt.workspace = initial
+    delivery.stage("review-0", "reviewer", "Review", {}, lambda output: output)
+    assert completion_status(rt.workspace)["ready"]
+    assert turns == 3
+    assert list(rt.durable.values) == saved_steps
+
+
 def test_tool_checkpoint_recovers_source_without_repeating_mutation():
     rt, events = runtime(create_source("vanilla"))
     rt.scope = rt.new_scope("delegation", "alex")

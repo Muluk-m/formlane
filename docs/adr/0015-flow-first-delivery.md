@@ -19,6 +19,8 @@ Use a native CrewAI `Flow` (`DeliveryFlow` in [delivery/flow.py](../../apps/back
 
 Evidence semantics change in one respect: independent validation is recorded separately (`independentValidation`, bound to artifact and check-set hashes). Implementation re-validation on unchanged source therefore no longer erases David's verdict. This removes the Alex→David→Alex→David evidence dance without weakening any requirement.
 
+Rejected terminal-tool attempts remain durable operations but surface as native CrewAI tool failures, allowing the current stage to correct its evidence before recording a result. Review acceptance errors identify missing current-build validation and unread added, modified or deleted files, including template configuration files on initial builds. Only a successfully recorded terminal result ends the stage; model and tool budgets still bound correction.
+
 Templates now ship a small base stylesheet (layout, card, button, field, badge, screen-reader utilities). Plans and builds reuse it, so generated CSS stays proportional to scope. TypeScript and Python template snapshots and hash fixtures change together.
 
 The integration keeps this native Flow and its three acceptance gates as the only execution path. The earlier alternative implementation called `flow-v2` remains a research comparison; that name is unrelated to the execution compatibility version assigned to the module refactor below. Its [v0 research](../research/2026-11-13-v0-workflow.md) and [CrewAI research](../research/2026-11-13-crewai-workflow.md) are retained as supporting sources.

@@ -38,7 +38,12 @@ class WorkspaceTool(BaseTool):
         runtime = self._runtime
         runtime.check()
         args = self.args_schema.model_validate(kwargs).model_dump()
-        return json.dumps(runtime.invoke(operation, args), ensure_ascii=False)
+        output = runtime.invoke(operation, args)
+        if self.result_as_answer and "error" in output:
+            # Journal the rejected attempt, but let CrewAI treat it as a failed
+            # tool call so the agent can repair evidence in the same stage.
+            raise ValueError(output["error"])
+        return json.dumps(output, ensure_ascii=False)
 
 
 class ReadWorkspace(WorkspaceTool):
