@@ -5,7 +5,7 @@
 | Browser owner     | Anonymous ownership capability        | Existing browser-local `atoms_uid`, sent as `x-owner-id`; not a registered account                   |
 | Project           | `projects`                            | Idea, conversation, source versions, current selection and optional publication                      |
 | Idea              | `Project.idea`                        | Original request; not a requirement to replay over later accepted edits                              |
-| Agent             | Native CrewAI Agent / Crew            | Mike delegates to Emma, Bob, Alex and David through role-scoped tools                                |
+| Agent             | Native CrewAI Agent in a Flow stage   | Mike routes follow-ups; Emma/Bob plan, Alex builds and repairs, David independently reviews          |
 | Initial build     | Durable Python worker                 | Creates a source project from the request and checkpoints completed agent work in PostgreSQL         |
 | Follow-up         | Durable revision run                  | Revises the current immutable source baseline with fresh build, browser and review evidence          |
 | Message           | `messages`                            | Persisted user, agent or system conversation entry                                                   |

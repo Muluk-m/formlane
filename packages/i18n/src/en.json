@@ -261,9 +261,9 @@
         "text": "Plain text"
       },
       "liveDraft": "Live draft",
-      "unsavedDraft": "Unsaved draft",
+      "unsavedDraft": "Unaccepted draft",
       "savedVersion": "Saved version",
-      "draftHint": "These source files are an unsaved draft. Preview and ZIP download use the saved version.",
+      "draftHint": "This source has not been accepted. ZIP downloads use the saved version.",
       "generating": "Generation in progress",
       "generatingTitle": "Your build is underway",
       "generatingDescription": "The team selects a template for your requirements, then initializes the project files here.",
@@ -276,6 +276,15 @@
     "current": "Current",
     "viewing": "Viewing an older version",
     "backToCurrent": "Back to current",
+    "candidate": {
+      "label": "Unaccepted draft",
+      "available": "A retained draft is available for inspection.",
+      "description": "This draft has not been accepted and cannot be published.",
+      "inspect": "Inspect draft",
+      "source": "Inspect draft source",
+      "back": "Back to accepted version",
+      "changes": "Version history includes accepted versions only. Inspect this draft in Code or Preview."
+    },
     "copyLink": "Copy link",
     "copied": "Copied",
     "unpublish": "Unpublish",

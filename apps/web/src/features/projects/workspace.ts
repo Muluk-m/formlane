@@ -1,4 +1,9 @@
-import { projectSourceSchema, type RunEvent } from '@atoms-demo/contracts'
+import {
+  type ProjectCandidate,
+  projectSourceSchema,
+  type Run,
+  type RunEvent,
+} from '@atoms-demo/contracts'
 import { isProjectPath, type ProjectSource } from '@atoms-demo/core/project'
 
 export type ProjectBuild = { ok: boolean; issues: string[]; sourceHash?: string }
@@ -12,6 +17,35 @@ export type ProjectWorkspace = {
 
 export function projectWorkspace(source: ProjectSource | null): ProjectWorkspace {
   return { source, drafts: {}, activePath: null, dirty: false, build: null }
+}
+
+/** Detail and run observations arrive independently; never expose a previous run's draft. */
+export function selectProjectCandidate({
+  candidate,
+  run,
+  currentVersionId,
+  detailVersionId,
+  viewingVersionId,
+  selectedRunId,
+}: {
+  candidate: ProjectCandidate | null
+  run: Pick<Run, 'id' | 'status'> | null
+  currentVersionId: string | null
+  detailVersionId: string | null
+  viewingVersionId: string | null
+  selectedRunId: string | null
+}) {
+  const available =
+    currentVersionId === detailVersionId &&
+    (!run || (candidate?.runId === run.id && run.status !== 'completed'))
+      ? candidate
+      : null
+  return {
+    candidate: available,
+    selected: Boolean(
+      available && !viewingVersionId && (!currentVersionId || selectedRunId === available.runId),
+    ),
+  }
 }
 
 /** Streamed replacements are visible drafts; only file_saved changes working source. */

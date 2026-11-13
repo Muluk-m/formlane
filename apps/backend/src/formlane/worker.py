@@ -133,18 +133,8 @@ class Durable:
         return result
 
     def orchestrate(self, name: str, function: Callable[[], Any]) -> Any:
-        """Import an immutable legacy aggregate, or run orchestration outside steps.
-
-        The import decision is itself durable, so later replay takes the identical
-        branch. Never wrap a delegation/crew in a step: DBOS swallows nested steps.
-        """
+        """Scope orchestration events while keeping individual operations durable."""
         with self.events(name):
-            saved = self.step(
-                f"{name}/legacy-import",
-                lambda: self.store.get_checkpoint(self.job["id"], self.job["lease_token"], name),
-            )
-            if saved is not None:
-                return saved["value"]
             result = function()
             self.check()
             return result

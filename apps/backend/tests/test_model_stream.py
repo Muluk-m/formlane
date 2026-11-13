@@ -2,6 +2,7 @@ import copy
 import json
 import os
 from concurrent.futures import CancelledError
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 os.environ["CREWAI_DISABLE_TELEMETRY"] = "true"
@@ -15,7 +16,7 @@ from crewai.tools.base_tool import Tool
 from openai.types.chat import ChatCompletionChunk
 from pydantic import BaseModel
 
-from formlane.agents import DurableAgent, HarnessFailure, Runtime, SourceExecutor
+from formlane.agents import Delivery, Runtime, SourceExecutor
 from formlane.model_stream import FileJsonStream, ObservedOpenAI, RuntimeAbort, StreamObserver
 
 
@@ -93,6 +94,9 @@ class MemoryDurable:
 
     def orchestrate(self, name, function):
         return function()
+
+    def events(self, name, attempt=0):
+        return nullcontext()
 
 
 def test_real_crewai_executor_receives_native_stream_before_running_tool(monkeypatch):
@@ -274,45 +278,30 @@ def test_provider_exception_cannot_become_native_tool_error_text(monkeypatch):
     assert "credential-material" in str(error.value.cause)
 
 
-def test_resume_replays_delegations_without_spending_fresh_work_budget(monkeypatch):
+def test_resumed_stage_replays_saved_model_calls_without_new_provider_requests(monkeypatch):
     durable = MemoryDurable()
     calls = []
 
-    def provider(llm, *args):
+    def provider(llm, *args, **kwargs):
         calls.append(llm._runtime.scope["path"])
-        return f"Completed delegation {len(calls)}"
+        return "Plan considered."
 
     monkeypatch.setattr(OpenAICompletion, "call", provider)
-    monkeypatch.setattr(
-        Agent, "execute_task", lambda agent, task, *args: agent.llm.call(task.description)
-    )
-    task = Task(description="Continue the saved application", expected_output="Reviewed app")
 
-    def agent_for_attempt():
+    def run_stage():
         runtime = Runtime(
             None,
-            {"runId": "same-run", "request": "Continue the saved application", "idea": "Counter"},
+            {"runId": "same-run", "request": "Counter", "idea": "Counter"},
             durable,
             lambda *_: None,
             lambda: False,
         )
-        llm = ObservedOpenAI(model="test", api_key="test-key").bind(runtime)
-        return DurableAgent(role="Alex", goal="Implement", backstory="Developer", llm=llm).bind(
-            runtime, "alex"
-        )
+        return Delivery(
+            runtime,
+            lambda effort=None: ObservedOpenAI(model="test", api_key="test-key").bind(runtime),
+        ).stage("plan-0", "planner", "Plan", {"request": "Counter"}, lambda text: text)
 
-    first = agent_for_attempt()
-    saved = [first.execute_task(task) for _ in range(8)]
-    with pytest.raises(HarnessFailure, match="step_limit"):
-        first.execute_task(task)
-    assert len(calls) == 8
-
-    resumed = agent_for_attempt()
-    assert [resumed.execute_task(task) for _ in range(8)] == saved
-    assert len(calls) == 8
-    for index in range(8, 16):
-        result = json.loads(resumed.execute_task(task))
-        assert result["result"] == f"Completed delegation {index + 1}"
-    with pytest.raises(HarnessFailure, match="step_limit"):
-        resumed.execute_task(task)
-    assert calls == [f"crew-v1/delegate-{index}-alex" for index in range(16)]
+    first = run_stage()
+    assert calls == ["flow-v1/plan-0"]
+    assert run_stage() == first
+    assert calls == ["flow-v1/plan-0"]
