@@ -246,10 +246,18 @@ export function AssistantSavedVersion({
   number,
   onPreview,
   onChanges,
+  onUndo,
+  undoDisabled = false,
+  undoPending = false,
+  undoneCurrentVersionNumber,
 }: {
   number: number
   onPreview: () => void
   onChanges: () => void
+  onUndo?: () => void
+  undoDisabled?: boolean
+  undoPending?: boolean
+  undoneCurrentVersionNumber?: number
 }) {
   const { t } = useI18n()
   return (
@@ -260,11 +268,22 @@ export function AssistantSavedVersion({
     >
       <div className="flex items-center gap-2">
         <AssistantActivityIcon tone="complete" />
-        <span className="min-w-0 flex-1 text-sm font-medium">{t('ui.assistant.savedResult')}</span>
+        <span className="min-w-0 flex-1 text-sm font-medium">
+          {t(
+            undoneCurrentVersionNumber === undefined
+              ? 'ui.assistant.savedResult'
+              : 'ui.assistant.savedResultUndone',
+          )}
+        </span>
         <span className="rounded-md bg-secondary px-2 py-1 text-xs tabular-nums text-secondary-foreground">
           {t('ui.assistant.versionNumber', { number })}
         </span>
       </div>
+      {undoneCurrentVersionNumber !== undefined && (
+        <p className="mt-2 text-xs text-muted-foreground" role="status">
+          {t('ui.assistant.undoneCurrentVersion', { number: undoneCurrentVersionNumber })}
+        </p>
+      )}
       <div className="mt-3 flex flex-wrap gap-2">
         <Button variant="outline" size="sm" onClick={onPreview}>
           {t('atoms.preview')}
@@ -272,6 +291,19 @@ export function AssistantSavedVersion({
         <Button variant="ghost" size="sm" onClick={onChanges}>
           {t('ui.assistant.viewChanges')}
         </Button>
+        {onUndo && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={undoDisabled || undoPending}
+            aria-busy={undoPending}
+            onClick={onUndo}
+            data-testid="saved-result-undo"
+          >
+            {undoPending && <Spinner />}
+            {t('atoms.versionReview.undo')}
+          </Button>
+        )}
       </div>
     </section>
   )

@@ -77,6 +77,7 @@ import {
   reconcileRun,
   reconcileRunEvent,
 } from '../features/projects/run'
+import { selectVersionUndo } from '../features/projects/version-undo'
 import {
   projectWorkspace,
   reduceProjectEvent,
@@ -107,6 +108,7 @@ export function ProjectPage() {
   const [project, setProject] = useState<Project | null>(null)
   const [messages, setMessages] = useState<ConversationMessage[]>([])
   const [versions, setVersions] = useState<AppVersion[]>([])
+  const [undoneVersionIds, setUndoneVersionIds] = useState<ReadonlySet<string>>(() => new Set())
   const [html, setHtml] = useState('')
   const [source, setSource] = useState<ProjectSource | null>(null)
   const [workspace, setWorkspace] = useState(() => projectWorkspace(null))
@@ -605,7 +607,7 @@ export function ProjectPage() {
     setMobilePanel('preview')
   }
 
-  async function restore(versionId: string) {
+  async function restore(versionId: string, undoneVersionId?: string) {
     setBanner(null)
     setFailedAction(null)
     historySelection.current++
@@ -614,6 +616,14 @@ export function ProjectPage() {
     setHtml(result.html)
     setSource(result.source)
     setWorkspace(projectWorkspace(result.source))
+    if (result.project.currentVersionId === versionId) {
+      setUndoneVersionIds((current) => {
+        const next = new Set(current)
+        next.delete(versionId)
+        if (undoneVersionId) next.add(undoneVersionId)
+        return next
+      })
+    }
     selectCurrentVersion()
     await refresh()
   }
@@ -651,14 +661,15 @@ export function ProjectPage() {
       stopping ||
       project?.status === 'generating' ||
       historyAction ||
-      !undoVersion
+      !undoVersion ||
+      !currentVersion
     )
       return
     undoPending.current = true
     setHistoryAction({ id: undoVersion.id, kind: 'undo' })
     setHistoryError(null)
     try {
-      await restore(undoVersion.id)
+      await restore(undoVersion.id, currentVersion.id)
     } finally {
       undoPending.current = false
       if (mounted.current) setHistoryAction(null)
@@ -761,10 +772,18 @@ export function ProjectPage() {
     publishMutation.isPending ||
     unpublishMutation.isPending ||
     remixMutation.isPending
-  const selectedVersion =
-    viewing ?? versions.find((version) => version.id === project.currentVersionId)
-  const currentVersion = versions.find((version) => version.id === project.currentVersionId)
-  const undoVersion = versions.find((version) => version.id === currentVersion?.parentVersionId)
+  const { currentVersion, undoVersion, savedResultUndoVersionId } = selectVersionUndo(
+    versions,
+    project.currentVersionId,
+  )
+  const selectedVersion = viewing ?? currentVersion
+  const undoDisabled =
+    !undoVersion ||
+    busy ||
+    running ||
+    stopping ||
+    project.status === 'generating' ||
+    Boolean(historyAction)
   return (
     <div className="flex h-dvh min-h-0 flex-col bg-background">
       <header className="flex min-h-16 shrink-0 items-center gap-2 px-3 py-3 sm:gap-3 sm:px-5">
@@ -788,14 +807,7 @@ export function ProjectPage() {
             size="icon-sm"
             data-testid="undo-version"
             aria-label={t('atoms.versionReview.undo')}
-            disabled={
-              !undoVersion ||
-              busy ||
-              running ||
-              stopping ||
-              project.status === 'generating' ||
-              Boolean(historyAction)
-            }
+            disabled={undoDisabled}
             title={
               undoVersion
                 ? t('atoms.versionReview.undoToVersion', { number: undoVersion.number })
@@ -1008,6 +1020,12 @@ export function ProjectPage() {
               onSend={(text) => void begin(text)}
               onStop={() => void stop()}
               versions={versions}
+              currentVersion={currentVersion}
+              undoVersionId={savedResultUndoVersionId}
+              undoDisabled={undoDisabled}
+              undoPending={historyAction?.kind === 'undo'}
+              undoneVersionIds={undoneVersionIds}
+              onUndoVersion={() => void act(undoVersionChange, t('atoms.versionReview.undo'))}
               onOpenVersion={(versionId, mode) =>
                 void selectHistoryVersion(versionId, 'preview', mode)
               }

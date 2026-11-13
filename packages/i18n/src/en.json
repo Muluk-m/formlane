@@ -23,6 +23,8 @@
         "incomplete": "Execution interrupted"
       },
       "savedResult": "Saved result",
+      "savedResultUndone": "Undone",
+      "undoneCurrentVersion": "Current version {number}",
       "versionNumber": "Version {number}",
       "viewChanges": "Changes",
       "name": "Assistant",

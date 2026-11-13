@@ -36,6 +36,12 @@ export function ChatPane({
   activeAgents,
   activity,
   versions,
+  currentVersion,
+  undoVersionId,
+  undoDisabled,
+  undoPending,
+  undoneVersionIds,
+  onUndoVersion,
   onOpenVersion,
   onSend,
   onStop,
@@ -48,6 +54,12 @@ export function ChatPane({
   activeAgents: Record<string, string>
   activity: HarnessEvent[]
   versions: AppVersion[]
+  currentVersion: AppVersion | undefined
+  undoVersionId: string | undefined
+  undoDisabled: boolean
+  undoPending: boolean
+  undoneVersionIds: ReadonlySet<string>
+  onUndoVersion: () => void
   onOpenVersion: (versionId: string, mode: 'preview' | 'changes') => void
   onSend: (text: string) => void
   onStop: () => void
@@ -109,6 +121,14 @@ export function ChatPane({
           return version ? (
             <AssistantSavedVersion
               number={version.number}
+              undoneCurrentVersionNumber={
+                undoneVersionIds.has(versionId) && versionId !== currentVersion?.id
+                  ? currentVersion?.number
+                  : undefined
+              }
+              onUndo={versionId === undoVersionId ? onUndoVersion : undefined}
+              undoDisabled={undoDisabled}
+              undoPending={undoPending && versionId === undoVersionId}
               onPreview={() => onOpenVersion(versionId, 'preview')}
               onChanges={() => onOpenVersion(versionId, 'changes')}
             />
