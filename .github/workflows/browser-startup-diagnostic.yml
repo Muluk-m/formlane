@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        environment: [baseline, explicit-bus, private-home]
+        environment: [baseline, preloaded, managed]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v7.1.0
@@ -31,6 +31,9 @@ jobs:
           python-version: "3.13"
       - uses: astral-sh/setup-uv@v10.3.3
       - run: uv sync --frozen --project apps/backend
+      - name: Install SDK-matched full Chromium
+        if: matrix.environment == 'managed'
+        run: uv run --project apps/backend playwright install chromium --no-shell
       - name: Reproduce preceding DBOS workload
         run: uv run --project apps/backend pytest apps/backend/tests/test_durable_execution.py apps/backend/tests/test_execution_compatibility.py -q
       - name: Instrument first sandboxed Chrome startup
@@ -73,24 +76,27 @@ jobs:
           result={'variant':os.environ['STARTUP_VARIANT'],'playwright':importlib.metadata.version('playwright')}
           async def probe():
               environment=safe_environment()
-              with tempfile.TemporaryDirectory(prefix='formlane-browser-home-') as home:
-                  if result['variant']=='explicit-bus':
-                      environment['DBUS_SESSION_BUS_ADDRESS']='unix:path=/dev/null'
-                      environment['DBUS_SYSTEM_BUS_ADDRESS']='unix:path=/dev/null'
-                  elif result['variant']=='private-home':
-                      environment['HOME']=home
-                  async with async_playwright() as pw:
-                      result['driverReadySeconds']=time.monotonic()-started
-                      browser=await pw.chromium.launch(executable_path='/opt/google/chrome/chrome',chromium_sandbox=True,headless=True,args=['--force-webrtc-ip-handling-policy=disable_non_proxied_udp'],timeout=15000,env=environment)
-                      try:
-                          result['browserReadySeconds']=time.monotonic()-started
-                          page=await browser.new_page()
-                          await page.set_content('<button onclick="this.textContent=1">0</button>')
-                          await page.locator('button').click()
-                          assert await page.locator('button').inner_text()=='1'
-                          result['interaction']='passed'
-                      finally:
-                          await browser.close()
+              if result['variant']=='preloaded':
+                  before=time.monotonic()
+                  for binary in Path('/opt/google/chrome').rglob('*'):
+                      if binary.is_file():
+                          with binary.open('rb') as stream:
+                              while stream.read(1024*1024): pass
+                  result['preloadSeconds']=time.monotonic()-before
+              async with async_playwright() as pw:
+                  result['driverReadySeconds']=time.monotonic()-started
+                  executable=pw.chromium.executable_path if result['variant']=='managed' else '/opt/google/chrome/chrome'
+                  browser=await pw.chromium.launch(executable_path=executable,chromium_sandbox=True,headless=True,args=['--force-webrtc-ip-handling-policy=disable_non_proxied_udp'],timeout=15000,env=environment)
+                  try:
+                      result['browserReadySeconds']=time.monotonic()-started
+                      result['browserVersion']=browser.version
+                      page=await browser.new_page()
+                      await page.set_content('<button onclick="this.textContent=1">0</button>')
+                      await page.locator('button').click()
+                      assert await page.locator('button').inner_text()=='1'
+                      result['interaction']='passed'
+                  finally:
+                      await browser.close()
           try:
               asyncio.run(probe())
           except BaseException as error:
