@@ -2,14 +2,14 @@
 
 [SQLAlchemy models](../../apps/backend/src/formlane/models.py), [storage](../../apps/backend/src/formlane/storage.py) and [Alembic migrations](../../apps/backend/migrations/) define the six business tables. DBOS owns its separate workflow/operation history schema in PostgreSQL; both are part of recovery backups and require explicit migrations.
 
-| Table             | Authority                                                                                          |
-| ----------------- | -------------------------------------------------------------------------------------------------- |
-| `projects`        | Anonymous owner, idea, current/published pointers, public slug and active-run fence                |
-| `messages`        | Conversation, including stable ordering for equal timestamps                                       |
-| `versions`        | Immutable source/HTML snapshots, project-local numbers and generation ancestry                     |
-| `runs`            | Request/baseline, status, attempt/deadline, execution compatibility, eligibility, lease and cursor |
-| `run_events`      | Sequence-addressed observations tagged with execution attempt and idempotent event identity        |
-| `run_checkpoints` | Retained legacy completed-step results consumed during DBOS migration                              |
+| Table             | Authority                                                                                   |
+| ----------------- | ------------------------------------------------------------------------------------------- |
+| `projects`        | Anonymous owner, idea, current/published pointers, public slug and active-run fence         |
+| `messages`        | Conversation, including stable ordering for equal timestamps                                |
+| `versions`        | Immutable source/HTML snapshots, project-local numbers and generation ancestry              |
+| `runs`            | Request/baseline, status, attempt, execution compatibility, eligibility, lease and cursor   |
+| `run_events`      | Sequence-addressed observations tagged with execution attempt and idempotent event identity |
+| `run_checkpoints` | Immutable operation journal, frozen contracts, retained candidates and terminal diagnostics |
 
 IDs retain their historical text identity and timestamps remain epoch milliseconds. JSONB stores structured source/events/checkpoints. Schema changes require explicit Alembic migrations; application startup and requests never create tables.
 
@@ -19,7 +19,9 @@ Every private operation first resolves the project under its anonymous browser o
 
 The worker claims a 60-second lease refreshed every 10 seconds. Transactions and locks protect ownership, active-run selection, attempts, events and completion. Stale, expired or cancelled producers cannot write. Queue waiting and healthy execution have no fixed wall-clock deadline. Explicit resume atomically keeps the run ID and committed work, increments its attempt and clears terminal failure; its next claim records when execution starts. Active duplicate resume requests are idempotent. New runs, version restores and incompatible execution history invalidate recovery eligibility.
 
-DBOS records completed model/tool operations, not interrupted provider token streams. Uncommitted calls may repeat. Workflow compatibility is pinned across replay. Each event carries an attempt and the cursor remains monotonic across attempts, preventing historical terminal events from settling resumed execution. Failure categories distinguish timeout, provider, validation, step-limit and internal failures. Completion still requires current-source build, implementation validation, independent validation and explicit review.
+DBOS records completed model/tool operations, not interrupted provider token streams. Uncommitted calls may repeat. Workflow compatibility is pinned across replay; new workers skip incompatible old histories. Each event carries an attempt and the cursor remains monotonic across attempts, preventing historical terminal events from settling resumed execution. Failure categories distinguish timeout, provider, validation, step-limit, capability and internal failures. Completion requires exact source/artifact/contract/check evidence plus independent browser review. Capability blockers require a revised request, not a duplicate resume of unchanged missing resources.
+
+`flow-v2/candidate/<index>` checkpoints retain private source and optional compiled HTML before acceptance. Project detail returns only the latest eligible run's candidate whose baseline still matches the current version. Accepted completion, a superseding request or a changed baseline hides it without deleting its history. Candidate inspection never changes current/published pointers or version counts; public viewers and downloads continue to select accepted versions only.
 
 ## Version selections and ancestry
 

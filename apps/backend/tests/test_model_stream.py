@@ -15,7 +15,7 @@ from crewai.tools.base_tool import Tool
 from openai.types.chat import ChatCompletionChunk
 from pydantic import BaseModel
 
-from formlane.agents import DurableAgent, HarnessFailure, Runtime, SourceExecutor
+from formlane.agents import Runtime, SourceExecutor
 from formlane.model_stream import FileJsonStream, ObservedOpenAI, RuntimeAbort, StreamObserver
 
 
@@ -274,45 +274,60 @@ def test_provider_exception_cannot_become_native_tool_error_text(monkeypatch):
     assert "credential-material" in str(error.value.cause)
 
 
-def test_resume_replays_delegations_without_spending_fresh_work_budget(monkeypatch):
+def test_interrupted_stage_replays_completed_model_calls_without_global_allowance(monkeypatch):
     durable = MemoryDurable()
     calls = []
+    interrupted = [False]
 
-    def provider(llm, *args):
-        calls.append(llm._runtime.scope["path"])
-        return f"Completed delegation {len(calls)}"
+    def provider(llm, messages, *args):
+        calls.append((llm._runtime.scope["path"], messages))
+        if messages == "second operation" and not interrupted[0]:
+            interrupted[0] = True
+            raise ConnectionError("Provider operation interrupted")
+        return f"Completed {messages}"
+
+    def kickoff(crew):
+        llm = crew.agents[0].llm
+        first = llm.call("first operation")
+        second = llm.call("second operation")
+        return SimpleNamespace(raw=f"{first}; {second}")
 
     monkeypatch.setattr(OpenAICompletion, "call", provider)
-    monkeypatch.setattr(
-        Agent, "execute_task", lambda agent, task, *args: agent.llm.call(task.description)
-    )
-    task = Task(description="Continue the saved application", expected_output="Reviewed app")
+    monkeypatch.setattr(Crew, "kickoff", kickoff)
 
-    def agent_for_attempt():
+    def runtime_for_attempt():
         runtime = Runtime(
             None,
-            {"runId": "same-run", "request": "Continue the saved application", "idea": "Counter"},
+            {
+                "runId": "same-run",
+                "request": "Continue the saved application",
+                "previousSource": None,
+            },
             durable,
             lambda *_: None,
             lambda: False,
         )
-        llm = ObservedOpenAI(model="test", api_key="test-key").bind(runtime)
-        return DurableAgent(role="Alex", goal="Implement", backstory="Developer", llm=llm).bind(
-            runtime, "alex"
+        runtime.model_factory = lambda: ObservedOpenAI(model="test", api_key="test-key").bind(
+            runtime
         )
+        return runtime
 
-    first = agent_for_attempt()
-    saved = [first.execute_task(task) for _ in range(8)]
-    with pytest.raises(HarnessFailure, match="step_limit"):
-        first.execute_task(task)
-    assert len(calls) == 8
-
-    resumed = agent_for_attempt()
-    assert [resumed.execute_task(task) for _ in range(8)] == saved
-    assert len(calls) == 8
-    for index in range(8, 16):
-        result = json.loads(resumed.execute_task(task))
-        assert result["result"] == f"Completed delegation {index + 1}"
-    with pytest.raises(HarnessFailure, match="step_limit"):
-        resumed.execute_task(task)
-    assert calls == [f"crew-v1/delegate-{index}-alex" for index in range(16)]
+    first = runtime_for_attempt()
+    with pytest.raises(RuntimeAbort):
+        first.run_stage("alex", "flow-v2/implement/0", first.work_packet([], 0))
+    assert "flow-v2/implement/0/llm-0" in durable.results
+    assert "flow-v2/implement/0/llm-1" not in durable.results
+    resumed = runtime_for_attempt()
+    result = resumed.run_stage("alex", "flow-v2/implement/0", resumed.work_packet([], 0))
+    assert result == "Completed first operation; Completed second operation"
+    assert calls == [
+        ("flow-v2/implement/0", "first operation"),
+        ("flow-v2/implement/0", "second operation"),
+        ("flow-v2/implement/0", "second operation"),
+    ]
+    resumed.run_stage("david", "flow-v2/review/0", resumed.work_packet([], 0))
+    assert calls[-2:] == [
+        ("flow-v2/review/0", "first operation"),
+        ("flow-v2/review/0", "second operation"),
+    ]
+    assert resumed.scope["path"] == "flow-v2/controller"

@@ -443,7 +443,7 @@ def test_resume_preserves_checkpoint_source_history_and_fences_old_attempt(
     assert claimed["previous_version_id"] == baseline["id"]
     assert claimed["attempt_started_at"] == clock
 
-    assert claimed["execution_version"] == run["execution_version"] == "dbos-v1"
+    assert claimed["execution_version"] == run["execution_version"] == "flow-v2"
     assert (
         pg_store.get_checkpoint(run["id"], claimed["lease_token"], "source:committed") == checkpoint
     )
@@ -608,13 +608,29 @@ def test_recovery_migration_preserves_legacy_run_and_event_history(owner):
             command.upgrade(config, "head")
         assert not store.get_run(project_id, owner, old_run)["resumable"]
         migrated = store.get_run(project_id, owner, latest_run)
-        assert migrated["attempt"] == 1 and migrated["resumable"]
+        assert migrated["attempt"] == 1 and not migrated["resumable"]
         event = store.list_run_events(project_id, owner, latest_run, 0)[0]
         assert event["attempt"] == 1 and event["data"] == {"status": "failed"}
-        resumed = store.resume_run(project_id, owner, latest_run)
-        assert resumed["cursor"] == 2 and resumed["attempt"] == 2
-        claimed = store.claim_run("legacy-recovery")
-        assert claimed["execution_version"] == "crew-v1"
-        assert store.get_checkpoint(latest_run, claimed["lease_token"], "legacy:source")[
-            "value"
-        ] == {"source": "retained"}
+        with pytest.raises(StoreError) as incompatible:
+            store.resume_run(project_id, owner, latest_run)
+        assert incompatible.value.status == 409
+        with store.sessions() as session:
+            retained = session.get(RunCheckpoint, (latest_run, "legacy:source"))
+            assert retained.result == {"source": "retained"}
+            assert session.get(Run, latest_run).execution_version == "crew-v1"
+
+
+def test_new_worker_leaves_incompatible_queued_history_untouched(pg_store, project, owner):
+    legacy = pg_store.create_run(project["id"], owner, "Previously queued request")
+    with pg_store.sessions.begin() as session:
+        session.get(Run, legacy["id"]).execution_version = "dbos-v1"
+    next_project = pg_store.create_project(owner, "New workflow request")
+    current = pg_store.create_run(next_project["id"], owner)
+    claimed = pg_store.claim_run("new-workflow-worker")
+    assert claimed["id"] == current["id"]
+    with pg_store.sessions() as session:
+        retained = session.get(Run, legacy["id"])
+        assert retained.status == "queued"
+        assert retained.lease_token is None
+        assert retained.recovery_eligible
+        assert retained.execution_version == "dbos-v1"

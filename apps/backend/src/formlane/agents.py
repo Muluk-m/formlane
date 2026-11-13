@@ -1,4 +1,4 @@
-"""Native CrewAI hierarchical team with granular DBOS model/tool replay."""
+"""Deterministic delivery stages with native CrewAI and granular DBOS replay."""
 
 from __future__ import annotations
 
@@ -21,14 +21,13 @@ from crewai import Agent, Crew, Process, Task
 from crewai.agents.agent_executor import AgentExecutor
 from crewai.flow.flow_definition import FlowDefinition
 from crewai.tools.base_tool import Tool
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .compiler import compile_project
 from .model_stream import ObservedOpenAI, RuntimeAbort
 from .project import artifact_hash, create_source, is_project_path, source_hash, validate_source
 from .prompts import (
     ITERATION_INSTRUCTIONS,
-    MANAGER_INSTRUCTIONS,
     ROLE_GOALS,
     ROLE_INSTRUCTIONS,
     TEAM_INSTRUCTIONS,
@@ -118,13 +117,81 @@ class BrowserCheck(NoArgs):
     assertions: list[BrowserAssertion] = Field(default_factory=list, max_length=12)
 
 
+Capability = Literal[
+    "frontend",
+    "memory",
+    "durable_storage",
+    "shared_storage",
+    "browser_storage",
+    "network",
+    "server",
+    "auth",
+]
+CAPABILITIES = {
+    "revision": "opaque-offline-v1",
+    "supported": ["frontend", "memory"],
+    "unavailable": [
+        "durable_storage",
+        "shared_storage",
+        "browser_storage",
+        "network",
+        "server",
+        "auth",
+    ],
+}
+MAX_REPAIRS = 2
+
+
+class RequirementEvidence(NoArgs):
+    origin: Literal["request", "baseline"]
+    path: str | None
+    quote: str = Field(min_length=1, max_length=3000)
+    explanation: str = Field(min_length=1, max_length=2000)
+
+
+class Requirement(NoArgs):
+    id: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
+    description: str = Field(min_length=1, max_length=2000)
+    acceptance: str = Field(min_length=1, max_length=2000)
+    capabilities: list[Capability] = Field(min_length=1, max_length=8)
+    evidence: list[RequirementEvidence] = Field(min_length=1, max_length=8)
+
+
+class ContractArgs(NoArgs):
+    brief: str = Field(min_length=1, max_length=6000)
+    assumptions: list[str] = Field(max_length=16)
+    requirements: list[Requirement] = Field(min_length=1, max_length=16)
+
+
+class RequirementCheck(BrowserCheck):
+    requirementIds: list[str] = Field(min_length=1, max_length=16)
+
+
 class ChecksArgs(NoArgs):
-    checks: list[BrowserCheck] = Field(min_length=2, max_length=16)
+    checks: list[RequirementCheck] = Field(min_length=2, max_length=16)
+
+
+class CandidateArgs(NoArgs):
+    summary: str = Field(min_length=1, max_length=6000)
+
+
+class Assessment(NoArgs):
+    requirementId: str = Field(min_length=1, max_length=40)
+    passed: bool
+    evidence: str = Field(min_length=1, max_length=3000)
+
+
+class Finding(NoArgs):
+    requirementId: str = Field(min_length=1, max_length=40)
+    observation: str = Field(min_length=1, max_length=2000)
+    correction: str = Field(min_length=1, max_length=2000)
 
 
 class ReviewArgs(NoArgs):
     accepted: bool
-    findings: str = Field(min_length=1, max_length=6000)
+    summary: str = Field(min_length=1, max_length=6000)
+    assessments: list[Assessment] = Field(min_length=1, max_length=16)
+    findings: list[Finding] = Field(max_length=16)
 
 
 def apply_file_edits(content: str, edits: list[dict | Edit]) -> str:
@@ -141,7 +208,7 @@ def apply_file_edits(content: str, edits: list[dict | Edit]) -> str:
     return candidate
 
 
-def checks_hash(checks: list[dict]) -> str:
+def checks_hash(checks: Any) -> str:
     return hashlib.sha256(
         json.dumps(checks, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -162,46 +229,46 @@ def current_build(workspace: dict) -> dict | None:
 
 def completion_status(workspace: dict) -> dict:
     build = current_build(workspace)
+    contract = workspace["contract"]
     missing = []
+    if not contract or contract["blockers"]:
+        missing.append("capability_contract")
     if not build:
         missing.append("current_build")
-    implementation = workspace["implementationValidation"]
-    check_hash = checks_hash(workspace["checks"])
-    if (
-        not build
-        or not implementation
-        or any(implementation.get(key) != build[key] for key in ("sourceHash", "artifactHash"))
+    identity = {
+        "sourceHash": build["sourceHash"] if build else None,
+        "artifactHash": build["artifactHash"] if build else None,
+        "contractHash": contract["hash"] if contract else None,
+    }
+    for key, checks_key in (
+        ("implementationValidation", "checks"),
+        ("independentValidation", "reviewChecks"),
     ):
-        missing.append("alex_validation")
-    report = workspace["report"]
-    if (
-        not build
-        or not report
-        or not report["valid"]
-        or report["artifactHash"] != build["artifactHash"]
-        or workspace["validatedBy"] != "david"
-    ):
-        missing.append("david_validation")
+        evidence = workspace[key]
+        if (
+            not build
+            or not evidence
+            or not evidence.get("valid")
+            or any(evidence.get(k) != v for k, v in identity.items())
+            or evidence.get("checksHash") != checks_hash(workspace[checks_key])
+        ):
+            missing.append(key)
     review = workspace["review"]
     if (
         not build
         or not review
-        or not review["accepted"]
-        or any(review.get(key) != build[key] for key in ("sourceHash", "artifactHash"))
-        or review.get("checksHash") != check_hash
+        or not review.get("accepted")
+        or any(review.get(k) != v for k, v in identity.items())
+        or review.get("checksHash") != checks_hash(workspace["reviewChecks"])
+        or not workspace["independentValidation"]
+        or review.get("reviewerScope") != workspace["independentValidation"].get("scope")
+        or (
+            workspace["implementationValidation"]
+            and review.get("reviewerScope") == workspace["implementationValidation"].get("scope")
+        )
     ):
-        missing.append("david_acceptance")
-    return {
-        "ready": not missing,
-        "missing": missing,
-        "nextRole": "bob"
-        if not workspace["source"]
-        else "alex"
-        if "alex_validation" in missing
-        else "david"
-        if missing
-        else "complete",
-    }
+        missing.append("independent_review")
+    return {"ready": not missing, "missing": missing}
 
 
 def source_changes(source: dict | None, previous: Any) -> list[dict]:
@@ -239,7 +306,7 @@ class Runtime:
     def __init__(
         self, settings: Any, context: dict, durable: Any, emit: Callable, cancelled: Callable
     ):
-        self.settings, self.context = settings, context
+        self.settings, self.context = settings, copy.deepcopy(context)
         self.durable, self.emit, self.cancelled = durable, emit, cancelled
         previous = copy.deepcopy(context.get("previousSource"))
         if previous:
@@ -252,23 +319,22 @@ class Runtime:
             else None
         )
         self.workspace = {
-            "brief": "",
-            "architecture": "",
+            "contract": None,
             "source": copy.deepcopy(previous),
             "html": "",
             "build": None,
             "checks": [],
+            "reviewChecks": [],
             "report": None,
-            "validatedBy": None,
             "implementationValidation": None,
+            "independentValidation": None,
             "review": None,
             "revision": 0,
             "reviewedPaths": [],
-            "implementationPasses": 0,
+            "candidateSummary": None,
         }
-        self.delegations = 0
-        self.live_delegations: set[str] = set()
-        self.scope = self.new_scope("crew-v1/manager", "mike")
+        self.scope = self.new_scope("flow-v2/controller", "controller")
+        self.model_factory: Callable | None = None
 
     def new_scope(self, path: str, role: str) -> dict:
         return {
@@ -277,16 +343,12 @@ class Runtime:
             "message_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"{self.context['runId']}:{path}")),
             "llm_index": 0,
             "tool_index": 0,
-            "mutated": False,
         }
 
     def begin_model_call(self, scope: dict) -> None:
+        # Native agents have a stage-local iteration bound. Replaying provider
+        # results does not spend another global delegation allowance.
         self.check()
-        if scope["role"] == "mike" or scope["path"] in self.live_delegations:
-            return
-        if len(self.live_delegations) >= 8:
-            raise HarnessFailure("step_limit")
-        self.live_delegations.add(scope["path"])
 
     def check(self) -> None:
         if self.cancelled():
@@ -297,21 +359,18 @@ class Runtime:
             html="",
             build=None,
             report=None,
-            validatedBy=None,
             implementationValidation=None,
+            independentValidation=None,
             review=None,
             reviewedPaths=[],
+            reviewChecks=[],
+            candidateSummary=None,
         )
 
     def invalidate(self, source: dict) -> None:
         validate_source(source)
-        if self.scope["role"] == "alex" and not self.scope["mutated"]:
-            if self.workspace["implementationPasses"] >= 2:
-                raise ValueError(
-                    "Implementation/repair limit reached. Only unchanged-source validation remains available."
-                )
-            self.workspace["implementationPasses"] += 1
-            self.scope["mutated"] = True
+        if source == self.workspace["source"]:
+            raise ValueError("Source is unchanged. Use concrete diagnostics to make progress.")
         self.workspace["source"] = source
         self.workspace["revision"] += 1
         self.clear_evidence()
@@ -328,22 +387,112 @@ class Runtime:
             ],
             "previousFiles": sorted(self.previous["files"]) if self.previous else [],
             "sourceChanges": source_changes(source, self.previous),
-            "userRequest": self.context["request"],
+            "userRequest": self.context.get("request", ""),
+            "capabilities": copy.deepcopy(CAPABILITIES),
             "completion": completion_status(current),
-            **({} if self.previous else {"originalIdea": self.context["idea"]}),
+        }
+
+    def freeze_contract(self, args: dict) -> dict:
+        if self.workspace["contract"] is not None:
+            raise ValueError("Requirements are frozen; review and repair cannot replace them.")
+        contract = ContractArgs.model_validate(args).model_dump()
+        ids = [item["id"] for item in contract["requirements"]]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Requirement identifiers must be unique.")
+        blockers = []
+        for requirement in contract["requirements"]:
+            for evidence in requirement["evidence"]:
+                if evidence["origin"] == "request":
+                    text = self.context["request"] if evidence["path"] is None else ""
+                else:
+                    text = self.previous["files"].get(evidence["path"], "") if self.previous else ""
+                if evidence["quote"] not in text:
+                    raise ValueError(
+                        "Requirement evidence must quote the exact request or immutable baseline."
+                    )
+            unavailable = sorted(
+                set(requirement["capabilities"]) & set(CAPABILITIES["unavailable"])
+            )
+            if unavailable:
+                blockers.append(
+                    {
+                        "requirementId": requirement["id"],
+                        "capabilities": unavailable,
+                        "evidence": requirement["evidence"],
+                    }
+                )
+        contract.update(
+            request=self.context["request"],
+            baselineHash=source_hash(self.context["previousSource"]) if self.previous else None,
+            capabilities=copy.deepcopy(CAPABILITIES),
+            blockers=blockers,
+        )
+        contract["hash"] = checks_hash(contract)
+        self.workspace["contract"] = contract
+        return copy.deepcopy(contract)
+
+    def required_ids(self) -> set[str]:
+        contract = self.workspace["contract"]
+        if not contract:
+            raise ValueError("Analyze and freeze requirements first.")
+        blocked = {item["requirementId"] for item in contract["blockers"]}
+        return {item["id"] for item in contract["requirements"]} - blocked
+
+    def check_plan(self, checks: list[dict]) -> list[dict]:
+        required = self.required_ids()
+        parsed = ChecksArgs.model_validate({"checks": checks}).model_dump()["checks"]
+        coverage = {identifier for check in parsed for identifier in check["requirementIds"]}
+        if coverage != required:
+            raise ValueError(
+                "Checks must cover every supported frozen requirement using only its identifiers."
+            )
+        normalized = validate_checks(parsed)
+        if len({check["name"] for check in normalized}) != len(normalized):
+            raise ValueError("Check names must be unique.")
+        return [
+            {**check, "requirementIds": original["requirementIds"]}
+            for check, original in zip(normalized, parsed, strict=True)
+        ]
+
+    def identity(self) -> dict:
+        built = current_build(self.workspace)
+        if not built or not self.workspace["contract"]:
+            raise ValueError("A compiled current candidate and frozen contract are required.")
+        return {
+            "sourceHash": built["sourceHash"],
+            "artifactHash": built["artifactHash"],
+            "contractHash": self.workspace["contract"]["hash"],
         }
 
     def operation(self, name: str, args: dict) -> dict:
         self.check()
-        current = self.workspace
+        current, role = self.workspace, self.scope["role"]
         source = current["source"]
-        role = self.scope["role"]
+        permissions = {
+            "submit_contract": "emma",
+            "initialize_project": "alex",
+            "write_file": "alex",
+            "edit_file": "alex",
+            "delete_file": "alex",
+            "set_acceptance_checks": "alex",
+            "finish_candidate": "alex",
+            "read_review_files": "david",
+            "set_review_checks": "david",
+            "record_review": "david",
+            "validate_preview": "david",
+            "build_project": "controller",
+            "validate_implementation": "controller",
+        }
+        if name in permissions and role != permissions[name]:
+            raise ValueError("This stage cannot perform that operation.")
         if name == "read_workspace":
             return self.workspace_info()
         if name == "read_previous_file":
             if not self.previous or args["path"] not in self.previous["files"]:
                 raise ValueError("File does not exist in the saved baseline.")
             return {"path": args["path"], "content": self.previous["files"][args["path"]]}
+        if name == "submit_contract":
+            return self.freeze_contract(args)
         if name == "read_review_files":
             files = (source or {}).get("files", {})
             baseline = self.previous["files"] if self.previous else {}
@@ -351,9 +500,11 @@ class Runtime:
                 item["path"]: item["status"] for item in source_changes(source, self.previous)
             }
             paths = list(dict.fromkeys(args["paths"]))
-            current["reviewedPaths"] = sorted(set(current["reviewedPaths"]) | set(paths))
+            current["reviewedPaths"] = sorted(
+                set(current["reviewedPaths"]) | (set(paths) & statuses.keys())
+            )
             return {
-                "revision": current["revision"],
+                "identity": self.identity(),
                 "files": [
                     {
                         "path": path,
@@ -376,33 +527,60 @@ class Runtime:
                 "revision": current["revision"],
                 "files": sorted(current["source"]["files"]),
             }
-        if name == "set_acceptance_checks":
-            checks = validate_checks(args["checks"])
-            current.update(checks=checks, report=None, validatedBy=None, review=None)
-            return {"checks": len(checks), "revision": current["revision"]}
-        if name == "record_review":
-            built = current_build(current)
-            changed = {
-                item["path"]
-                for item in source_changes(source, self.previous)
-                if item["status"] != "unchanged"
+        if name in ("set_acceptance_checks", "set_review_checks"):
+            checks = self.check_plan(args["checks"])
+            if name == "set_acceptance_checks":
+                current.update(checks=checks, implementationValidation=None, candidateSummary=None)
+            else:
+                current.update(reviewChecks=checks)
+            current.update(independentValidation=None, review=None, report=None)
+            return {"checks": len(checks), "contractHash": current["contract"]["hash"]}
+        if name == "finish_candidate":
+            if not source:
+                raise ValueError("Produce coherent source before finishing implementation.")
+            validate_source(source)
+            if self.required_ids():
+                self.check_plan(current["checks"])
+            current["candidateSummary"] = args["summary"]
+            return {
+                "sourceHash": source_hash(source),
+                "summary": args["summary"],
+                "accepted": False,
             }
+        if name == "record_review":
+            identity = self.identity()
+            required = self.required_ids()
+            assessments = args["assessments"]
+            if {item["requirementId"] for item in assessments} != required or len(
+                assessments
+            ) != len(required):
+                raise ValueError("Assess every frozen requirement exactly once.")
+            findings = args["findings"]
+            if any(item["requirementId"] not in required for item in findings):
+                raise ValueError("Review findings must identify a frozen requirement.")
+            if not args["accepted"] and not findings:
+                raise ValueError("A rejection requires concrete requirement-linked findings.")
+            evidence = current["independentValidation"]
+            inspected = {item["path"] for item in source_changes(source, self.previous)}
             if args["accepted"] and (
-                not built
-                or not current["report"]
-                or not current["report"]["valid"]
-                or current["validatedBy"] != "david"
-                or current["report"]["artifactHash"] != built["artifactHash"]
-                or not changed.issubset(current["reviewedPaths"])
+                findings
+                or not all(item["passed"] for item in assessments)
+                or current["contract"]["blockers"]
+                or not inspected.issubset(current["reviewedPaths"])
+                or not evidence
+                or not evidence["valid"]
+                or evidence["scope"] != self.scope["path"]
+                or evidence["checksHash"] != checks_hash(current["reviewChecks"])
+                or any(evidence.get(key) != value for key, value in identity.items())
             ):
                 raise ValueError(
-                    "Acceptance requires independent current-artifact browser validation and inspection of every changed baseline file."
+                    "Acceptance requires substantive source/baseline inspection and independent current-artifact evidence for every frozen requirement."
                 )
             current["review"] = {
-                **args,
-                "sourceHash": built["sourceHash"] if built else "",
-                "artifactHash": built["artifactHash"] if built else "",
-                "checksHash": checks_hash(current["checks"]),
+                **copy.deepcopy(args),
+                **identity,
+                "checksHash": checks_hash(current["reviewChecks"]),
+                "reviewerScope": self.scope["path"],
             }
             return {**current["review"], "completion": completion_status(current)}
         if not source:
@@ -428,10 +606,12 @@ class Runtime:
             return {
                 "path": path,
                 "revision": current["revision"],
-                "message": "Source changed. Build and independently validate before acceptance.",
+                "message": "Source changed. Current-source validation and independent review are required.",
             }
         if name == "build_project":
+            summary = current["candidateSummary"]
             self.clear_evidence()
+            current["candidateSummary"] = summary
             result = compile_project(source, self.settings, self.cancelled)
             self.check()
             digest = source_hash(source)
@@ -446,21 +626,73 @@ class Runtime:
             output = {"ok": True, "issues": [], "sourceHash": digest}
             self.emit("build_result", output)
             return output
-        if name == "validate_preview":
-            built = current_build(current)
-            if not built:
-                raise ValueError("Build current source successfully before validation.")
-            checks = validate_checks(current["checks"])
-            report = validate_artifact(current["html"], checks, self.settings, self.cancelled)
+        if name in ("validate_preview", "validate_implementation"):
+            identity = self.identity()
+            key = "reviewChecks" if name == "validate_preview" else "checks"
+            checks = self.check_plan(current[key])
+            report = validate_artifact(
+                current["html"], validate_checks(checks), self.settings, self.cancelled
+            )
             self.check()
-            if report["artifactHash"] != built["artifactHash"]:
+            if report["artifactHash"] != identity["artifactHash"]:
                 raise ValueError("Browser report does not match the current artifact.")
-            current.update(report=report, validatedBy=role, review=None)
-            if role == "alex":
-                current["implementationValidation"] = dict(built) if report["valid"] else None
+            evidence = {
+                **report,
+                **identity,
+                "checksHash": checks_hash(checks),
+                "scope": self.scope["path"],
+            }
+            evidence_key = (
+                "independentValidation"
+                if name == "validate_preview"
+                else "implementationValidation"
+            )
+            current.update({evidence_key: evidence, "report": report, "review": None})
             self.emit("validation", report)
             return report
         raise ValueError("Unsupported source operation.")
+
+    def durable_operation(self, step: str, name: str, args: dict) -> dict:
+        self.check()
+        scope = self.scope
+        actor = {} if scope["role"] == "controller" else {"agent": scope["role"]}
+
+        def perform() -> dict:
+            self.check()
+            self.emit("tool_start", {"id": step, "name": name, **actor})
+            try:
+                output = self.operation(name, args)
+            except ValueError as error:
+                output = {"error": str(error)[:2000]}
+                if name == "build_project":
+                    self.emit("build_result", {"ok": False, "issues": [output["error"]]})
+            self.check()
+            public = (
+                {"revision": self.workspace["revision"]} if name.startswith("read_") else output
+            )
+            self.emit("tool_end", {"id": step, "name": name, **actor, "output": public})
+            return {"output": output, "workspace": copy.deepcopy(self.workspace), "args": args}
+
+        try:
+            saved = self.durable.run(step, perform)
+        except Exception as error:
+            raise RuntimeAbort(error) from None
+        self.check()
+        if saved["args"] != args:
+            raise HarnessFailure("internal")
+        self.workspace = copy.deepcopy(saved["workspace"])
+        if "error" not in saved["output"]:
+            if name in ("write_file", "edit_file"):
+                self.emit(
+                    "file_saved",
+                    {
+                        "path": args["path"],
+                        "content": self.workspace["source"]["files"][args["path"]],
+                    },
+                )
+            elif name == "delete_file":
+                self.emit("file_deleted", {"path": args["path"]})
+        return saved["output"]
 
     def tool(
         self, name: str, description: str, schema: type[BaseModel], terminal: bool = False
@@ -471,51 +703,8 @@ class Runtime:
             scope = self.scope
             index = scope["tool_index"]
             scope["tool_index"] += 1
-            step = f"{scope['path']}/tool-{index}-{name}"
-
-            def perform() -> dict:
-                self.emit("tool_start", {"id": step, "name": name, "agent": scope["role"]})
-                try:
-                    output = self.operation(name, args)
-                except ValueError as error:
-                    output = {"error": str(error)[:2000]}
-                    if name == "build_project":
-                        self.emit("build_result", {"ok": False, "issues": [output["error"]]})
-                self.check()
-                # Read results and source content stay out of the public tool transcript.
-                public = (
-                    {"revision": self.workspace["revision"]} if name.startswith("read_") else output
-                )
-                self.emit(
-                    "tool_end", {"id": step, "name": name, "agent": scope["role"], "output": public}
-                )
-                return {
-                    "output": output,
-                    "workspace": copy.deepcopy(self.workspace),
-                    "mutated": scope["mutated"],
-                    "args": args,
-                }
-
-            try:
-                saved = self.durable.run(step, perform)
-            except Exception as error:
-                raise RuntimeAbort(error) from None
-            if saved["args"] != args:
-                raise HarnessFailure("internal")
-            self.workspace = copy.deepcopy(saved["workspace"])
-            scope["mutated"] = saved["mutated"]
-            if "error" not in saved["output"]:
-                if name in ("write_file", "edit_file"):
-                    self.emit(
-                        "file_saved",
-                        {
-                            "path": args["path"],
-                            "content": self.workspace["source"]["files"][args["path"]],
-                        },
-                    )
-                elif name == "delete_file":
-                    self.emit("file_deleted", {"path": args["path"]})
-            return json.dumps(saved["output"], ensure_ascii=False)
+            output = self.durable_operation(f"{scope['path']}/tool-{index}-{name}", name, args)
+            return json.dumps(output, ensure_ascii=False)
 
         return Tool(
             name=name,
@@ -529,71 +718,72 @@ class Runtime:
     def tools(self, role: str) -> list[Tool]:
         available = {
             "read_workspace": (
-                "Read exact source inventory, baseline changes, request, build and completion requirements.",
+                "Read exact request, frozen contract, source inventory and evidence.",
                 NoArgs,
             ),
-            "read_previous_file": (
-                "Read a file from the immutable saved application baseline.",
-                PathArgs,
-            ),
+            "read_previous_file": ("Read a file from the immutable accepted baseline.", PathArgs),
             "read_file": ("Read the exact current file before editing.", PathArgs),
             "read_review_files": (
-                "Read current and immutable baseline content together for related paths, including deletions.",
+                "Inspect current and immutable baseline files together, including deletions.",
                 ReviewFilesArgs,
             ),
+            "submit_contract": (
+                "Freeze grounded requirements and capability needs once; terminates analysis.",
+                ContractArgs,
+            ),
             "initialize_project": (
-                "Choose and create vanilla or react-ts source. Existing projects cannot be reset.",
+                "Initialize vanilla or react-ts source; existing projects cannot be reset.",
                 InitializeArgs,
             ),
             "write_file": (
-                "Create or replace a source file. Supply path before content. package.json is protected.",
+                "Create or replace source. Supply path before content. package.json is protected.",
                 WriteArgs,
             ),
             "edit_file": (
-                "Atomically apply 1–8 unique literal edits; preserve unrelated source and existing checks.",
+                "Apply unique literal edits atomically, preserving unrelated code.",
                 EditArgs,
             ),
-            "delete_file": (
-                "Delete obsolete source. Required files and package.json remain protected.",
-                PathArgs,
-            ),
-            "build_project": (
-                "Compile current source with the trusted compiler; generated scripts/configs never execute.",
-                NoArgs,
-            ),
+            "delete_file": ("Delete obsolete source; required files remain protected.", PathArgs),
             "set_acceptance_checks": (
-                "Replace declarative checks, clearing stale validation and review. "
+                "Set implementation checks covering every supported frozen requirementId. "
                 + CHECK_INSTRUCTIONS,
                 ChecksArgs,
             ),
+            "set_review_checks": (
+                "Set independent checks covering every supported frozen requirementId. "
+                + CHECK_INSTRUCTIONS,
+                ChecksArgs,
+            ),
+            "finish_candidate": (
+                "Finish a coherent implementation and check plan; controller will save and validate it.",
+                CandidateArgs,
+            ),
             "validate_preview": (
-                "Run real isolated browser checks on the current source build; Alex returns immediately.",
+                "Execute your independent checks in the real isolated browser on the exact artifact.",
                 NoArgs,
             ),
             "record_review": (
-                "Record independent current-source review; acceptance requires your own passing browser evidence.",
+                "Record substantive requirement-linked independent acceptance or concrete repair findings.",
                 ReviewArgs,
             ),
         }
         names = {
-            "emma": ["read_workspace", "read_previous_file"],
-            "bob": ["read_workspace", "read_previous_file", "read_file", "initialize_project"],
+            "emma": ["read_workspace", "read_previous_file", "submit_contract"],
             "alex": [
                 "read_workspace",
                 "read_previous_file",
-                "initialize_project",
                 "read_file",
+                "initialize_project",
                 "write_file",
                 "edit_file",
                 "delete_file",
-                "build_project",
                 "set_acceptance_checks",
-                "validate_preview",
+                "finish_candidate",
             ],
             "david": [
                 "read_workspace",
                 "read_review_files",
-                "set_acceptance_checks",
+                "set_review_checks",
                 "validate_preview",
                 "record_review",
             ],
@@ -602,88 +792,89 @@ class Runtime:
             self.tool(
                 name,
                 *available[name],
-                terminal=(role == "alex" and name == "validate_preview")
-                or (role == "david" and name == "record_review"),
+                terminal=name in ("submit_contract", "finish_candidate", "record_review"),
             )
             for name in names
             if self.previous or name != "read_previous_file"
         ]
 
-    def delegate(self, agent: DurableAgent, task: Task, context: str | None, tools: Any) -> str:
+    def work_packet(self, diagnostics: list[dict], round_index: int) -> dict:
+        return {
+            "request": self.context["request"],
+            "contract": copy.deepcopy(self.workspace["contract"]),
+            "capabilities": copy.deepcopy(CAPABILITIES),
+            "baseline": copy.deepcopy(self.context.get("previousSource")),
+            "current": self.workspace_info(),
+            "diagnostics": copy.deepcopy(diagnostics),
+            "repairRound": round_index,
+            "remainingRepairs": MAX_REPAIRS - round_index,
+        }
+
+    def run_stage(self, role: str, path: str, packet: dict) -> str:
         self.check()
-        index = self.delegations
-        self.delegations += 1
-        role = agent._role_id
-        step = f"crew-v1/delegate-{index}-{role}"
         parent_scope = self.scope
-        baseline = copy.deepcopy(self.workspace)
+        initial = copy.deepcopy(self.workspace)
 
         def execute() -> dict:
-            self.workspace = copy.deepcopy(baseline)
-            self.scope = self.new_scope(step, role)
+            self.check()
+            self.workspace = copy.deepcopy(initial)
+            self.scope = self.new_scope(path, role)
             message_id = self.scope["message_id"]
-            self.emit("project_reset", {"source": self.workspace["source"]})
+            instructions = ITERATION_INSTRUCTIONS + "\n\n" if self.previous else ""
+            agent = Agent(
+                role=role.title(),
+                goal=ROLE_GOALS[role],
+                backstory=f"{TEAM_INSTRUCTIONS}\n\n{instructions}{ROLE_INSTRUCTIONS[role]}",
+                llm=self.model_factory(),
+                tools=self.tools(role),
+                allow_delegation=False,
+                allow_code_execution=False,
+                max_iter=48 if role == "alex" else 80 if role == "david" else 12,
+                max_retry_limit=0,
+                cache=False,
+                verbose=False,
+                checkpoint=False,
+                executor_class=SourceExecutor,
+            )
+            task = Task(
+                description=json.dumps(packet, ensure_ascii=False),
+                agent=agent,
+                expected_output="Complete the assigned stage with its terminal tool and factual evidence.",
+            )
+            crew = Crew(
+                agents=[agent],
+                tasks=[task],
+                process=Process.sequential,
+                cache=False,
+                memory=False,
+                planning=False,
+                verbose=False,
+                tracing=False,
+                share_crew=False,
+                checkpoint=False,
+            )
+            self.emit("agent_start", {"id": role, "name": role.title()})
+            self.emit("message_start", {"id": message_id, "role": "agent", "agent": role})
+            result = crew.kickoff()
+            self.check()
             self.emit(
-                "tool_start",
+                "message_done",
                 {
-                    "id": step,
-                    "name": f"delegate_{role}",
-                    "agent": "mike",
-                    "childAgent": role,
-                    "input": task.description,
+                    "id": message_id,
+                    "role": "agent",
+                    "agent": role,
+                    "content": result.raw,
+                    "createdAt": int(time.time() * 1000),
                 },
             )
-            self.emit("agent_start", {"id": role, "name": role.title(), "task": task.description})
-            self.emit("message_start", {"id": message_id, "role": "agent", "agent": role})
-            if (
-                role == "alex"
-                and self.workspace["report"]
-                and not self.workspace["report"]["valid"]
-            ):
-                self.emit(
-                    "repair",
-                    {
-                        "attempt": self.workspace["revision"] + 1,
-                        "issues": self.workspace["report"]["issues"],
-                    },
-                )
-            try:
-                output = str(super(DurableAgent, agent).execute_task(task, context, tools))
-                self.check()
-                if role == "emma":
-                    self.workspace["brief"] = output
-                elif role == "bob":
-                    self.workspace["architecture"] = output
-                self.emit(
-                    "message_done",
-                    {
-                        "id": message_id,
-                        "role": "agent",
-                        "agent": role,
-                        "content": output,
-                        "createdAt": int(time.time() * 1000),
-                    },
-                )
-                self.emit("agent_end", {"id": role, "name": role.title()})
-                manager_result = json.dumps(
-                    {"result": output, "workspace": self.workspace_info()}, ensure_ascii=False
-                )
-                self.emit(
-                    "tool_end",
-                    {
-                        "id": step,
-                        "name": f"delegate_{role}",
-                        "agent": "mike",
-                        "childAgent": role,
-                        "output": output[:3000],
-                    },
-                )
-                return {"workspace": copy.deepcopy(self.workspace), "result": manager_result}
-            finally:
-                self.scope = parent_scope
+            self.emit("agent_end", {"id": role, "name": role.title()})
+            return {"workspace": copy.deepcopy(self.workspace), "result": result.raw}
 
         try:
-            saved = self.durable.orchestrate(step, execute)
+            # Never wrap a Crew in durable.run: native model/tool calls are
+            # sibling DBOS steps, independently replayable after process death.
+            saved = self.durable.orchestrate(path, execute)
+            self.check()
             self.workspace = copy.deepcopy(saved["workspace"])
             self.emit("project_reset", {"source": self.workspace["source"]})
             return saved["result"]
@@ -691,6 +882,144 @@ class Runtime:
             raise RuntimeAbort(error) from None
         finally:
             self.scope = parent_scope
+
+    def persist_candidate(self, index: int) -> None:
+        self.check()
+        source = self.workspace["source"]
+        if not source:
+            return
+        validate_source(source)
+        built = current_build(self.workspace)
+        candidate = {
+            "source": copy.deepcopy(source),
+            "sourceHash": source_hash(source),
+            "html": self.workspace["html"] if built else None,
+            "artifactHash": built["artifactHash"] if built else None,
+            "contract": copy.deepcopy(self.workspace["contract"]),
+        }
+        saved = self.durable.run(f"flow-v2/candidate/{index:06d}", lambda: candidate)
+        self.check()
+        if saved != candidate:
+            raise HarnessFailure("internal")
+
+    def fail_workflow(self, code: str, reason: str, diagnostics: list[dict]) -> None:
+        self.check()
+        self.durable.run(
+            "flow-v2/failure",
+            lambda: {
+                "code": code,
+                "reason": reason,
+                "diagnostics": diagnostics,
+                "sourceHash": source_hash(self.workspace["source"])
+                if self.workspace["source"]
+                else None,
+            },
+        )
+        self.check()
+        raise HarnessFailure(code)
+
+    def run_workflow(self) -> dict:
+        self.run_stage("emma", "flow-v2/analyze", self.work_packet([], 0))
+        if not self.workspace["contract"]:
+            self.persist_candidate(0)
+            self.fail_workflow(
+                "validation", "Analysis did not produce a grounded frozen contract.", []
+            )
+        diagnostics: list[dict] = []
+        failed_states: set[str] = set()
+        last_candidate: str | None = None
+        for round_index in range(MAX_REPAIRS + 1):
+            self.check()
+            if diagnostics:
+                self.emit(
+                    "repair",
+                    {
+                        "attempt": round_index,
+                        "issues": [json.dumps(item, ensure_ascii=False) for item in diagnostics],
+                    },
+                )
+            self.workspace["candidateSummary"] = None
+            implementation_result = self.run_stage(
+                "alex",
+                f"flow-v2/implement/{round_index}",
+                self.work_packet(diagnostics, round_index),
+            )
+            if not self.workspace["candidateSummary"]:
+                self.workspace["candidateSummary"] = implementation_result
+            self.persist_candidate(2 * round_index)
+            if not self.workspace["source"]:
+                self.fail_workflow(
+                    "capability" if self.workspace["contract"]["blockers"] else "validation",
+                    "Implementation did not produce candidate source.",
+                    diagnostics,
+                )
+            candidate_state = checks_hash(
+                {"source": self.workspace["source"], "checks": self.workspace["checks"]}
+            )
+            if candidate_state == last_candidate:
+                self.fail_workflow(
+                    "validation",
+                    "Repair made no source or check-plan change; candidate retained.",
+                    diagnostics,
+                )
+            last_candidate = candidate_state
+            self.scope = self.new_scope(f"flow-v2/controller/{round_index}", "controller")
+            compilation = self.durable_operation(
+                f"flow-v2/compile/{round_index}", "build_project", {}
+            )
+            if "error" not in compilation:
+                # Save compiled work before browser events trigger detail refresh.
+                self.persist_candidate(2 * round_index + 1)
+            if self.workspace["contract"]["blockers"]:
+                self.fail_workflow(
+                    "capability",
+                    "Requested runtime capabilities are unavailable; candidate is unaccepted.",
+                    self.workspace["contract"]["blockers"],
+                )
+            if "error" in compilation:
+                diagnostics = [{"gate": "compile", "error": compilation["error"]}]
+            else:
+                report = self.durable_operation(
+                    f"flow-v2/validate/{round_index}", "validate_implementation", {}
+                )
+                if "error" in report or not report.get("valid"):
+                    diagnostics = [{"gate": "implementation_browser", "report": report}]
+                else:
+                    self.workspace.update(
+                        review=None, independentValidation=None, reviewChecks=[], reviewedPaths=[]
+                    )
+                    self.run_stage(
+                        "david", f"flow-v2/review/{round_index}", self.work_packet([], round_index)
+                    )
+                    self.check()
+                    if completion_status(self.workspace)["ready"]:
+                        return {
+                            "source": self.workspace["source"],
+                            "html": self.workspace["html"],
+                            "summary": self.workspace["candidateSummary"],
+                        }
+                    diagnostics = [
+                        {
+                            "gate": "independent_review",
+                            "review": self.workspace["review"],
+                            "report": self.workspace["report"],
+                            "missing": completion_status(self.workspace)["missing"],
+                        }
+                    ]
+            failure_state = checks_hash(
+                {
+                    "sourceHash": source_hash(self.workspace["source"]),
+                    "checks": self.workspace["checks"],
+                    "diagnostics": diagnostics,
+                }
+            )
+            if failure_state in failed_states or round_index == MAX_REPAIRS:
+                self.fail_workflow(
+                    "validation",
+                    "Concrete repair allowance exhausted or candidate diagnostics repeated; candidate retained.",
+                    diagnostics,
+                )
+            failed_states.add(failure_state)
 
 
 class SourceExecutor(AgentExecutor):
@@ -704,18 +1033,6 @@ class SourceExecutor(AgentExecutor):
 
     def _should_parallelize_native_tool_calls(self, tool_calls: list[Any]) -> bool:
         return False
-
-
-class DurableAgent(Agent):
-    _runtime: Any = PrivateAttr(default=None)
-    _role_id: str = PrivateAttr(default="")
-
-    def bind(self, runtime: Runtime, role: str) -> DurableAgent:
-        self._runtime, self._role_id = runtime, role
-        return self
-
-    def execute_task(self, task: Task, context: str | None = None, tools: Any = None) -> str:
-        return self._runtime.delegate(self, task, context, tools)
 
 
 def execute_harness(
@@ -745,92 +1062,9 @@ def execute_harness(
         llms.append(llm)
         return llm
 
-    baseline_instructions = f"{ITERATION_INSTRUCTIONS}\n\n" if runtime.previous else ""
-    agents = [
-        DurableAgent(
-            role=role.title(),
-            goal=ROLE_GOALS[role],
-            backstory=f"{TEAM_INSTRUCTIONS}\n\n{baseline_instructions}{ROLE_INSTRUCTIONS[role]}",
-            llm=model(),
-            tools=runtime.tools(role),
-            allow_delegation=False,
-            allow_code_execution=False,
-            max_iter=48 if role == "alex" else 80 if role == "david" else 10,
-            max_retry_limit=0,
-            cache=False,
-            verbose=False,
-            checkpoint=False,
-            executor_class=SourceExecutor,
-        ).bind(runtime, role)
-        for role in ROLE_INSTRUCTIONS
-    ]
-    manager = Agent(
-        role="Mike",
-        goal="Deliver the requested app only with current-source implementation validation and independent acceptance.",
-        backstory=f"{TEAM_INSTRUCTIONS}\n\n{baseline_instructions}{MANAGER_INSTRUCTIONS}",
-        llm=model(),
-        allow_delegation=True,
-        allow_code_execution=False,
-        max_iter=24,
-        max_retry_limit=0,
-        cache=False,
-        verbose=False,
-        checkpoint=False,
-        executor_class=SourceExecutor,
-    )
-
-    def acceptance(output):
-        runtime.check()
-        status = completion_status(runtime.workspace)
-        return (True, output.raw) if status["ready"] else (False, json.dumps(status))
-
-    task = Task(
-        description=json.dumps(
-            {
-                "request": context["request"],
-                "hasPreviousApp": bool(runtime.previous),
-                "workspace": runtime.workspace_info(),
-            },
-            ensure_ascii=False,
-        ),
-        expected_output="A concise user-language summary of the accepted application. Current-source build, Alex browser validation, independent David browser validation and explicit review must all pass.",
-        guardrail=acceptance,
-        guardrail_max_retries=2,
-    )
-    crew = Crew(
-        agents=agents,
-        tasks=[task],
-        manager_agent=manager,
-        process=Process.hierarchical,
-        cache=False,
-        memory=False,
-        planning=False,
-        verbose=False,
-        tracing=False,
-        share_crew=False,
-        checkpoint=False,
-    )
-
-    def execute() -> dict:
-        emit("agent_start", {"id": "mike", "name": "Mike"})
-        try:
-            result = crew.kickoff()
-        except Exception as error:
-            if str(error).startswith("Task failed guardrail validation"):
-                raise HarnessFailure("validation") from None
-            raise
-        runtime.check()
-        if not completion_status(runtime.workspace)["ready"]:
-            raise HarnessFailure("validation")
-        emit("agent_end", {"id": "mike", "name": "Mike"})
-        return {
-            "source": runtime.workspace["source"],
-            "html": runtime.workspace["html"],
-            "summary": result.raw,
-        }
-
+    runtime.model_factory = model
     try:
-        return execute()
+        return runtime.run_workflow()
     finally:
         for llm in llms:
             if llm._client is not None:

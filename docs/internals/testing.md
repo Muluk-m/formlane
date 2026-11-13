@@ -9,11 +9,11 @@ One integration owner runs authorized checks after shared edits land. Select exp
 | Boundary             | Required coverage                                                                                                                                                                          |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | API/ownership        | Contract-compatible JSON/errors; preserved owner header; private project/chat/version/download isolation; explicit allowed/denied CORS origins                                             |
-| Provider/CrewAI      | Native manager/specialist delegation, role-scoped tools, streaming, missing-key/provider failures and no mock fallback                                                                     |
+| Provider/CrewAI      | Focused native stage execution, scoped tools, streaming, capability contracts, missing-key/provider failures and no mock fallback                                                          |
 | PostgreSQL           | Explicit empty-database Alembic migration, constraints, atomic pointer/run transitions and concurrent lease fencing                                                                        |
 | Import               | All six tables; IDs/timestamps/pointers, source/HTML hashes, message order, event cursors, checkpoints, pre-0006 ancestry policy, exact repeat and divergent-target rejection, verify-only |
 | Generation           | Current-source build and check-set evidence; implementation and independent validation/review; repair, safe failure categories and prior-version preservation                              |
-| Durability           | Cursor replay/deduplication, disconnect without cancellation, explicit cancel, lease expiry/reclaim, immutable checkpoint replay, stale late-write rejection and persisted deadline        |
+| Durability           | Cursor replay/deduplication, disconnect without cancellation, cancel/reclaim, granular replay, stale-write rejection and incompatible-history isolation                                    |
 | Source/compiler      | Cross-runtime source/hash fixtures, fixed templates, virtual imports, size/time/output bounds, stripped credentials and cancelled process cleanup                                          |
 | Browser isolation    | Native sandboxed Chromium, opaque iframe, network/WebSocket denial, declarative interaction/assertions and repair evidence                                                                 |
 | Versions/publication | Monotonic numbering, inspection without mutation, restore, ancestry-based Undo, independent remix, exact ZIP, frozen publication, republish and unpublish                                  |
@@ -28,8 +28,8 @@ Browser tests require a sandbox-capable Chromium/Chrome compatible with Python P
 
 ## End-to-end evidence
 
-A real-provider acceptance pass covers idea → native delegation → validated saved preview → follow-up → history/restore/Undo → remix/download → publish/republish/unpublish → reload. Separately exercise reconnect, cancellation, deadline and restart/reclaim with the current deployed backend. Record release, run/version identity and observed result; a successful tool probe is narrower evidence.
+A real-provider acceptance pass covers idea → frozen capabilities → implementation → validated saved preview → behavior-preserving follow-up → reconnect. Retained-candidate inspection must preserve accepted history and publication. Separately exercise process death, same-run resume and cancellation. Required runtime capabilities must fail honestly when unavailable; an explicitly session-only acceptance case does not establish persistent shared business data. Record release, run/version identity and observed result; passing test doubles do not establish real-provider quality.
 
 UI evidence checks actual rendering, both locales, dialogs/focus, status treatment, source comparisons, 375px layouts and unsent drafts. Generated apps may use their requested visual style; the shell retains Skyline.
 
-[Deployment](../operations/deployment.md) owns current evidence: the initial targeted Python run reported 139/144 passing, then an affected set reported 76 passing. A real-model check-hash gate regression was subsequently found and is being fixed. Those observations do not establish a complete suite or final production cutover; the integration owner must record the final result against the final code and migrated target.
+[Deployment](../operations/deployment.md) owns current acceptance evidence and rollout status. Historical test counts or screenshots do not prove the current workflow or production activation.

@@ -1,6 +1,6 @@
 # Formlane
 
-Describe an app and watch an AI product team build it. Mike delegates to Emma for requirements, Bob for template selection, Alex for implementation and David for independent validation. Follow-ups revise the current source and repeat the acceptance gate. This recreates the core [atoms.dev](https://atoms.dev/) loop: team conversation, interactive preview and a published link. Projects belong to an anonymous browser identity; there is no registered account system.
+Describe an app and watch an AI product team build it. Emma freezes the request and runtime capabilities, Alex implements the source, and David independently reviews it. A deterministic workflow compiles, validates and saves the accepted result. Follow-ups revise the current source against a fresh contract. This recreates the core [atoms.dev](https://atoms.dev/) loop: team conversation, interactive preview and a published link. Projects belong to an anonymous browser identity; there is no registered account system.
 
 The architecture is **FastAPI + native CrewAI + DBOS + PostgreSQL on the existing GCP VM**, with **static React on Cloudflare Pages** and an isolated Node compiler. [Deployment evidence and recovery](docs/operations/deployment.md) record the migration, acceptance runs and release identities.
 
@@ -14,9 +14,9 @@ These production screenshots show release `f7dfcb3`, with saved v2 retained afte
 ## Features
 
 - English/Chinese interface, example prompts and this browser's project list.
-- assistant-ui conversations with streaming Markdown, delegation tasks, grouped tool outcomes, review summaries and persistent prompt drafts.
+- assistant-ui conversations with streaming Markdown, focused agent stages, grouped tool outcomes, review summaries and persistent prompt drafts.
 - Resizable desktop workspace and full-height mobile conversation/preview switching.
-- Sandboxed interactive preview, desktop/mobile sizes, selectable source files, live unsaved drafts and build results.
+- Sandboxed interactive preview, desktop/mobile sizes, selectable source files, live drafts and retained unaccepted candidates after failure.
 - Demand-selected Vanilla + Vite or React + TypeScript + Vite source projects; follow-ups preserve accepted behavior outside the requested change.
 - Version history, current/published markers, historical preview, selectable source comparisons, confirmed restore and ancestry-based Undo.
 - Publish, republish or unpublish a saved version at a stable link; remix a selected version and download complete runnable source.
@@ -35,9 +35,9 @@ These production screenshots show release `f7dfcb3`, with saved v2 retained afte
 
 The API and worker share PostgreSQL business state; DBOS owns durable workflow/operation history in its separate schema. Pages has no business Functions, Worker binding or database. The worker enforces fenced leases around native CrewAI model/tool execution; SSE observes persisted attempt-tagged events. Node owns no business endpoints or orchestration. See [architecture](docs/internals/architecture.md), [data model](docs/internals/data-model.md) and [ADRs](docs/adr/README.md).
 
-A saved version requires a build for the current source, passing implementation checks, independent browser validation and David's explicit acceptance. Source/check changes invalidate affected evidence. Sandboxed Chromium validates opaque iframes with restricted networking and no provider/database credentials. Compiler subprocesses accept bounded virtual source without executing generated package scripts or plugins.
+A saved version requires a current-source build, passing implementation checks, independent browser validation and substantive review against a frozen request/capability contract. Source/check changes invalidate affected evidence. The workflow saves passing results without another manager decision. Sandboxed Chromium validates opaque iframes with restricted networking and no provider/database credentials. Compiler subprocesses accept bounded virtual source without executing generated package scripts or plugins.
 
-Runs have **no fixed wall-clock deadline**. A 60-second lease and 10-second heartbeat detect lost workers; individual provider, compiler and browser operations retain bounded timeouts. Explicit Resume preserves run identity, source and committed results. Replayed delegations do not consume the current execution's fresh-work allowance. Cancellation fences late writes. Interrupted operations without committed results may repeat, including provider billing. Completed, superseded and baseline-invalidated runs cannot resume; failures retain accepted versions.
+Runs have **no fixed wall-clock deadline**. A 60-second lease and 10-second heartbeat detect lost workers; individual provider, compiler and browser operations retain bounded timeouts. Explicit Resume preserves compatible run identity, source and committed model/tool results. Cancellation fences late writes. Interrupted operations without committed results may repeat, including provider billing. Completed, superseded, capability-blocked and incompatible runs cannot resume through the current workflow; failures retain accepted versions and private candidate work. Old histories require their matching release; see [ADR-0015](docs/adr/0015-deterministic-delivery.md).
 
 ## Development
 
@@ -51,6 +51,6 @@ The API uses the reserved GCP address `formlane-api` in `us-central1` on the exi
 
 Generated projects are frontend applications with fixed template dependencies, bounded to 64 files/256 KiB of source and 512 KiB of compiled preview. The service does not provision generated backends, databases or authentication. Interactive state is in memory inside the opaque preview; saved source/history does not persist generated runtime state. Downloaded projects run with `pnpm install`, `pnpm dev` and `pnpm build`; React projects also support `pnpm typecheck`. The compiler supports local JS/TS/JSX/TSX, CSS, JSON and SVG with fixed React imports, not arbitrary server modules or custom Vite plugins.
 
-Anonymous identity is a demo ownership boundary. Current, viewed and published versions remain distinct; restoring or undoing does not republish. Real-model latency can be substantial, and deadline failures preserve prior results. No GitHub export, visual editor or multi-model race is claimed.
+Anonymous identity is a demo ownership boundary. Current, viewed, candidate and published results remain distinct; restoring or undoing does not republish. Requests requiring unavailable backend, shared storage or authentication fail explicitly rather than becoming successful memory-only applications. Real-model latency can be substantial. No GitHub export, visual editor or multi-model race is claimed.
 
 [Documentation](docs/README.md) · [Terminology](CONTEXT.md) · [Design system](DESIGN.md) · [Agent guidance](AGENTS.md)

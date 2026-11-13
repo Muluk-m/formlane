@@ -25,9 +25,10 @@ from dbos import DBOS, SetWorkflowID
 from dbos._schemas import SCHEMA_PLACEHOLDER
 
 from .settings import Settings
+from .storage import EXECUTION_VERSION
 
-APPLICATION_VERSION = "dbos-v1"
-WORKFLOW_NAME = "formlane.crew.dbos-v1"
+APPLICATION_VERSION = EXECUTION_VERSION
+WORKFLOW_NAME = "formlane.flow.flow-v2"
 INCOMPATIBLE_MESSAGE = (
     "This run requires its original execution version and cannot resume on this deployment."
 )
@@ -120,10 +121,10 @@ def run_crew(run_id: str) -> dict:
         raise ExecutionInterrupted(RuntimeError("No authorized run execution context."))
     try:
         session.durable.check()
-        saved = session.durable.run("dbos-v1/execution-manifest", lambda: session.manifest)
+        saved = session.durable.run("flow-v2/execution-manifest", lambda: session.manifest)
         if saved != session.manifest:
             raise ExecutionVersionMismatch(INCOMPATIBLE_MESSAGE)
-        result = session.durable.orchestrate("crew-v1/result", session.invoke)
+        result = session.durable.orchestrate("flow-v2/result", session.invoke)
         session.durable.check()
         return result
     except BaseException as error:
@@ -138,7 +139,7 @@ def run_crew(run_id: str) -> dict:
 def execute_durable(settings: Settings, durable: Any, invoke: Callable[[], dict]) -> dict:
     """Recover exactly one leased run, including after a hard process death."""
     global _session
-    if durable.job["execution_version"] not in {"crew-v1", APPLICATION_VERSION}:
+    if durable.job["execution_version"] != APPLICATION_VERSION:
         raise ExecutionVersionMismatch(INCOMPATIBLE_MESSAGE)
     durable.check()
     session = ExecutionSession(durable, invoke, compatibility_manifest(settings))

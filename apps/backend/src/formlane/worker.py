@@ -57,6 +57,11 @@ def failure_for(error: BaseException) -> dict:
             "code": "validation",
             "message": "The generated app did not pass validation after repair. Your previous version is unchanged.",
         }
+    if code == "capability":
+        return {
+            "code": "capability",
+            "message": "This request needs capabilities unavailable in the current app runtime. Your previous version is unchanged.",
+        }
     if (
         code == "provider"
         or provider_retryable(error)
@@ -133,18 +138,9 @@ class Durable:
         return result
 
     def orchestrate(self, name: str, function: Callable[[], Any]) -> Any:
-        """Import an immutable legacy aggregate, or run orchestration outside steps.
-
-        The import decision is itself durable, so later replay takes the identical
-        branch. Never wrap a delegation/crew in a step: DBOS swallows nested steps.
-        """
+        """Scope stage events while model/tool operations remain sibling DBOS steps."""
+        self.check()
         with self.events(name):
-            saved = self.step(
-                f"{name}/legacy-import",
-                lambda: self.store.get_checkpoint(self.job["id"], self.job["lease_token"], name),
-            )
-            if saved is not None:
-                return saved["value"]
             result = function()
             self.check()
             return result

@@ -77,7 +77,11 @@ import {
   reconcileRun,
   reconcileRunEvent,
 } from '../features/projects/run'
-import { projectWorkspace, reduceProjectEvent } from '../features/projects/workspace'
+import {
+  projectWorkspace,
+  reduceProjectEvent,
+  selectProjectCandidate,
+} from '../features/projects/workspace'
 import {
   cancelRun,
   downloadProject,
@@ -136,6 +140,7 @@ export function ProjectPage() {
   const [viewing, setViewing] = useState<
     (AppVersion & { html: string; source: ProjectSource }) | null
   >(null)
+  const [candidateRunId, setCandidateRunId] = useState<string | null>(null)
   const [share, setShare] = useState<{ slug: string; url: string; versionId: string } | null>(null)
   const [copied, setCopied] = useState(false)
   const [split, setSplit] = useState(
@@ -163,6 +168,7 @@ export function ProjectPage() {
   function selectCurrentVersion() {
     historySelection.current++
     setViewing(null)
+    setCandidateRunId(null)
   }
 
   async function refresh(fence?: { runId: string; signal: AbortSignal }, resetWorkspace = true) {
@@ -453,6 +459,13 @@ export function ProjectPage() {
     ) {
       setActivity((current) => [...current, event])
     }
+    if (
+      (event.type === 'build_result' || event.type === 'validation') &&
+      event.attempt === runRef.current?.attempt &&
+      isActiveRun(runRef.current)
+    ) {
+      void client.invalidateQueries({ queryKey: projectQuery(id).queryKey })
+    }
   })
 
   const observation = useMemo(
@@ -580,6 +593,7 @@ export function ProjectPage() {
       if (!mounted.current || selection !== historySelection.current) return
       setViewing(version)
     }
+    setCandidateRunId(null)
     setTab(mode)
     setMobilePanel('preview')
   }
@@ -695,7 +709,7 @@ export function ProjectPage() {
         {t('atoms.loading')}
       </div>
     )
-  if (detailQuery.error || !project)
+  if ((!detailQuery.data && detailQuery.error) || !project)
     return (
       <main className="grid min-h-[60vh] place-items-center p-6">
         <div>
@@ -707,8 +721,20 @@ export function ProjectPage() {
       </main>
     )
 
-  const displayHtml = viewing?.html ?? html
-  const displaySource = viewing?.source ?? workspace.source
+  const { candidate, selected: candidateSelected } = selectProjectCandidate({
+    candidate: detailQuery.data?.candidate ?? null,
+    run,
+    currentVersionId: project.currentVersionId,
+    detailVersionId: detailQuery.data?.project.currentVersionId ?? null,
+    viewingVersionId: viewing?.id ?? null,
+    selectedRunId: candidateRunId,
+  })
+  const observingWorkspace = !viewing && !candidate
+  const displayHtml = viewing?.html ?? (candidateSelected ? (candidate?.html ?? '') : html)
+  const displaySource =
+    viewing?.source ??
+    (candidateSelected ? candidate?.source : observingWorkspace ? workspace.source : source) ??
+    null
   const projectError = run ? null : project.error
   const publishedCurrent = Boolean(
     project.publishedSlug && project.publishedVersionId === project.currentVersionId,
@@ -810,14 +836,14 @@ export function ProjectPage() {
             <DropdownMenuContent align="end">
               <DropdownMenuItem
                 data-testid="remix-button"
-                disabled={busy || running}
+                disabled={busy || running || candidateSelected}
                 onClick={() => void act(remix, t('atoms.remix'))}
               >
                 {t('atoms.remix')}
               </DropdownMenuItem>
               <DropdownMenuItem
                 data-testid="download-button"
-                disabled={!project.currentVersionId}
+                disabled={!project.currentVersionId || candidateSelected}
                 onClick={() =>
                   void act(
                     () =>
@@ -837,7 +863,7 @@ export function ProjectPage() {
           <Button
             size="sm"
             data-testid="publish-button"
-            disabled={!project.currentVersionId || running || busy}
+            disabled={!project.currentVersionId || running || busy || candidateSelected}
             onClick={() => void act(publish, publishLabel)}
           >
             {publishLabel}
@@ -1008,13 +1034,67 @@ export function ProjectPage() {
           <Stage
             html={displayHtml}
             source={displaySource}
-            drafts={viewing ? {} : workspace.drafts}
-            activePath={viewing ? null : workspace.activePath}
-            draft={!viewing && workspace.dirty}
-            build={viewing ? null : workspace.build}
+            drafts={observingWorkspace ? workspace.drafts : {}}
+            activePath={observingWorkspace ? workspace.activePath : null}
+            draft={candidateSelected || (observingWorkspace && workspace.dirty)}
+            build={observingWorkspace ? workspace.build : null}
             tab={tab}
             device={device}
-            running={running}
+            running={running && observingWorkspace}
+            candidateNotice={
+              candidate ? (
+                <div
+                  className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-info-bg px-3 py-2 text-xs"
+                  data-testid="candidate-notice"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary">{t('atoms.candidate.label')}</Badge>
+                    <span>
+                      {t(
+                        candidateSelected
+                          ? 'atoms.candidate.description'
+                          : 'atoms.candidate.available',
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {candidateSelected ? (
+                      <>
+                        {tab !== 'code' && (
+                          <Button variant="ghost" size="sm" onClick={() => setTab('code')}>
+                            {t('atoms.candidate.source')}
+                          </Button>
+                        )}
+                        {project.currentVersionId && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            data-testid="back-accepted"
+                            onClick={selectCurrentVersion}
+                          >
+                            {t('atoms.candidate.back')}
+                          </Button>
+                        )}
+                      </>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        data-testid="inspect-candidate"
+                        onClick={() => {
+                          historySelection.current++
+                          setViewing(null)
+                          setCandidateRunId(candidate.runId)
+                          setTab(candidate.html ? 'preview' : 'code')
+                        }}
+                      >
+                        {t('atoms.candidate.inspect')}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ) : undefined
+            }
             toolbarAction={
               wide ? (
                 <Button
@@ -1071,18 +1151,22 @@ export function ProjectPage() {
                     <Spinner />
                   ) : (
                     <span className="font-mono text-xs">
-                      {t('atoms.versionReview.shortVersion', {
-                        number:
-                          viewing?.number ??
-                          versions.find((version) => version.id === project.currentVersionId)
-                            ?.number ??
-                          '—',
-                      })}
+                      {candidateSelected
+                        ? t('atoms.candidate.label')
+                        : t('atoms.versionReview.shortVersion', {
+                            number:
+                              viewing?.number ??
+                              versions.find((version) => version.id === project.currentVersionId)
+                                ?.number ??
+                              '—',
+                          })}
                     </span>
                   )}
-                  <span className="text-xs text-muted-foreground">
-                    {t(viewing ? 'atoms.versionReview.historical' : 'atoms.current')}
-                  </span>
+                  {!candidateSelected && (
+                    <span className="text-xs text-muted-foreground">
+                      {t(viewing ? 'atoms.versionReview.historical' : 'atoms.current')}
+                    </span>
+                  )}
                   <HugeiconsIcon icon={ArrowDown01Icon} size={14} strokeWidth={1.5} />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -1113,7 +1197,11 @@ export function ProjectPage() {
               </DropdownMenu>
             }
             changes={
-              selectedVersion ? (
+              candidateSelected ? (
+                <div className="grid h-full place-items-center p-6 text-sm text-muted-foreground">
+                  {t('atoms.candidate.changes')}
+                </div>
+              ) : selectedVersion ? (
                 <VersionChanges
                   key={viewing?.id ?? project.currentVersionId}
                   projectId={id}

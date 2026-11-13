@@ -4,13 +4,13 @@ A browser-based AI product team: describe an app, watch specialists build source
 
 ## Invariants
 
-1. Preserve idea → streamed team conversation → compiled preview → immutable source version → optional publication. Follow-ups start from the current source and require fresh evidence for that exact candidate.
-2. Failed or cancelled runs preserve the last complete version. Partial drafts are never saved successes.
+1. Preserve idea → frozen request/capability contract → streamed implementation → compiled candidate → independent acceptance → immutable version → optional publication. Follow-ups use the current source as their immutable baseline.
+2. Failed or cancelled runs preserve the last complete version. Retained candidates remain private unaccepted drafts and never change current or published pointers.
 3. Authorize every private project, message, version and download against the anonymous browser owner on the backend.
 4. Public `/p/:slug` exposes only the explicitly published version. Restore and Undo change current selection, not publication; unpublish revokes public access.
 5. Generation uses the real configured provider. Missing credentials fail visibly; there is no mock generation or silent fallback.
 6. Generated HTML is untrusted. Preserve the opaque iframe, sandboxed Chromium and credential-stripped compiler/browser processes.
-7. Disconnect closes observation only. Cancellation fences writes. Completion requires current-source build evidence, passing implementation and independent browser validation, and David's acceptance. Runs have no fixed wall-clock deadline; retain per-operation timeouts and lease fencing.
+7. Disconnect closes observation only. Cancellation fences writes. Completion requires matching source/artifact/contract/check evidence and independent browser review. Python controls delivery stages; agents cannot rewrite the contract or bypass gates. Runs have no fixed wall-clock deadline; retain per-operation timeouts and lease fencing. New workflow versions never replay incompatible old histories.
 8. PostgreSQL owns all six business tables. Apply Alembic explicitly; requests and startup never create schema. Pages serves static React assets only; Node is restricted to the trusted compiler.
 
 ## Every task

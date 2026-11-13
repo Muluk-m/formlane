@@ -194,15 +194,6 @@ def test_nested_operation_is_rejected_instead_of_swallowed():
         durable.run("outer", lambda: durable.run("inner", lambda: None))
 
 
-def test_legacy_aggregate_import_does_not_run_completed_effects():
-    store = MemoryStore()
-    store.checkpoints["crew-v1/delegate-0-alex"] = {"value": {"result": "saved"}}
-    durable = Durable(store, job(), lambda: False)
-    assert durable.orchestrate(
-        "crew-v1/delegate-0-alex", lambda: pytest.fail("Completed delegation repeated")
-    ) == {"result": "saved"}
-
-
 def test_without_workflow_cannot_silently_run_nondurable(isolated_step_boundary):
     isolated_step_boundary.workflow_id = None
     with pytest.raises(RuntimeError, match="require a workflow"):

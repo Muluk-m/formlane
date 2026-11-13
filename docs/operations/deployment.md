@@ -107,6 +107,12 @@ Focused verification covered 89 backend tests and five catalog tests, including 
 
 Integration with PR #17 passed another 50 PostgreSQL storage, worker and process-recovery tests and 41 frontend message tests. The migration dry run accepted both live workflow manifests. Queue/resume waiting, checkpoint rollback, cached replay cancellation and stale-producer rejection remain covered without a whole-run watchdog.
 
+## Deterministic workflow candidate
+
+The staged delivery workflow uses execution version `flow-v2` and DBOS workflow `formlane.flow.flow-v2`. Its operation order differs from previous Crew orchestration. Do not run the historical execution-budget manifest migration to force old runs onto this workflow. The new scheduler leaves incompatible queued histories untouched; retain the matching release and checkpoints for their recovery. Drain active old work before switching workers, and deploy the API and worker from the same candidate.
+
+Acceptance runs use the isolated `formlane_stage` database and loopback API on port 8094. The production authority described above remains unchanged until an accepted release is activated. Browser reload recovered the in-flight source for run `1faeb315-0a82-483b-8f07-05ba12e17294` while the project retained zero accepted versions; [retained draft evidence](../screenshots/workflow-retained-draft.png) records that boundary. This proves source recovery, not successful generation or production activation.
+
 ## Historical releases — Worker/D1 and Node executor
 
 The following is predecessor evidence, **not Python rollout acceptance**. The prior topology used Pages Functions/service binding `API`, Hono Worker `formlane-api`, D1 `atoms-demo` and a non-root Node/OpenAI Agents SDK executor on the same approved GCP VM. Its old instructions and source are retained at [historical revision b8af77af1bb2](https://github.com/Muluk-m/formlane/tree/b8af77af1bb2); the [historical deployment guide](https://github.com/Muluk-m/formlane/blob/b8af77af1bb2/docs/operations/deployment.md) records detailed earlier run evidence. Deleted `apps/server` / `apps/executor` paths belong to that Git revision, not current modules.
