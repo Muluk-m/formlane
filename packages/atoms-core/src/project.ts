@@ -78,13 +78,27 @@ export function createProjectSource(template: ProjectTemplateId): ProjectSource 
   </body>
 </html>
 `,
-      'src/styles.css': `:root { font-family: system-ui, sans-serif; color: #171717; background: #fff; }
+      'src/styles.css': `:root { font-family: system-ui, sans-serif; color: #171717; background: #fff; --muted: #525252; --line: #e5e5e5; --surface: #fafafa; --accent: #0284c7; --radius: 0.75rem; }
 * { box-sizing: border-box; }
-body { margin: 0; }
+body { margin: 0; line-height: 1.5; }
 main { max-width: 64rem; margin: 0 auto; padding: 2rem; }
+h1, h2, h3, p { margin: 0; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
-:focus-visible { outline: 2px solid #0284c7; outline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.stack { display: flex; flex-direction: column; gap: 1rem; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }
+.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }
+.muted { color: var(--muted); }
+.btn { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: inherit; padding: 0.5rem 1rem; }
+.btn-primary { border-color: #171717; background: #171717; color: #fff; }
+.btn:disabled { cursor: not-allowed; opacity: 0.5; }
+.field { display: flex; flex-direction: column; gap: 0.25rem; }
+.field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; background: #fff; }
+.badge { display: inline-block; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); padding: 0.125rem 0.5rem; font-size: 0.875rem; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 640px) { main { padding: 1rem; } }
 `,
     },
   }

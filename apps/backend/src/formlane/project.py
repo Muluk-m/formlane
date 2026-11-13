@@ -14,6 +14,31 @@ MAX_SOURCE_BYTES = 256 * 1024
 MAX_FILE_CHARACTERS = 180000
 MAX_PREVIEW_BYTES = 512 * 1024
 
+# Shared base layer; generated apps reuse these classes instead of restyling.
+BASE_STYLESHEET = (
+    ":root { font-family: system-ui, sans-serif; color: #171717; background: #fff; --muted: #525252; --line: #e5e5e5; --surface: #fafafa; --accent: #0284c7; --radius: 0.75rem; }\n"
+    "* { box-sizing: border-box; }\n"
+    "body { margin: 0; line-height: 1.5; }\n"
+    "main { max-width: 64rem; margin: 0 auto; padding: 2rem; }\n"
+    "h1, h2, h3, p { margin: 0; }\n"
+    "button, input, select, textarea { font: inherit; }\n"
+    "button { cursor: pointer; }\n"
+    ":focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }\n"
+    ".stack { display: flex; flex-direction: column; gap: 1rem; }\n"
+    ".row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }\n"
+    ".grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }\n"
+    ".card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }\n"
+    ".muted { color: var(--muted); }\n"
+    ".btn { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: inherit; padding: 0.5rem 1rem; }\n"
+    ".btn-primary { border-color: #171717; background: #171717; color: #fff; }\n"
+    ".btn:disabled { cursor: not-allowed; opacity: 0.5; }\n"
+    ".field { display: flex; flex-direction: column; gap: 0.25rem; }\n"
+    ".field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; background: #fff; }\n"
+    ".badge { display: inline-block; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); padding: 0.125rem 0.5rem; font-size: 0.875rem; }\n"
+    ".sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n"
+    "@media (max-width: 640px) { main { padding: 1rem; } }\n"
+)
+
 _TEMPLATE_SOURCES = {
     "vanilla": {
         "template": "vanilla",
@@ -45,16 +70,7 @@ _TEMPLATE_SOURCES = {
             '    <script type="module" src="/src/main.js"></script>\n'
             "  </body>\n"
             "</html>\n",
-            "src/styles.css": ":root { font-family: system-ui, sans-serif; color: "
-            "#171717; background: #fff; }\n"
-            "* { box-sizing: border-box; }\n"
-            "body { margin: 0; }\n"
-            "main { max-width: 64rem; margin: 0 auto; padding: 2rem; "
-            "}\n"
-            "button, input, select, textarea { font: inherit; }\n"
-            "button { cursor: pointer; }\n"
-            ":focus-visible { outline: 2px solid #0284c7; "
-            "outline-offset: 3px; }\n",
+            "src/styles.css": BASE_STYLESHEET,
             "src/main.js": "import './styles.css'\n"
             "\n"
             "const root = document.getElementById('root')\n"
@@ -104,16 +120,7 @@ _TEMPLATE_SOURCES = {
             '    <script type="module" src="/src/main.tsx"></script>\n'
             "  </body>\n"
             "</html>\n",
-            "src/styles.css": ":root { font-family: system-ui, sans-serif; color: "
-            "#171717; background: #fff; }\n"
-            "* { box-sizing: border-box; }\n"
-            "body { margin: 0; }\n"
-            "main { max-width: 64rem; margin: 0 auto; padding: 2rem; "
-            "}\n"
-            "button, input, select, textarea { font: inherit; }\n"
-            "button { cursor: pointer; }\n"
-            ":focus-visible { outline: 2px solid #0284c7; "
-            "outline-offset: 3px; }\n",
+            "src/styles.css": BASE_STYLESHEET,
             "src/main.tsx": "import { createRoot } from 'react-dom/client'\n"
             "import App from './App'\n"
             "import './styles.css'\n"
