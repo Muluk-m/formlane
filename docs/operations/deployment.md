@@ -12,7 +12,7 @@
 | Reserved GCP address        | `formlane-api`, region `us-central1`                                                                        |
 | GCP identity                | `maqiqian@roibest.com`, project `roibest-internal-apps`                                                     |
 | Existing VM                 | `formlane-agent`, zone `us-central1-c`                                                                      |
-| Backend release             | `/opt/formlane/python-backend/releases/flow-v1-20261113`, selected by `current`                             |
+| Backend release             | `/opt/formlane/python-backend/releases/flow-v1-20261113b` (`e415db4`), selected by `current`                |
 | systemd services            | `formlane-python-api`, `formlane-python-worker`, non-root user `formlane`                                   |
 | Current service environment | Private `/etc/formlane/backend.env`; production database `formlane`                                         |
 | Databases                   | Production `formlane`; isolated `formlane_stage` and `formlane_test` retained                               |
@@ -133,6 +133,8 @@ Production smoke used a fresh anonymous owner and a request unrelated to the sta
 | `1ffa11f0-7378-47a5-9e0d-df23a529aa97` ledger initial build | plan → build → review | 235 s |       96 s | Saved; plan 53 s; month total computed from `new Date()` and checked at two clocks                                  |
 | `46679514-29de-4c76-bbdb-2336f9820037` color/title change   | quick edit            | 139 s |       42 s | Saved; validation, filter and totals preserved                                                                      |
 | `d52767d5-026d-4289-ab2b-b554c3609bcd` add delete           | plan follow-up        | 275 s |       84 s | Saved; an ambiguous planned selector was disputed by Alex, corrected by David and revalidated without a repair loop |
+
+Follow-up release `e415db400a3c98b73685b6d90b0ba157cfe38731` (`flow-v1-20261113b`, no migration) adds per-stage tool budgets after staging run `194cf371-4777-4d31-8ad8-64a630e18416` spent 22 reviewer inspections and 1,002 s. With budgets, staging run `81786069-58c1-462d-89c1-e4d346296e4c` completed the same 2048 build in 384 s with one review round. Production was switched with zero active runs; environment backup `/etc/formlane/backend.env.before-budgets-20261113T045652Z`; previous release `flow-v1-20261113` retained. Pages was unchanged.
 
 Staging (`formlane_workflow_stage`, release `flow-release-20261113b`) reproduced the reported production failure: the identical 2048 night-style request that failed or was cancelled three times in production (`1e28f623…`, `9edbdb6b…`, `a2717c46…`) saved through quick edit in 108 s with game logic untouched. A tool-library build (`32ed3c52-c38e-4277-bf31-d5cf880ed001`, 415 s) computed dates from `new Date()` and was checked at three clocks including Sunday and the following Monday.
 
