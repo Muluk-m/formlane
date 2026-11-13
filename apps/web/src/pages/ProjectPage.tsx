@@ -394,17 +394,24 @@ export function ProjectPage() {
         ),
       )
     } else if (event.type === 'message_replace' || event.type === 'message_done') {
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === data.id
-            ? {
-                ...message,
-                content: String(data.content ?? ''),
-                pending: event.type !== 'message_done',
-              }
-            : message,
-        ),
-      )
+      setMessages((current) => {
+        const existing = current.find((message) => message.id === data.id)
+        const message: ConversationMessage = {
+          id: String(data.id),
+          runId: existing?.runId ?? event.runId,
+          attempt: existing?.attempt ?? event.attempt,
+          role:
+            existing?.role ??
+            (data.role === 'system' ? 'system' : data.role === 'user' ? 'user' : 'agent'),
+          agent: typeof data.agent === 'string' ? data.agent : (existing?.agent ?? null),
+          content: String(data.content ?? ''),
+          createdAt: existing?.createdAt ?? event.createdAt,
+          pending: event.type !== 'message_done',
+        }
+        return existing
+          ? current.map((item) => (item.id === message.id ? message : item))
+          : [...current, message]
+      })
     } else if (
       [
         'project_reset',
