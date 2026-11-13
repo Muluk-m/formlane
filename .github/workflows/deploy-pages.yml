@@ -1,0 +1,53 @@
+name: Deploy Pages
+
+# Manual on purpose: the backend is activated separately on the VM, so the
+# frontend ships only when the release owner confirms the matching backend.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit, branch or tag to deploy
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-pages-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.24.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Pin build identity
+        run: |
+          echo "BUILD_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "BUILD_VERSION=$(TZ=Asia/Shanghai date +%Y%m%d%H%M)" >> "$GITHUB_ENV"
+      # The script verifies the designated Cloudflare account and backendReady before uploading.
+      - run: pnpm run deploy production --apply
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Verify live version
+        run: |
+          expected="${BUILD_COMMIT:0:12}"
+          for origin in https://formlane.nainma.online https://formlane-9dp.pages.dev; do
+            for attempt in $(seq 1 24); do
+              actual=$(curl -fsS "$origin/version.json?ts=$(date +%s)" | jq -r .commit || true)
+              [ "$actual" = "$expected" ] && echo "$origin serves $actual" && break
+              [ "$attempt" = 24 ] && echo "$origin serves $actual, expected $expected" && exit 1
+              sleep 5
+            done
+          done
