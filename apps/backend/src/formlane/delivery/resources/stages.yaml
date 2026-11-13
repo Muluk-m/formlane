@@ -38,6 +38,14 @@ stages:
     tool_set: router
     tool_budgets: {}
     decide_now: ""
+  coordinator:
+    persona: mike
+    contracts: [coordinator.txt]
+    reasoning_effort: medium
+    max_iterations: 8
+    tool_set: coordinator
+    tool_budgets: {}
+    decide_now: ""
   planner:
     persona: emma
     contracts: []

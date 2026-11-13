@@ -20,7 +20,7 @@ from formlane.delivery._crewai import ObservedOpenAI, SourceExecutor
 from formlane.delivery.errors import HarnessFailure, RuntimeAbort
 from formlane.delivery.flow import DeliveryFlow
 from formlane.delivery.schemas import ChecksArgs
-from formlane.delivery.stages import MAX_REVIEW_REPAIRS, MAX_VERIFY_REPAIRS, Delivery
+from formlane.delivery.stages import Delivery
 from formlane.delivery.tools import tools_for_stage
 from formlane.delivery.workspace import (
     SMOKE_CHECK_NAME,
@@ -166,6 +166,9 @@ def test_tools_are_role_scoped_and_never_execute_arbitrary_code():
         "record_review",
     }
     assert {tool.name for tool in tools_for_stage(rt, "router")} == {"choose_route"}
+    assert {tool.name for tool in tools_for_stage(rt, "coordinator")} == {
+        "read_workspace", "schedule_iteration",
+    }
     assert {tool.name for tool in tools_for_stage(rt, "planner")} == {
         "read_workspace",
         "read_previous_file",
@@ -178,7 +181,7 @@ def test_tools_are_role_scoped_and_never_execute_arbitrary_code():
     assert "set_acceptance_checks" in {tool.name for tool in tools_for_stage(rt, "quick_edit")}
     assert not any(
         "shell" in tool.name
-        for kind in ("router", "planner", "builder", "quick_edit", "reviewer")
+        for kind in ("router", "coordinator", "planner", "builder", "quick_edit", "reviewer")
         for tool in tools_for_stage(rt, kind)
     )
     fresh, _ = runtime()
@@ -346,34 +349,26 @@ def test_flow_failure_halts_later_stages_and_reraises_unchanged():
     assert delivery.calls == ["route", "plan"]
 
 
-def test_verification_repairs_are_bounded_and_failures_reach_review():
+def test_verification_checks_once_and_leaves_failed_evidence_for_review():
     rt, _ = runtime(create_source("vanilla"))
     delivery = Delivery(rt, None)
-    checks, repairs = [], []
+    checks = []
     delivery.check_candidate = lambda key: checks.append(key) or {"valid": False, "issues": ["x"]}
-    delivery.repair = lambda key, issues: repairs.append(key)
+    delivery.repair = lambda *args: pytest.fail("Mike must arrange repairs after David's review")
     delivery.verify()
-    assert len(checks) == MAX_VERIFY_REPAIRS + 1
-    assert len(repairs) == MAX_VERIFY_REPAIRS
+    assert checks == ["verify-0"]
 
 
-def test_unaccepted_review_repairs_once_then_fails_validation():
-    rt, _ = runtime(create_source("vanilla"))
-    delivery = Delivery(rt, None)
-    stages, repairs = [], []
-
-    def review_stage(key, kind, *args):
-        stages.append(key)
-        rt.workspace["review"] = {"accepted": False, "findings": "Counter does not reset."}
-
-    delivery.stage = review_stage
-    delivery.check_candidate = lambda key: {"valid": True}
-    delivery.repair = lambda key, issues: repairs.append(issues)
-    with pytest.raises(HarnessFailure) as error:
-        delivery.review()
-    assert error.value.code == "validation"
-    assert len(stages) == MAX_REVIEW_REPAIRS + 1
-    assert repairs == [["Counter does not reset."]] * MAX_REVIEW_REPAIRS
+@pytest.mark.parametrize("next_step", ["repair", "review"])
+def test_iteration_decision_preserves_source_and_validation_evidence(next_step):
+    rt = accepted_workspace()
+    before = copy.deepcopy(rt.workspace)
+    args = {"next_step": next_step, "instructions": "Resolve the current review findings."}
+    with rt.scoped("iteration-3-0", "mike"):
+        decision = rt.schedule_iteration(args)
+    assert decision == {**args, "stage": "flow-v1/iteration-3-0"}
+    assert rt.workspace == {**before, "iteration": decision}
+    assert "iteration" not in before
 
 
 def test_first_build_routes_to_plan_and_quick_edit_requires_saved_checks():

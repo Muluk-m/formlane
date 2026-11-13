@@ -41,6 +41,7 @@ const toolNames = {
   set_acceptance_checks: 'ui.assistant.tools.set_acceptance_checks',
   validate_preview: 'ui.assistant.tools.validate_preview',
   record_review: 'ui.assistant.tools.record_review',
+  schedule_iteration: 'ui.assistant.tools.delegate_mike',
   delegate_mike: 'ui.assistant.tools.delegate_mike',
   delegate_emma: 'ui.assistant.tools.delegate_emma',
   delegate_bob: 'ui.assistant.tools.delegate_bob',

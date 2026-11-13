@@ -112,6 +112,11 @@ class PlanArgs(NoArgs):
     checks: list[BrowserCheck] = Field(min_length=2, max_length=12)
 
 
+class IterationArgs(NoArgs):
+    next_step: Literal["repair", "review"]
+    instructions: str = Field(min_length=1, max_length=4000)
+
+
 class RouteArgs(NoArgs):
     route: Literal["quick_edit", "plan"]
     reason: str = Field(min_length=1, max_length=600)

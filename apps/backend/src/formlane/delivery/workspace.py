@@ -310,6 +310,12 @@ class Runtime:
         self.workspace["route"] = args["route"]
         return dict(args)
 
+    def schedule_iteration(self, args: dict) -> dict:
+        self.check()
+        decision = {**args, "stage": self.scope["path"]}
+        self.workspace["iteration"] = decision
+        return dict(decision)
+
     def submit_plan(self, args: dict) -> dict:
         self.check()
         current = self.workspace

@@ -41,6 +41,8 @@ def start_worker():
     ("path", "value"),
     [
         (("stages", "reviewer"), None),
+        (("stages", "coordinator"), None),
+        (("stages", "coordinator", "tool_set"), "unknown"),
         (("stages", "unknown"), {}),
         (("personas", "bob"), None),
         (("personas", "unknown"), {}),
@@ -107,6 +109,18 @@ def test_configuration_is_loaded_once_and_immutable(configuration_resources):
         stage.max_iterations = 100
 
 
+def test_coordinator_has_mike_and_its_own_decision_contract(configuration_resources):
+    configured = configuration.initialize_configuration()
+    assert set(configured.stages) == {
+        "router", "coordinator", "planner", "builder", "repair", "quick_edit", "reviewer",
+    }
+    stage = configuration.get_stage_config("coordinator")
+    assert stage.persona == "mike"
+    assert stage.reasoning_effort == "medium"
+    assert stage.max_iterations == 8
+    assert stage.tool_set == "coordinator"
+
+
 @pytest.mark.parametrize("contents", ["stages: [", "shared: {}\nshared: {}", "[]"])
 def test_worker_rejects_malformed_yaml(configuration_resources, contents):
     (configuration_resources / "stages.yaml").write_text(contents)
@@ -114,7 +128,7 @@ def test_worker_rejects_malformed_yaml(configuration_resources, contents):
         start_worker()
 
 
-@pytest.mark.parametrize("resource", ["stages.yaml", "checks.txt"])
+@pytest.mark.parametrize("resource", ["stages.yaml", "checks.txt", "coordinator.txt"])
 def test_worker_rejects_missing_packaged_resources(configuration_resources, resource):
     (configuration_resources / resource).unlink()
     with pytest.raises(configuration.ConfigurationError):
