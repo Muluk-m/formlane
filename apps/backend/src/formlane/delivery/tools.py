@@ -24,20 +24,9 @@ from .schemas import (
 )
 from .workspace import Runtime
 
-# Observation is cheap per call but unbounded exploration exhausted a review stage
-# (22 inspections, no verdict). Budgets force a decision with the evidence at hand.
-TOOL_BUDGETS = {
-    "alex": {"inspect_preview": 12, "validate_preview": 8},
-    "david": {"inspect_preview": 6, "validate_preview": 3, "set_acceptance_checks": 2},
-}
-BUDGET_NEXT = {
-    "alex": "Submit now with submit_candidate, naming disputed failing checks in check_defects.",
-    "david": "Decide with the evidence you have and call record_review now.",
-}
-
 
 class WorkspaceTool(BaseTool):
-    """Shared argument, budget and durable invocation boundary; no evidence writes."""
+    """Shared argument and durable invocation boundary; no evidence writes."""
 
     _runtime: Runtime = PrivateAttr()
 
@@ -49,17 +38,6 @@ class WorkspaceTool(BaseTool):
         runtime = self._runtime
         runtime.check()
         args = self.args_schema.model_validate(kwargs).model_dump()
-        role = runtime.scope["role"]
-        limit = TOOL_BUDGETS.get(role, {}).get(self.name)
-        uses = runtime.scope["uses"]
-        if limit is not None and uses.get(self.name, 0) >= limit:
-            # Deterministic on replay: the same cached model calls hit the same count.
-            return json.dumps(
-                {
-                    "error": f"{self.name} budget of {limit} for this stage is used up. {BUDGET_NEXT[role]}"
-                }
-            )
-        uses[self.name] = uses.get(self.name, 0) + 1
         return json.dumps(runtime.invoke(operation, args), ensure_ascii=False)
 
 

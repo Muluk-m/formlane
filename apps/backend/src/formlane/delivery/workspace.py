@@ -226,7 +226,6 @@ class Runtime:
             "message_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"{self.context['runId']}:{path}")),
             "llm_index": 0,
             "tool_index": 0,
-            "uses": {},
         }
 
     def begin_model_call(self, scope: dict) -> None:

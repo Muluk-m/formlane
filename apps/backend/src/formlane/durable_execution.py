@@ -9,21 +9,18 @@ through Conductor or an independently managed queue worker.
 from __future__ import annotations
 
 import argparse
-import copy
 import hashlib
 import threading
 import uuid
-from contextlib import nullcontext
 from dataclasses import dataclass, field
 from importlib.metadata import version
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
 from dbos import DBOS, SetWorkflowID
-from dbos._schemas import SCHEMA_PLACEHOLDER
 
+from ._dbos import resume_on_connection
 from .settings import Settings
 from .storage import EXECUTION_VERSION
 
@@ -100,24 +97,13 @@ _session: ExecutionSession | None = None
 
 
 def resume_with_authority(runtime, settings: Settings, durable, queue: str) -> None:
-    """Bind the pinned SDK scheduling mutation to the application's lease transaction.
-
-    DBOS's public resume opens its own connection and retries reconnects forever.
-    A per-call SDK adapter shares our locked connection and fails on connection loss,
-    so losing the application lock can never commit an independent queue transfer.
-    """
+    """Keep the application lease locked throughout the SDK queue mutation."""
     with durable.store.scheduling_authority(
         durable.job["id"], durable.job["lease_token"]
     ) as connection:
-        connection = connection.execution_options(
-            schema_translate_map={SCHEMA_PLACEHOLDER: settings.dbos_system_schema}
+        resume_on_connection(
+            runtime, connection, settings.dbos_system_schema, durable.job["id"], queue
         )
-        scheduler = copy.copy(runtime._sys_db)
-        scheduler.engine = SimpleNamespace(
-            begin=lambda: nullcontext(connection), dialect=connection.dialect
-        )
-        scheduler._retry_connection_errors = False
-        scheduler.resume_workflows([durable.job["id"]], queue_name=queue)
 
 
 @DBOS.workflow(name=WORKFLOW_NAME, max_recovery_attempts=None, auto_upgrade=False)

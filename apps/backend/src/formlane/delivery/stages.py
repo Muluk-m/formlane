@@ -11,6 +11,7 @@ from crewai import Agent, Task
 from ._crewai import ObservedOpenAI, SourceExecutor
 from .configuration import get_persona_config, get_stage_config
 from .errors import HarnessFailure, RuntimeAbort
+from .hooks import stage_tool_hooks
 from .tools import tools_for_stage
 from .workspace import Runtime, completion_status, current_build
 
@@ -87,7 +88,8 @@ class Delivery:
                 agent=agent,
             )
             try:
-                output = str(agent.execute_task(native, None, agent.tools))
+                with stage_tool_hooks(self.rt, kind):
+                    output = str(agent.execute_task(native, None, agent.tools))
             except RuntimeAbort:
                 raise
             except Exception as error:

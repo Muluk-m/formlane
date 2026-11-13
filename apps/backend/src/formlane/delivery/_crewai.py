@@ -2,10 +2,14 @@
 
 CrewAI 1.15.40 emits argument deltas synchronously from
 OpenAICompletion._handle_streaming_completion before finalizing the response.
-Keep observation here so deltas precede tool execution inside the durable call;
-event listeners with asynchronous dependency handling cannot preserve that lifetime.
-The ordered executor also reuses the native graph to work around concrete-class
-method discovery. The installed-library contract tests guard both dependencies.
+Keep observation here so deltas precede tool execution inside the durable call.
+Official LLMStreamChunkEvent dependency handlers run on another thread and may
+finish after the provider returns and its durable scope closes. The installed
+contract pins that failure, so retain the synchronous override and retry-local
+observer rather than global listener registration. SourceExecutor disables native
+parallel tool batches and reuses the native graph because this CrewAI version
+discovers decorated methods on the concrete class only. Library contracts guard
+these private dependencies, including reasoning privacy and client cleanup.
 """
 
 from __future__ import annotations
