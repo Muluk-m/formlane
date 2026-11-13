@@ -1,6 +1,6 @@
 # Formlane
 
-Describe an app and watch an AI product team build it. Mike delegates to Emma for requirements, Bob for template selection, Alex for implementation and David for independent validation. Follow-ups revise the current source and repeat the acceptance gate. This recreates the core [atoms.dev](https://atoms.dev/) loop: team conversation, interactive preview and a published link. Projects belong to an anonymous browser identity; there is no registered account system.
+Describe an app and watch an AI product team build it. Emma and Bob plan requirements, architecture and acceptance checks; Alex implements; the browser validates; David independently reviews; Mike routes follow-ups to a quick edit or a new plan. Follow-ups revise the current source and repeat the acceptance gate against the saved checks. This recreates the core [atoms.dev](https://atoms.dev/) loop: team conversation, interactive preview and a published link. Projects belong to an anonymous browser identity; there is no registered account system.
 
 The architecture is **FastAPI + native CrewAI + DBOS + PostgreSQL on the existing GCP VM**, with **static React on Cloudflare Pages** and an isolated Node compiler. [Deployment evidence and recovery](docs/operations/deployment.md) record the migration, acceptance runs and release identities.
 
