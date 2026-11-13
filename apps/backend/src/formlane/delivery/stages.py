@@ -8,17 +8,8 @@ from typing import Any, Callable
 
 from crewai import Agent, Task
 
-from ..prompts import (
-    BUILDER_INSTRUCTIONS,
-    ITERATION_INSTRUCTIONS,
-    PLANNER_INSTRUCTIONS,
-    QUICK_EDIT_ADDENDUM,
-    REPAIR_ADDENDUM,
-    REVIEWER_INSTRUCTIONS,
-    ROUTER_INSTRUCTIONS,
-    TEAM_INSTRUCTIONS,
-)
 from ._crewai import ObservedOpenAI, SourceExecutor
+from .configuration import get_persona_config, get_stage_config
 from .errors import HarnessFailure, RuntimeAbort
 from .tools import tools_for_stage
 from .workspace import Runtime, completion_status, current_build
@@ -26,19 +17,6 @@ from .workspace import Runtime, completion_status, current_build
 # Deterministic verification is free; model repair rounds are bounded per phase.
 MAX_VERIFY_REPAIRS = 2
 MAX_REVIEW_REPAIRS = 1
-
-
-STAGES = {
-    # kind: (persona, instructions, max model iterations, reasoning effort)
-    # Unset effort defaults to deep reasoning: one plan took 306 s; low planned 2048 in 53 s.
-    "router": ("mike", ROUTER_INSTRUCTIONS, 3, "low"),
-    "planner": ("emma", PLANNER_INSTRUCTIONS, 10, "low"),
-    "builder": ("alex", BUILDER_INSTRUCTIONS, 50, "medium"),
-    "quick_edit": ("alex", f"{BUILDER_INSTRUCTIONS}\n\n{QUICK_EDIT_ADDENDUM}", 40, "medium"),
-    "repair": ("alex", f"{BUILDER_INSTRUCTIONS}\n\n{REPAIR_ADDENDUM}", 30, "medium"),
-    "reviewer": ("david", REVIEWER_INSTRUCTIONS, 30, "medium"),
-}
-NAMES = {"mike": "Mike", "emma": "Emma", "bob": "Bob", "alex": "Alex", "david": "David"}
 
 
 class Delivery:
@@ -52,18 +30,17 @@ class Delivery:
         return self.rt.workspace
 
     def agent(self, kind: str) -> Agent:
-        persona, instructions, iterations, effort = STAGES[kind]
-        baseline = f"{ITERATION_INSTRUCTIONS}\n\n" if self.rt.previous else ""
+        config = get_stage_config(kind)
         tools = tools_for_stage(self.rt, kind)
         return Agent(
-            role=NAMES[persona],
-            goal=instructions.split("\n", 1)[0],
-            backstory=f"{TEAM_INSTRUCTIONS}\n\n{baseline}{instructions}",
-            llm=self.model(effort),
+            role=config.role,
+            goal=config.goal,
+            backstory=config.followup_backstory if self.rt.previous else config.backstory,
+            llm=self.model(config.reasoning_effort),
             tools=tools,
             allow_delegation=False,
             allow_code_execution=False,
-            max_iter=iterations,
+            max_iter=config.max_iterations,
             max_retry_limit=0,
             cache=False,
             verbose=False,
@@ -85,7 +62,8 @@ class Delivery:
         )
 
     def stage(self, key: str, kind: str, label: str, task: dict, message: Callable[[str], str]):
-        persona = STAGES[kind][0]
+        config = get_stage_config(kind)
+        persona = config.persona
         with self.rt.scoped(key, persona) as scope:
             visible = persona != "mike"
             if visible:
@@ -99,7 +77,9 @@ class Delivery:
                         "input": label,
                     },
                 )
-                self.rt.emit("agent_start", {"id": persona, "name": NAMES[persona], "task": label})
+                self.rt.emit(
+                    "agent_start", {"id": persona, "name": config.display_name, "task": label}
+                )
             agent = self.agent(kind)
             native = Task(
                 description=json.dumps({"stage": label, **task}, ensure_ascii=False),
@@ -116,7 +96,7 @@ class Delivery:
             content = message(output)
             if visible:
                 self.say(persona, scope["message_id"], content)
-                self.rt.emit("agent_end", {"id": persona, "name": NAMES[persona]})
+                self.rt.emit("agent_end", {"id": persona, "name": config.display_name})
                 self.rt.emit(
                     "tool_end",
                     {
@@ -164,10 +144,11 @@ class Delivery:
         else:
             raise HarnessFailure("step_limit")
         # Bob's architecture comes from the same structured plan, shown as his handoff.
+        name = get_persona_config("bob").display_name
         with self.rt.scoped("plan-architecture", "bob") as scope:
-            self.rt.emit("agent_start", {"id": "bob", "name": "Bob", "task": "Architecture"})
+            self.rt.emit("agent_start", {"id": "bob", "name": name, "task": "Architecture"})
             self.say("bob", scope["message_id"], self.workspace["architecture"])
-            self.rt.emit("agent_end", {"id": "bob", "name": "Bob"})
+            self.rt.emit("agent_end", {"id": "bob", "name": name})
 
     def implement(self, kind: str, key: str, label: str, evidence: Any = None) -> None:
         task = {"request": self.rt.context["request"]}

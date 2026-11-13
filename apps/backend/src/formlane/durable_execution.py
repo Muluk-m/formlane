@@ -68,7 +68,7 @@ def compatibility_manifest(settings: Settings) -> dict:
         "delivery/tools.py",
         "delivery/workspace.py",
         "model_stream.py",
-        "prompts.py",
+        "delivery/configuration.py",
         "project.py",
         "compiler.py",
         "validator.py",

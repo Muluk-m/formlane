@@ -279,5 +279,7 @@ STAGE_TOOLSETS = {
 
 
 def tools_for_stage(runtime: Runtime, kind: str) -> list[BaseTool]:
-    initial, follow_up = STAGE_TOOLSETS[kind]
+    from .configuration import get_stage_config
+
+    initial, follow_up = STAGE_TOOLSETS[get_stage_config(kind).tool_set]
     return [tool(runtime) for tool in (follow_up if runtime.previous else initial)]

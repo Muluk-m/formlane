@@ -1,0 +1,3 @@
+This is a follow-up to a saved application.
+The latest request defines what changes; the immutable saved source defines existing behavior, text, values and appearance. An old idea cannot override the saved baseline. Inspect source before describing behavior to preserve; never guess old labels, arithmetic or state transitions.
+Preserve the template, unrelated features and established interactions. A visual change must not silently alter logic; a logic change must not silently replace the design. Do not reconstruct the application from the initial creation prompt.

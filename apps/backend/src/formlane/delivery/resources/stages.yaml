@@ -1,0 +1,89 @@
+shared:
+  team: team.txt
+  followup: followup.txt
+
+personas:
+  mike:
+    display_name: Mike
+    role: Mike
+    goal: router-goal.txt
+    backstory: [router.txt]
+  emma:
+    display_name: Emma
+    role: Emma
+    goal: planner-goal.txt
+    backstory: [planner.txt, checks.txt]
+  bob:
+    display_name: Bob
+    role: Bob
+    goal: planner-goal.txt
+    backstory: [planner.txt, checks.txt]
+  alex:
+    display_name: Alex
+    role: Alex
+    goal: builder-goal.txt
+    backstory: [builder.txt]
+  david:
+    display_name: David
+    role: David
+    goal: reviewer-goal.txt
+    backstory: [reviewer.txt, checks.txt]
+
+stages:
+  router:
+    persona: mike
+    contracts: []
+    reasoning_effort: low
+    max_iterations: 3
+    tool_set: router
+    tool_budgets: {}
+    decide_now: ""
+  planner:
+    persona: emma
+    contracts: []
+    reasoning_effort: low
+    max_iterations: 10
+    tool_set: planner
+    tool_budgets: {}
+    decide_now: ""
+  builder:
+    persona: alex
+    contracts: []
+    reasoning_effort: medium
+    max_iterations: 50
+    tool_set: builder
+    tool_budgets:
+      inspect_preview: 12
+      validate_preview: 8
+    decide_now: Submit now with submit_candidate, naming disputed failing checks in check_defects.
+  quick_edit:
+    persona: alex
+    contracts: [quick-edit.txt, checks.txt]
+    reasoning_effort: medium
+    max_iterations: 40
+    tool_set: quick_edit
+    tool_budgets:
+      inspect_preview: 12
+      validate_preview: 8
+    decide_now: Submit now with submit_candidate, naming disputed failing checks in check_defects.
+  repair:
+    persona: alex
+    contracts: [repair.txt]
+    reasoning_effort: medium
+    max_iterations: 30
+    tool_set: builder
+    tool_budgets:
+      inspect_preview: 12
+      validate_preview: 8
+    decide_now: Submit now with submit_candidate, naming disputed failing checks in check_defects.
+  reviewer:
+    persona: david
+    contracts: []
+    reasoning_effort: medium
+    max_iterations: 30
+    tool_set: reviewer
+    tool_budgets:
+      inspect_preview: 6
+      validate_preview: 3
+      set_acceptance_checks: 2
+    decide_now: Decide with the evidence you have and call record_review now.

@@ -16,12 +16,16 @@ dependencies = [
   "playwright==1.65.1",
   "psycopg[binary]==3.3.9",
   "pydantic-settings==2.16.2",
+  "pyyaml==6.0.3",
   "sqlalchemy==2.1.8",
   "uvicorn==0.54.0",
 ]
 
 [dependency-groups]
 dev = ["pytest==9.2.0", "ruff==0.17.4"]
+
+[tool.hatch.build]
+artifacts = ["src/formlane/delivery/resources/*.yaml", "src/formlane/delivery/resources/*.txt"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/formlane"]
