@@ -1,0 +1,78 @@
+{
+  "format": 1,
+  "provenance": "Controlled external inputs, not golden harness outputs. HTTP chat-completion records are encoded as deterministic SSE by the test. Expected harness outputs must be captured from baseline af5e54f using FORMLANE_EQUIVALENCE_CAPTURE.",
+  "runId": "687bda5a-a6cc-4ee7-8bb9-3b3f37a62408",
+  "epoch": 1774137600.0,
+  "request": "Build a counter with today's date. Preserve the counter on follow-ups.",
+  "source": "import './styles.css'\nconst root = document.getElementById('root')\nroot.innerHTML = '<main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main>'\ndocument.querySelector('time').textContent = new Date().toISOString().slice(0, 10)\nlet count = 0\ndocument.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }\n",
+  "html": "<!doctype html><html><head><meta name=viewport content=\"width=device-width,initial-scale=1\"></head><body><main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main><script>document.querySelector('time').textContent = new Date().toISOString().slice(0, 10); let count = 0; document.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }</script></body></html>",
+  "checks": [
+    {
+      "name": "calendar today",
+      "clock": {"now": "2026-03-22T00:00:00.000Z", "timezone": "UTC"},
+      "seed": 73,
+      "actions": [],
+      "assertion": {"kind": "text", "selector": "time", "expected": "2026-03-22"}
+    },
+    {
+      "name": "increment tomorrow",
+      "viewport": {"width": 375, "height": 812},
+      "clock": {"now": "2026-03-23T00:00:00.000Z", "timezone": "UTC"},
+      "seed": 917,
+      "actions": [{"kind": "click", "selector": "#increment", "value": null}],
+      "assertions": [
+        {"kind": "text", "selector": "time", "expected": "2026-03-23"},
+        {"kind": "text", "selector": "output", "expected": "1"}
+      ]
+    }
+  ],
+  "browser": {
+    "pass": {
+      "valid": true,
+      "issues": [],
+      "checks": [
+        {"name": "smoke: 375px render without runtime errors", "passed": true, "actual": "true"},
+        {"name": "calendar today", "passed": true, "actual": "2026-03-22"},
+        {"name": "increment tomorrow", "passed": true, "actual": "1: 2026-03-23; 2: 1"}
+      ]
+    },
+    "fail": {
+      "valid": false,
+      "issues": ["increment tomorrow: assertion 2 expected 1, received 0"],
+      "checks": [
+        {"name": "smoke: 375px render without runtime errors", "passed": true, "actual": "true"},
+        {"name": "calendar today", "passed": true, "actual": "2026-03-22"},
+        {"name": "increment tomorrow", "passed": false, "actual": "1: 2026-03-23; 2: 0"}
+      ]
+    },
+    "defect": {
+      "valid": false,
+      "issues": ["increment tomorrow: assertion 2 expected 2, received 1"],
+      "checks": [
+        {"name": "smoke: 375px render without runtime errors", "passed": true, "actual": "true"},
+        {"name": "calendar today", "passed": true, "actual": "2026-03-22"},
+        {"name": "increment tomorrow", "passed": false, "actual": "1: 2026-03-23; 2: 1"}
+      ]
+    },
+    "inspect": {
+      "accessibilityTree": "- main:\n  - heading \"Counter\" [level=1]\n  - button \"Add\"\n  - status: \"0\"",
+      "console": [],
+      "errors": [],
+      "documentWidth": 375
+    }
+  },
+  "scenarios": [
+    "initial_build",
+    "quick_edit",
+    "plan_follow_up",
+    "verify_repair",
+    "verify_repair_limit",
+    "review_repair",
+    "review_repair_limit",
+    "check_defect",
+    "budget_exhaustion",
+    "missing_key",
+    "cancellation",
+    "resumed_committed_operations"
+  ]
+}

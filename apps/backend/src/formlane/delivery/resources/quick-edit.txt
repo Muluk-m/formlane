@@ -1,0 +1,2 @@
+Quick edit
+There is no new plan. The saved acceptance checks describe preserved behavior. Make the smallest coherent change for the request. If the change alters an asserted outcome or adds behavior, call set_acceptance_checks with the COMPLETE updated set (preserve unaffected checks) before building.

@@ -2,29 +2,33 @@
 
 ## Current rollout status
 
-**Python/PostgreSQL with DBOS and the flow-first delivery workflow is the production authority.** Backend release `flow-v1-20261113b` runs commit `4639c43`. The latest verified static frontend runs `a14258ad8e89`, build `202611131330`, deployed successfully by [GitHub Actions run 43372366587](https://github. After the history rewrite below, the live `/version.json` still reports the pre-rewrite identity `e1871e318e8e` for this same build until the next Pages deployment.com/Muluk-m/formlane/actions/runs/43372366587). Both frontend domains returned that identity. Frontend and backend commit IDs may differ when their contracts remain compatible. See [flow-first delivery](#flow-first-delivery-flow-v1) for backend activation and rollback evidence.
+**Python/PostgreSQL with DBOS and the flow-first delivery workflow remains the production authority.** Backend release `flow-v1-20261113b` runs source recorded as `4639c4361b79059dddf6260337dd78f3a9306118`. The latest observed canonical frontend `/version.json` reports build `202611131351`, commit `e1871e318e8e`; that is the identity reported by the live asset, subject to the historical rewrite below. The earlier successful [Pages Actions run 43372366587](https://github.com/Muluk-m/formlane/actions/runs/43372366587) remains historical deployment evidence. This backend-only release does not deploy the frontend. Frontend and backend identities may differ when their contracts remain compatible. See [flow-v1](#flow-first-delivery-flow-v1) for the existing activation record and [flow-v2](#runtime-module-release-flow-v2) for the pending release procedure.
 
-| Resource                    | Current identity / boundary                                                                                         |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Cloudflare account          | **Maqiqian0316@gmail.com's Account**, `252fba810f75c0370e5aa7200abc8f80`                                            |
-| Pages                       | Project `formlane`, canonical frontend **https://formlane.nainma.online**; original Pages hostname retained         |
-| Python API                  | **https://136.65.182.87**; public viewer navigation stays on the frontend domain                                    |
-| Reserved GCP address        | `formlane-api`, region `us-central1`                                                                                |
-| GCP identity                | `maqiqian@roibest.com`, project `roibest-internal-apps`                                                             |
-| Existing VM                 | `formlane-agent`, zone `us-central1-c`                                                                              |
-| Backend release             | `/opt/formlane/python-backend/releases/flow-v1-20261113b` (`4639c43`), selected by `current`                        |
-| systemd services            | `formlane-python-api`, `formlane-python-worker`, non-root user `formlane`                                           |
-| Current service environment | Private `/etc/formlane/backend.env`; production database `formlane`                                                 |
-| Databases                   | Production `formlane`; active staging `formlane_workflow_stage`; `formlane_test` and old staging databases retained |
-| Public ingress              | Caddy 2.11.9 on 80/443; only these web ingress ports are open                                                       |
-| Private listeners           | FastAPI `127.0.0.1:8090`; PostgreSQL loopback port 5432                                                             |
-| Provider                    | `grok-4.7` at `https://sub2api.qiliangjia.org/v1`; secrets only in private server environment                       |
+Issue #32 implements execution compatibility `flow-v2`; production has not been switched to it. Its own empty staging database and private environment have been prepared for port 8096, but no stage migration/service start or real-provider acceptance is recorded yet. Final-candidate CI, staging acceptance, production backup/switch and post-switch generation evidence remain pending. Earlier test counts and activation records below do not establish acceptance of this candidate.
+
+| Resource                    | Current identity / boundary                                                                                                                           |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cloudflare account          | **Maqiqian0316@gmail.com's Account**, `252fba810f75c0370e5aa7200abc8f80`                                                                              |
+| Pages                       | Project `formlane`, canonical frontend **https://formlane.nainma.online**; original Pages hostname retained                                           |
+| Python API                  | **https://136.65.182.87**; public viewer navigation stays on the frontend domain                                                                      |
+| Reserved GCP address        | `formlane-api`, region `us-central1`                                                                                                                  |
+| GCP identity                | `maqiqian@roibest.com`, project `roibest-internal-apps`                                                                                               |
+| Existing VM                 | `formlane-agent`, zone `us-central1-c`                                                                                                                |
+| Backend release             | `/opt/formlane/python-backend/releases/flow-v1-20261113b` (`4639c43`), selected by `current`                                                          |
+| systemd services            | `formlane-python-api`, `formlane-python-worker`, non-root user `formlane`                                                                             |
+| Current service environment | Private `/etc/formlane/backend.env`; production database `formlane`                                                                                   |
+| Databases                   | Production `formlane`; other-session staging `formlane_workflow_stage`; prepared issue #32 staging `formlane_issue32_stage`; isolated `formlane_test` |
+| Public ingress              | Caddy 2.11.9 on 80/443; only these web ingress ports are open                                                                                         |
+| Private listeners           | FastAPI `127.0.0.1:8090`; PostgreSQL loopback port 5432                                                                                               |
+| Provider                    | `grok-4.7` at `https://sub2api.qiliangjia.org/v1`; secrets only in private server environment                                                         |
 
 Caddy automatically obtains and renews Let's Encrypt **short-lived IP certificates**. Preserve its TLS state and renewal reachability. The [Caddy template](../../apps/backend/deploy/Caddyfile) requests the `shortlived` ACME profile and sets `default_sni` to the API host: IP clients can omit SNI and the VM receives traffic on its private NAT address. Streaming proxy flush remains enabled. Neither the API nor PostgreSQL is exposed directly. Do not work around TLS failures by disabling certificate verification.
 
 The [API](../../apps/backend/deploy/formlane-python-api.service) and [worker](../../apps/backend/deploy/formlane-python-worker.service) units share the intended private environment and release. The API serves HTTP; the worker claims PostgreSQL leases and executes native CrewAI. The [compiler](../../apps/compiler/) is a bounded credential-stripped Node subprocess, not a second business server. Keep sandboxed Chromium under the non-root service identity. Provider/database credentials must never enter Pages, Vite variables, generated content or logs.
 
-Current staging uses release `flow-release-20261113d`, `/etc/formlane/backend-workflow-stage.env`, and `formlane-workflow-stage-api` / `formlane-workflow-stage-worker` on loopback port 8094. Production and staging compiler symlinks both require `durable-recovery-20261112`; preserve that release and its dependency graph during retirement.
+Port 8094 and `formlane-workflow-stage-api` / `formlane-workflow-stage-worker` belong to another session: their environment/worktree drop-in now selects `followups-cce3c4a`, despite the older base ExecStart. Do not modify those services, drop-ins, environment or database for issue #32. Its isolated preparation uses `formlane_issue32_stage`, private mode-0600 `/etc/formlane/backend-issue32-stage.env`, and planned `formlane-issue32-stage-api` / `formlane-issue32-stage-worker` on loopback 8096. Provisioning is already complete; do not repeat it.
+
+Production's configured `COMPILER_COMMAND` remains the executable at `/opt/formlane/python-backend/releases/flow-v1-20261113b/apps/compiler/dist/index.js`. Preserve that exact command and the `durable-recovery-20261112` release/dependency graph it resolves through. Compiler relocation is outside this release. Current production API/worker ExecStart and WorkingDirectory use `/opt/formlane/python-backend/current`, and private `PYTHONPATH` follows `current/apps/backend/src`; no production unit drop-ins were observed. Existing `BUILD_COMMIT`/`BUILD_VERSION` are stale and cannot prove active source. Use `RELEASE_COMMIT`, the imported module path and process working directory.
 
 ### Final cutover evidence
 
@@ -98,7 +102,7 @@ Database creation, migrations, secret changes and service activation are distinc
 
 ## Recovery without split writes
 
-PostgreSQL is the only writable business authority. Recovery restores a compatible PostgreSQL backup, worker release and routing together; there is no rollback to D1. Old Pages assets must continue forwarding to Python. Fence all writers before data recovery, and never replace production with staging data or an earlier export after new writes without a coordinated recovery decision.
+PostgreSQL is the only writable business authority. Database recovery restores a compatible PostgreSQL backup, worker release and routing together; there is no rollback to D1. An executable-only rollback with no schema change instead retains the live database, as required for [flow-v2](#runtime-module-release-flow-v2). Old Pages assets must continue forwarding to Python. Fence all writers before data recovery, and never replace production with staging data or an earlier export after new writes without a coordinated recovery decision.
 
 A worker restart reuses completed durable operations. Explicit owner-authorized resume continues the same eligible run with a new attempt; old attempts and producers remain fenced. Runs have no fixed wall-clock deadline. Superseded runs and changed baselines cannot resume. A stale checkpoint never permits stale build/check/review acceptance. Preserve Chromium sandboxing and private environment isolation during recovery.
 
@@ -126,14 +130,14 @@ Integration with PR #17 passed another 50 PostgreSQL storage, worker and process
 
 ### Flow-first delivery (`flow-v1`)
 
-[ADR-0015](../adr/0015-flow-first-delivery.md) replaces the hierarchical Crew. Its durable history is not interchangeable with `crew-v1`/`dbos-v1`: on the new worker those runs fail closed as incompatible and are not resumable. Activation sequence:
+[ADR-0015](../adr/0015-flow-first-delivery.md) replaced the hierarchical Crew. This section records the historical `flow-v1` schema transition and its activation; it is not the rollback procedure for the later `flow-v2` refactor. Its durable history is not interchangeable with `crew-v1`/`dbos-v1`: on that worker those runs fail closed as incompatible and are not resumable. Historical activation sequence:
 
 1. Stop new run creation and let active runs finish, or record each unfinished run that will be failed as incompatible. Retain a complete PostgreSQL backup and the previous release.
 2. With API and worker stopped, apply `0004_version_acceptance_checks`. Readiness requires this revision. Historical `crew-v1` manifest migrations do not apply to `flow-v1`.
 3. Activate API and worker from the same release with pinned `PYTHONPATH`. New runs record `execution_version = flow-v1`.
 4. Verify with the real provider: an initial build, a quick-edit follow-up that reuses saved checks, a plan follow-up, cancellation, and a worker restart during build. Record run IDs, model-call counts, time to first file event, wall time and repair rounds.
 
-Rollback restores the database backup and previous release together. The previous API's readiness requires revision `0003_remove_run_deadline`, so restore or downgrade before switching executables.
+Rollback of that original schema transition restores the database backup and previous release together. The pre-Flow API's readiness requires revision `0003_remove_run_deadline`, so restore or downgrade before switching those historical executables. Do not apply this schema rollback to `flow-v2` → `flow-v1-20261113b`: both use `0004_version_acceptance_checks`, and that rollback keeps the live database and new writes.
 
 #### Activation record (2026-11-13)
 
@@ -152,6 +156,51 @@ Production smoke used a fresh anonymous owner and a request unrelated to the sta
 Follow-up release `4639c4361b79059dddf6260337dd78f3a9306118` (`flow-v1-20261113b`, no migration) adds per-stage tool budgets after staging run `194cf371-4777-4d31-8ad8-64a630e18416` spent 22 reviewer inspections and 1,002 s. With budgets, staging run `81786069-58c1-462d-89c1-e4d346296e4c` completed the same 2048 build in 384 s with one review round. Production was switched with zero active runs; environment backup `/etc/formlane/backend.env.before-budgets-20261113T045652Z`; previous release `flow-v1-20261113` retained. Pages was unchanged.
 
 Staging (`formlane_workflow_stage`, release `flow-release-20261113b`) reproduced the reported production failure: the identical 2048 night-style request that failed or was cancelled three times in production (`1e28f623…`, `9edbdb6b…`, `a2717c46…`) saved through quick edit in 108 s with game logic untouched. A tool-library build (`32ed3c52-c38e-4277-bf31-d5cf880ed001`, 415 s) computed dates from `new Date()` and was checked at three clocks including Sunday and the following Monday.
+
+## Runtime module release (`flow-v2`)
+
+This release separates the delivery runtime, packages startup configuration and adopts official scoped budget hooks; [ADR-0015](../adr/0015-flow-first-delivery.md#runtime-modules-configuration-and-extension-points) records the decisions. It changes execution compatibility to `flow-v2` without a schema, HTTP contract, frontend or library-version change. Durable identifiers remain `formlane.flow.v1`, `flow-v1/execution-manifest`, `flow-v1/result` and the existing stage/model/tool/candidate paths. The manifest covers every packaged Python/YAML/YML/text file under `formlane`, including files outside delivery. Configuration is immutable once loaded; there is no hot reload or in-place production prompt tuning.
+
+`flow-v1`, `crew-v1` and `dbos-v1` histories remain available for inspection but cannot run or resume on the new worker. Manifest mismatch also blocks replay and cached DBOS `SUCCESS` completion. Missing application manifest evidence after committed work fails closed; a dormant enqueue with no committed operations can recover. Never migrate manifest values merely to bypass this boundary. Drain all queued/running work before changing executables, and retain the previous release for rollback.
+
+### Identity and candidate preparation
+
+The user authorized this release's staging and production actions; the integration/release owner performs them. The independently verified target is GCP account `maqiqian@roibest.com`, project `roibest-internal-apps`, zone `us-central1-c`, instance `formlane-agent`, public IP `136.65.182.87`. The local default project is `roibest-internal`, which is different. Every gcloud command must supply the explicit account/project/zone; for example:
+
+```bash
+gcloud compute ssh formlane-agent --account=maqiqian@roibest.com --project=roibest-internal-apps --zone=us-central1-c
+```
+
+1. Pin the reviewed source commit and eventual merge commit, require the exact candidate's complete CI, and record the [equivalence and upgrade gates](../internals/testing.md#flow-equivalence-and-library-upgrade-gates). Historical green runs are insufficient. Package tracked source using `git archive` of the tested commit, record `RELEASE_COMMIT`, and install the frozen lockfile into a new release directory with Python 3.13. Do not copy an editable virtualenv. Pin `PYTHONPATH` to the candidate and inspect the imported `formlane.delivery` path. Verify all YAML/text resources are packaged and startup validation succeeds.
+2. Retain the production private environment, release and protected compiler dependency. Check the candidate's exact configured compiler command through its own bridge as non-root `formlane`; it must remain the protected production command above. Keep provider/database secrets out of output and artifacts. No Pages deployment or frontend version change is part of this release.
+3. Use only the prepared issue #32 environment/database and 8096 services. Apply existing application/DBOS migrations explicitly to that empty staging database before starting its API/worker from the candidate; production already has the required schema and needs no new migration. Confirm imported source, configured database, port and non-root sandbox. Do not reuse or alter 8094 staging.
+4. Run real-provider staging acceptance on the exact candidate: initial build, quick-edit follow-up using saved checks, plan follow-up, worker process death after a committed operation with reclaim/reuse, and cancellation followed by same-run/new-attempt resume. Require saved accepted source/HTML/checks, exact SSE replay suffix, unchanged committed checkpoint hashes/timestamps, no repeated committed effects, and preservation of the last accepted version during cancellation. Exercise the accepted app in sandboxed desktop/375px browser previews, recording interactions, overflow/errors and screenshots. Record run/version IDs, routes, first-file seconds, wall seconds, model-call counts and repair rounds. A health response or prepared environment does not satisfy this gate.
+
+### Drain, backup and atomic activation
+
+Use the release owner's guarded `switch-release.py`, prepared outside the repository, only after the gates above. Its `--target` must be the verified candidate directory under `/opt/formlane/python-backend/releases`; its `--expected-current` must match the live pointer immediately before execution. At this documentation checkpoint the expected current is `/opt/formlane/python-backend/releases/flow-v1-20261113b`. Set `switch_helper` to the reviewed helper's actual VM path and `candidate_release` to the verified candidate, then invoke on the verified VM:
+
+```bash
+sudo /usr/bin/python3 "$switch_helper" --target "$candidate_release" --expected-current /opt/formlane/python-backend/releases/flow-v1-20261113b
+```
+
+The required sequence is:
+
+1. Recheck cloud/service/database/release identities and the expected-current guard. Stop `formlane-python-api` to fence creation and resume while leaving the old worker alive to finish its queue. Wait for `SELECT count(*) FROM runs WHERE status IN ('queued','running')` on production `formlane` to reach **zero**. A previous empty-queue observation is not sufficient. Do not switch with unfinished work; if work cannot finish, resolve its terminal state under the existing release first.
+2. Stop `formlane-python-worker` and recheck zero. Take a full `pg_dump -Fc formlane`, without business-table/schema filtering, so business tables, application checkpoints and DBOS system history remain together. The helper validates the archive with `pg_restore --list`, computes SHA-256 and copies private `/etc/formlane/backend.env` into its mode-0700 backup directory. Record the actual archive path, checksum, environment backup, previous/target release and source SHA. Never substitute a staging snapshot.
+3. **Before changing `current`**, persist both the switch helper and executable `rollback.sh` beside the backup, with private permissions. The generated rollback encodes the previous target and expected new current, and `record.json` records its exact command. Confirm those persistent files exist; rollback must survive a health failure or deletion of temporary upload files.
+4. Create the new symlink beside `current` and atomically replace `/opt/formlane/python-backend/current`. Start production API and worker together from that pointer with the production private environment. Verify process working directories and actual imports select the target; retain the existing compiler command. Before-switch helper failures restore services on the previous pointer. A failure after switching requires the recorded guarded rollback, not automatic restoration of an old database.
+5. Require loopback and public `/healthz` and `/api/health`, expected real provider/key/executor configuration, and the correct database/release. The helper's health checks alone are insufficient: perform a fresh real-provider production generation through the public API, observe file streaming and saved independent acceptance, then exercise the accepted app at desktop/375px and reconnect/replay. Record run/version identity and the same timing/model/repair metrics as staging. Confirm the existing frontend still reports its observed build and existing public viewing works; do not redeploy it.
+
+### One-step rollback without losing writes
+
+Run the exact `sudo .../rollback.sh` command recorded in the persistent backup's `record.json`. It invokes the retained switch helper with a guarded reverse target, stops new requests, drains the currently active worker's queued/running work to zero, stops the worker, takes another full backup, atomically selects the previous release, and restarts API/worker. If the active worker is unhealthy, resolve its active work before continuing; do not bypass the zero-work fence. Verify health, imports and a real generation after rollback.
+
+**Keep the live production database and all new writes. Do not restore the pre-switch dump or downgrade Alembic for this rollback.** `flow-v2` and the retained `flow-v1-20261113b` use the same schema. Versions written after activation remain data; `flow-v2` histories cannot resume on the old executable, just as old histories cannot resume on the new one. Retain both executables, private environment backups, DBOS/application history and compiler dependencies. Database restore is a separate coordinated disaster-recovery action, not this release's one-step rollback.
+
+### Evidence still required
+
+Production remains on `flow-v1-20261113b`; issue #32's 8096 environment/database are prepared only. The release owner must add the exact tested/merged source identities and complete CI links, candidate installation/import/resource evidence, staging run/version IDs and observations, fresh drain count, backup path/SHA-256, environment backup, previous/active release pointers, persistent rollback command, production health/real-generation evidence and browser artifacts before marking activation complete. No new run, backup or release identity is asserted here. Preserve all historical activation records below and above as evidence of their own releases.
 
 ## Historical platform
 

@@ -21,6 +21,7 @@ from typing import Any, Callable
 from dbos import DBOS
 from sqlalchemy.exc import SQLAlchemyError
 
+from .delivery.configuration import initialize_configuration
 from .durable_execution import ExecutionInterrupted, ExecutionVersionMismatch, execute_durable
 from .settings import Settings
 from .storage import LeaseLost, Store
@@ -193,7 +194,7 @@ def _child(settings_data: dict, job: dict, connection: Any, cancellation: Any) -
     store = Store(settings.database_url)
     durable = Durable(store, job, cancellation.is_set)
     try:
-        from .agents import execute_harness
+        from .delivery import execute_harness
 
         context = store.harness_context(job["id"], job["lease_token"])
         result = execute_durable(
@@ -380,6 +381,7 @@ def run_worker(settings: Settings, shutdown: threading.Event | None = None) -> N
     if not settings.worker_enabled:
         LOG.info("worker_disabled")
         return
+    initialize_configuration()
     shutdown = shutdown or threading.Event()
     store = Store(settings.database_url)
     worker_id = f"{socket.gethostname()}:{uuid.uuid4()}"

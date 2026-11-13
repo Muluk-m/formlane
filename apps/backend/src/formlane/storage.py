@@ -23,7 +23,7 @@ from .project import MAX_PREVIEW_BYTES, validate_source
 
 LEASE_DURATION_MS = 60_000
 # Runs execute only on the worker release that created their durable history.
-EXECUTION_VERSION = "flow-v1"
+EXECUTION_VERSION = "flow-v2"
 TERMINAL = {"completed", "failed", "cancelled"}
 ERRORS = {
     "timeout": "An earlier time limit interrupted this run. Continue from the saved progress.",
@@ -339,7 +339,8 @@ class Store:
                     select(RunCheckpoint)
                     .where(
                         RunCheckpoint.run_id == latest.id,
-                        RunCheckpoint.name.startswith(f"{EXECUTION_VERSION}/candidate/"),
+                        # Durable names survive execution compatibility changes.
+                        RunCheckpoint.name.startswith("flow-v1/candidate/"),
                     )
                     .order_by(RunCheckpoint.created_at.desc(), RunCheckpoint.name.desc())
                     .limit(1)

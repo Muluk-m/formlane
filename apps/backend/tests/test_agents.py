@@ -1,6 +1,9 @@
 import copy
+import json
 import os
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from contextlib import nullcontext
+from threading import Barrier
 from types import SimpleNamespace
 
 os.environ["CREWAI_DISABLE_TELEMETRY"] = "true"
@@ -8,21 +11,24 @@ os.environ["OTEL_SDK_DISABLED"] = "true"
 os.environ["CREWAI_TRACING_ENABLED"] = "false"
 
 import pytest
+from crewai import Task
+from crewai.llms.providers.openai.completion import OpenAICompletion
+from openai.types.chat import ChatCompletionChunk
 
-from formlane.agents import (
-    MAX_REVIEW_REPAIRS,
-    MAX_VERIFY_REPAIRS,
+from formlane.delivery import execute_harness
+from formlane.delivery._crewai import ObservedOpenAI, SourceExecutor
+from formlane.delivery.errors import HarnessFailure, RuntimeAbort
+from formlane.delivery.flow import DeliveryFlow
+from formlane.delivery.schemas import ChecksArgs
+from formlane.delivery.stages import MAX_REVIEW_REPAIRS, MAX_VERIFY_REPAIRS, Delivery
+from formlane.delivery.tools import tools_for_stage
+from formlane.delivery.workspace import (
     SMOKE_CHECK_NAME,
-    Delivery,
-    DeliveryFlow,
-    HarnessFailure,
     Runtime,
-    SourceExecutor,
     apply_file_edits,
     checks_hash,
     completion_status,
     current_build,
-    execute_harness,
     require_clock_coverage,
     search_source,
     source_changes,
@@ -125,7 +131,7 @@ def test_previous_source_is_immutable_and_original_idea_omitted():
     baseline = source["files"]["index.html"]
     source["files"]["index.html"] = "caller changed"
     rt.workspace["source"]["files"]["index.html"] = "candidate changed"
-    assert rt.operation("read_previous_file", {"path": "index.html"})["content"] == baseline
+    assert rt.read_previous_file({"path": "index.html"})["content"] == baseline
     with pytest.raises(TypeError):
         rt.previous["files"]["index.html"] = "not allowed"
     assert "originalIdea" not in rt.workspace_info()
@@ -149,7 +155,7 @@ def test_atomic_edits_reject_stale_ambiguous_noop_and_keep_baseline():
 
 def test_tools_are_role_scoped_and_never_execute_arbitrary_code():
     rt, _ = runtime(create_source("vanilla"))
-    qa = {tool.name for tool in rt.tools("reviewer")}
+    qa = {tool.name for tool in tools_for_stage(rt, "reviewer")}
     assert qa == {
         "read_workspace",
         "read_review_files",
@@ -159,24 +165,24 @@ def test_tools_are_role_scoped_and_never_execute_arbitrary_code():
         "validate_preview",
         "record_review",
     }
-    assert {tool.name for tool in rt.tools("router")} == {"choose_route"}
-    assert {tool.name for tool in rt.tools("planner")} == {
+    assert {tool.name for tool in tools_for_stage(rt, "router")} == {"choose_route"}
+    assert {tool.name for tool in tools_for_stage(rt, "planner")} == {
         "read_workspace",
         "read_previous_file",
         "read_file",
         "submit_plan",
     }
-    builder = {tool.name for tool in rt.tools("builder")}
+    builder = {tool.name for tool in tools_for_stage(rt, "builder")}
     assert "set_acceptance_checks" not in builder
     assert {"validate_preview", "inspect_preview", "search_files"} <= builder
-    assert "set_acceptance_checks" in {tool.name for tool in rt.tools("quick_edit")}
+    assert "set_acceptance_checks" in {tool.name for tool in tools_for_stage(rt, "quick_edit")}
     assert not any(
         "shell" in tool.name
         for kind in ("router", "planner", "builder", "quick_edit", "reviewer")
-        for tool in rt.tools(kind)
+        for tool in tools_for_stage(rt, kind)
     )
     fresh, _ = runtime()
-    assert {tool.name for tool in fresh.tools("planner")} == {"read_workspace", "submit_plan"}
+    assert {tool.name for tool in tools_for_stage(fresh, "planner")} == {"read_workspace", "submit_plan"}
     assert SourceExecutor._should_parallelize_native_tool_calls(None, [1, 2]) is False
 
 
@@ -200,18 +206,18 @@ def test_review_requires_own_browser_and_changed_file_inspection():
     rt.workspace["build"]["sourceHash"] = source_hash(rt.workspace["source"])
     args = {"accepted": True, "findings": "Accepted"}
     with pytest.raises(ValueError, match="inspection"):
-        rt.operation("record_review", args)
-    rt.operation("read_review_files", {"paths": ["index.html"]})
-    assert rt.operation("record_review", args)["accepted"]
+        rt.record_review(args)
+    rt.read_review_files({"paths": ["index.html"]})
+    assert rt.record_review(args)["accepted"]
     rt.workspace["independentValidation"] = None
     with pytest.raises(ValueError):
-        rt.operation("record_review", args)
+        rt.record_review(args)
 
 
 def test_tool_checkpoint_recovers_source_without_repeating_mutation():
     rt, events = runtime(create_source("vanilla"))
     rt.scope = rt.new_scope("delegation", "alex")
-    tools = {tool.name: tool for tool in rt.tools("builder")}
+    tools = {tool.name: tool for tool in tools_for_stage(rt, "builder")}
     initial = copy.deepcopy(rt.workspace)
     tools["write_file"].run(path="new.js", content="const saved = 1")
     assert rt.workspace["revision"] == 1
@@ -368,13 +374,13 @@ def test_plan_initializes_template_once_with_binding_checks():
             },
         ],
     }
-    output = rt.invoke("submit_plan", plan)
+    output = rt.invoke(rt.submit_plan, plan)
     assert output["template"] == "vanilla" and output["checks"] == 3
     assert rt.workspace["checks"][0]["name"] == SMOKE_CHECK_NAME
     assert "A1. Click increments" in rt.workspace["brief"]
     assert any(kind == "project_initialized" for kind, _ in events)
-    assert "error" in rt.invoke("submit_plan", plan)
-    assert rt.invoke("submit_candidate", {"summary": "Done"})["error"].startswith("Build")
+    assert "error" in rt.invoke(rt.submit_plan, plan)
+    assert rt.invoke(rt.submit_candidate, {"summary": "Done"})["error"].startswith("Build")
 
 
 def test_independent_review_checks_preserve_current_implementation_evidence():
@@ -394,7 +400,7 @@ def test_independent_review_checks_preserve_current_implementation_evidence():
             ],
         },
     ]
-    rt.operation("set_acceptance_checks", {"checks": checks})
+    rt.set_acceptance_checks({"checks": checks})
     assert current_build(rt.workspace) is not None
     assert rt.workspace["implementationValidation"] == rt.workspace["build"]
     assert rt.workspace["report"] is None
@@ -406,15 +412,15 @@ def test_independent_review_checks_preserve_current_implementation_evidence():
     assert rt.workspace["checks"][0]["name"] == SMOKE_CHECK_NAME
     rt.settings.browser_executable = os.environ.get("BROWSER_EXECUTABLE_PATH")
     rt.scope = rt.new_scope("independent-review", "david")
-    report = rt.operation("validate_preview", {})
+    report = rt.validate_preview({})
     assert report["valid"], report["issues"]
-    review = rt.operation(
-        "record_review", {"accepted": True, "findings": "Independent browser checks passed."}
+    review = rt.record_review(
+        {"accepted": True, "findings": "Independent browser checks passed."}
     )
     assert review["completion"]["ready"]
     # Re-running implementation evidence on unchanged source keeps the independent verdict.
     rt.scope = rt.new_scope("revalidate", "alex")
-    assert rt.operation("validate_preview", {})["valid"]
+    assert rt.validate_preview({})["valid"]
     assert completion_status(rt.workspace)["ready"]
 
 
@@ -422,7 +428,7 @@ def test_rejected_package_write_is_atomic_and_emits_no_saved_file():
     rt, events = runtime(create_source("vanilla"))
     rt.scope = rt.new_scope("alex", "alex")
     initial = copy.deepcopy(rt.workspace)
-    tool = next(tool for tool in rt.tools("builder") if tool.name == "write_file")
+    tool = next(tool for tool in tools_for_stage(rt, "builder") if tool.name == "write_file")
     output = tool.run(path="package.json", content='{"scripts":{"build":"arbitrary-code"}}')
     assert "error" in output
     assert rt.workspace == initial
@@ -430,8 +436,6 @@ def test_rejected_package_write_is_atomic_and_emits_no_saved_file():
 
 
 def test_browser_checks_have_structured_native_function_schema():
-    from formlane.agents import ChecksArgs
-
     schema = ChecksArgs.model_json_schema()
     assert schema["properties"]["checks"]["items"]["$ref"].endswith("BrowserCheck")
     assert "BrowserAction" in schema["$defs"]
@@ -479,11 +483,11 @@ def built_runtime():
 
 def test_builder_submits_only_after_passing_validation_or_named_check_defects():
     rt = built_runtime()
-    assert rt.operation("submit_candidate", {"summary": "Done", "check_defects": []})["submitted"]
+    assert rt.submit_candidate({"summary": "Done", "check_defects": []})["submitted"]
     rt = built_runtime()
     rt.workspace["implementationValidation"] = rt.workspace["report"] = None
     with pytest.raises(ValueError, match="validate_preview"):
-        rt.operation("submit_candidate", {"summary": "Done", "check_defects": []})
+        rt.submit_candidate({"summary": "Done", "check_defects": []})
     rt.workspace["report"] = {
         "valid": False,
         "artifactHash": rt.workspace["build"]["artifactHash"],
@@ -491,8 +495,8 @@ def test_builder_submits_only_after_passing_validation_or_named_check_defects():
         "checks": [{"name": "one", "passed": True}, {"name": "two", "passed": False}],
     }
     with pytest.raises(ValueError, match="two"):
-        rt.operation("submit_candidate", {"summary": "Done", "check_defects": []})
-    rt.operation("submit_candidate", {"summary": "Check two is wrong", "check_defects": ["two"]})
+        rt.submit_candidate({"summary": "Done", "check_defects": []})
+    rt.submit_candidate({"summary": "Check two is wrong", "check_defects": ["two"]})
     assert rt.workspace["candidate"]["checkDefects"] == ["two"]
 
 
@@ -523,14 +527,152 @@ def test_search_files_returns_literal_matches_with_lines():
     assert search_source(source, "(.*)*", False) == {"matches": [], "truncated": False}
 
 
-def test_stage_tool_budgets_force_a_decision():
+@pytest.fixture
+def native_inspections(monkeypatch):
+    """Record transport only; run stage hooks and tools through the native executor."""
+    clients = {}
+    monkeypatch.setattr(OpenAICompletion, "_get_sync_client", lambda model: clients[model.model])
+
+    def run(rt, key, arguments, *, scoped=True, before_tools=None, durable_model=True):
+        outputs = []
+        requested = False
+
+        def chunk(delta, finish_reason=None):
+            return ChatCompletionChunk(
+                id="budget-response", created=0, model="budget-model",
+                object="chat.completion.chunk",
+                choices=[{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+            )
+
+        def transport(**kwargs):
+            nonlocal requested
+            if not requested:
+                requested = True
+                for index, args in enumerate(arguments):
+                    yield chunk({"tool_calls": [{
+                        "index": index, "id": f"inspect-{index}", "type": "function",
+                        "function": {"name": "inspect_preview", "arguments": json.dumps(args)},
+                    }]})
+                yield chunk({}, "tool_calls")
+                if before_tools is not None:
+                    before_tools()
+            else:
+                outputs.extend(
+                    item["content"] for item in kwargs["messages"] if item["role"] == "tool"
+                )
+                yield chunk({"content": "Decision recorded"})
+                yield chunk({}, "stop")
+
+        model_name = f"budget-{id(rt)}-{key}"
+        clients[model_name] = SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=transport))
+        )
+        model_type = ObservedOpenAI if durable_model else OpenAICompletion
+        model = model_type(
+            model=model_name, api_key="recorded-transport", base_url="http://127.0.0.1:1/v1",
+            custom_openai=True, stream=True, max_retries=0,
+            additional_params={"parallel_tool_calls": False},
+        )
+        if durable_model:
+            model.bind(rt)
+        delivery = Delivery(rt, lambda effort: model)
+        if scoped:
+            result = delivery.stage(key, "reviewer", "Review", {}, lambda output: output)
+        else:
+            with rt.scoped(key, "david"):
+                agent = delivery.agent("reviewer")
+                task = Task(description="Review", expected_output="Decision", agent=agent)
+                result = agent.execute_task(task, None, agent.tools)
+        assert result == "Decision recorded"
+        return outputs
+
+    return run
+
+
+def test_stage_tool_budgets_force_a_decision(monkeypatch, native_inspections):
     rt = accepted_workspace()
-    rt.scope = rt.new_scope("review", "david")
     calls = []
-    rt.invoke = lambda name, args: calls.append(name) or {"ok": True}
-    inspect = next(tool for tool in rt.tools("reviewer") if tool.name == "inspect_preview")
-    outputs = [inspect.run(selector="body") for _ in range(7)]
+    monkeypatch.setattr(
+        "formlane.delivery.workspace.inspect_artifact",
+        lambda *args: calls.append(args) or {"ok": True},
+    )
+    arguments = [{"selector": f"#item-{index}"} for index in range(7)]
+    outputs = native_inspections(rt, "review", arguments)
     assert len(calls) == 6
-    assert "record_review now" in outputs[-1] and "budget of 6" in outputs[-1]
-    rt.scope = rt.new_scope("review-1", "david")
-    assert "budget" not in inspect.run(selector="body")
+    assert all(json.loads(output) == {"ok": True} for output in outputs[:6])
+    assert json.loads(outputs[-1]) == {
+        "error": "inspect_preview budget of 6 for this stage is used up. "
+        "Decide with the evidence you have and call record_review now."
+    }
+    saved_steps = list(rt.durable.values)
+    native_inspections(rt, "review", arguments)
+    assert len(calls) == 6
+    assert list(rt.durable.values) == saved_steps
+    assert "budget" not in native_inspections(rt, "review-1", [{"selector": "body"}])[0]
+    assert len(calls) == 7
+
+
+def test_malformed_native_arguments_preserve_validation_and_budget(monkeypatch, native_inspections):
+    calls = []
+    monkeypatch.setattr(
+        "formlane.delivery.workspace.inspect_artifact",
+        lambda *args: calls.append(args) or {"ok": True},
+    )
+    arguments = [{"selector": 123}]
+    arguments.extend({"selector": f"#item-{index}"} for index in range(6))
+    arguments.extend([{"selector": 456}, {"selector": "#denied"}])
+    outputs = native_inspections(accepted_workspace(), "review", arguments)
+    assert len(calls) == 6
+    for index in (0, 7):
+        assert "validation error" in outputs[index]
+        assert "selector" in outputs[index]
+        assert "budget" not in outputs[index]
+    assert all(json.loads(output) == {"ok": True} for output in outputs[1:7])
+    assert "budget of 6" in outputs[8]
+
+
+def test_stage_hooks_clean_up_after_authority_abort(monkeypatch, native_inspections):
+    rt = accepted_workspace()
+    cancelled = [False]
+    rt.cancelled = lambda: cancelled[0]
+    calls = []
+    monkeypatch.setattr(
+        "formlane.delivery.workspace.inspect_artifact",
+        lambda *args: calls.append(args) or {"ok": True},
+    )
+    with pytest.raises(RuntimeAbort) as aborted:
+        # Use the installed provider directly so cancellation first reaches PRE,
+        # rather than the durable provider's earlier end-of-call authority check.
+        native_inspections(
+            rt, "review", [{"selector": "body"}],
+            before_tools=lambda: cancelled.__setitem__(0, True),
+            durable_model=False,
+        )
+    assert isinstance(aborted.value.cause, CancelledError)
+    assert calls == []
+    # Outside a stage scope the native executor must not retain the aborted runtime's hook.
+    arguments = [{"selector": f"#item-{index}"} for index in range(7)]
+    outputs = native_inspections(accepted_workspace(), "unscoped", arguments, scoped=False)
+    assert len(calls) == 7
+    assert all(json.loads(output) == {"ok": True} for output in outputs)
+
+
+def test_concurrent_native_stages_keep_independent_budgets(monkeypatch, native_inspections):
+    monkeypatch.setattr("formlane.delivery.workspace.inspect_artifact", lambda *args: {"ok": True})
+    barrier = Barrier(2)
+    arguments = [{"selector": f"#item-{index}"} for index in range(7)]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(
+                native_inspections, accepted_workspace(), "review", arguments,
+                before_tools=lambda: barrier.wait(timeout=10),
+            )
+            for _ in range(2)
+        ]
+        results = [future.result(timeout=30) for future in futures]
+    for outputs in results:
+        assert len(outputs) == 7
+        assert all(json.loads(output) == {"ok": True} for output in outputs[:6])
+        assert "budget of 6" in outputs[-1]
+    outputs = native_inspections(accepted_workspace(), "unscoped", arguments, scoped=False)
+    assert all(json.loads(output) == {"ok": True} for output in outputs)

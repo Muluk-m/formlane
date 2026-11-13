@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = "==3.13.*"
 
 [[package]]
@@ -640,6 +640,7 @@ dependencies = [
     { name = "playwright" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
+    { name = "pyyaml" },
     { name = "sqlalchemy" },
     { name = "uvicorn" },
 ]
@@ -660,6 +661,7 @@ requires-dist = [
     { name = "playwright", specifier = "==1.65.1" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.3.9" },
     { name = "pydantic-settings", specifier = "==2.16.2" },
+    { name = "pyyaml", specifier = "==6.0.3" },
     { name = "sqlalchemy", specifier = "==2.1.8" },
     { name = "uvicorn", specifier = "==0.54.0" },
 ]

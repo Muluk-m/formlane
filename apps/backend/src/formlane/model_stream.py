@@ -1,9 +1,4 @@
-"""Observe CrewAI's native provider stream before its executor runs tools.
-
-Pinned to crewai 1.15.40: OpenAICompletion._handle_streaming_completion calls
-_emit_stream_chunk_event with the *delta* and accumulated tool metadata before
-_finalize_streaming_response. We never derive deltas from a completed tool result.
-"""
+"""Pure incremental parsing of provider text and source-file argument streams."""
 
 from __future__ import annotations
 
@@ -11,18 +6,7 @@ from concurrent.futures import CancelledError
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from crewai.llms.providers.openai.completion import OpenAICompletion
-from pydantic import PrivateAttr
-
 from .project import is_project_path
-
-
-class RuntimeAbort(BaseException):
-    """A producer failure must bypass CrewAI's recoverable tool-error narration."""
-
-    def __init__(self, cause: BaseException):
-        self.cause = cause
-        super().__init__("Execution authority or provider unavailable.")
 
 
 class FileJsonStream:
@@ -223,85 +207,3 @@ class StreamObserver:
         for call in self.calls.values():
             self.flush_file(call)
         self.flush_text()
-
-
-class ObservedOpenAI(OpenAICompletion):
-    """Native CrewAI OpenAI provider with synchronous, durable observation hooks."""
-
-    _runtime: Any = PrivateAttr(default=None)
-    _observer: StreamObserver | None = PrivateAttr(default=None)
-
-    def bind(self, runtime: Any) -> ObservedOpenAI:
-        self._runtime = runtime
-        return self
-
-    def call(
-        self,
-        messages: Any,
-        tools: Any = None,
-        callbacks: Any = None,
-        available_functions: Any = None,
-        from_task: Any = None,
-        from_agent: Any = None,
-        response_model: Any = None,
-    ) -> Any:
-        if available_functions:
-            raise RuntimeError("CrewAI executor must own function execution.")
-        if response_model is not None:
-            raise RuntimeError("Structured provider responses are not used by this harness.")
-        runtime = self._runtime
-        scope = runtime.scope
-        index = scope["llm_index"]
-        scope["llm_index"] += 1
-        name = f"{scope['path']}/llm-{index}"
-
-        def invoke() -> Any:
-            runtime.begin_model_call(scope)
-            # Every attempt discards unsaved file fragments and partial messages.
-            runtime.emit("project_reset", {"source": runtime.workspace["source"]})
-            if scope["role"] != "mike":
-                runtime.emit(
-                    "message_start",
-                    {"id": scope["message_id"], "role": "agent", "agent": scope["role"]},
-                )
-            self._observer = StreamObserver(
-                runtime.emit, runtime.cancelled, scope["role"], scope["message_id"]
-            )
-            try:
-                result = super(ObservedOpenAI, self).call(
-                    messages,
-                    tools,
-                    callbacks,
-                    None,
-                    from_task,
-                    from_agent,
-                    None,
-                )
-                self._observer.flush()
-                runtime.check()
-                return result
-            finally:
-                self._observer = None
-
-        try:
-            # This is one DBOS step per native provider call; delegation and
-            # crew execution remain workflow orchestration, never enclosing steps.
-            return runtime.durable.run(name, invoke)
-        except Exception as error:
-            raise RuntimeAbort(error) from None
-
-    def _emit_stream_chunk_event(
-        self,
-        chunk: str,
-        from_task: Any = None,
-        from_agent: Any = None,
-        tool_call: dict | None = None,
-        call_type: Any = None,
-        response_id: str | None = None,
-    ) -> None:
-        if self._observer is not None:
-            self._observer.chunk(chunk, tool_call)
-
-    def _emit_thinking_chunk_event(self, *args: Any, **kwargs: Any) -> None:
-        # Provider reasoning is private; never send it to the conversation stream.
-        return None

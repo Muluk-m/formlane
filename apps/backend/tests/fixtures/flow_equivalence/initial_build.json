@@ -1,0 +1,1466 @@
+{
+  "provenance": {
+    "baseline": "af5e54f",
+    "entrySourceSha256": "4a6aaa36c79ff394264c54ff6069cf9bf0a8e0fe5452f4952a9ebf109eee8069",
+    "inputSha256": "f433e43bc356abbdec48a443704641a308cabe2f947b72e54751c1efa8d1a000"
+  },
+  "observed": {
+    "context": {
+      "runId": "687bda5a-a6cc-4ee7-8bb9-3b3f37a62408",
+      "request": "Build a counter with today's date. Preserve the counter on follow-ups.",
+      "idea": "Build a dated counter.",
+      "previousSource": null,
+      "previousChecks": []
+    },
+    "attempts": [
+      {
+        "events": [
+          {
+            "scope": "flow-v1/run",
+            "type": "agent_start",
+            "data": {
+              "id": "mike",
+              "name": "Mike"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0",
+            "type": "tool_start",
+            "data": {
+              "id": "flow-v1/plan-0",
+              "name": "delegate_emma",
+              "agent": "mike",
+              "childAgent": "emma",
+              "input": "Define the brief, architecture and acceptance checks"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0",
+            "type": "agent_start",
+            "data": {
+              "id": "emma",
+              "name": "Emma",
+              "task": "Define the brief, architecture and acceptance checks"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0/llm-0",
+            "type": "project_reset",
+            "data": {
+              "source": null
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0/llm-0",
+            "type": "message_start",
+            "data": {
+              "id": "56964838-d7e3-596c-9b3d-425123d183a3",
+              "role": "agent",
+              "agent": "emma"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0/llm-0",
+            "type": "token",
+            "data": {
+              "id": "56964838-d7e3-596c-9b3d-425123d183a3",
+              "text": "The checks bind the plan."
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0/tool-0-submit_plan",
+            "type": "tool_start",
+            "data": {
+              "id": "flow-v1/plan-0/tool-0-submit_plan",
+              "name": "submit_plan",
+              "agent": "emma"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0/tool-0-submit_plan",
+            "type": "project_initialized",
+            "data": {
+              "source": {
+                "template": "vanilla",
+                "files": {
+                  "package.json": "{\n  \"name\": \"generated-app\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite --host 127.0.0.1\",\n    \"build\": \"vite build\",\n    \"preview\": \"vite preview --host 127.0.0.1\"\n  },\n  \"devDependencies\": {\n    \"vite\": \"8.3.7\"\n  }\n}\n",
+                  "index.html": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>Application</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.js\"></script>\n  </body>\n</html>\n",
+                  "src/styles.css": ":root { font-family: system-ui, sans-serif; color: #171717; background: #fff; --muted: #525252; --line: #e5e5e5; --surface: #fafafa; --accent: #0284c7; --radius: 0.75rem; }\n* { box-sizing: border-box; }\nbody { margin: 0; line-height: 1.5; }\nmain { max-width: 64rem; margin: 0 auto; padding: 2rem; }\nh1, h2, h3, p { margin: 0; }\nbutton, input, select, textarea { font: inherit; }\nbutton { cursor: pointer; }\n:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }\n.stack { display: flex; flex-direction: column; gap: 1rem; }\n.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }\n.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }\n.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }\n.muted { color: var(--muted); }\n.btn { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: inherit; padding: 0.5rem 1rem; }\n.btn-primary { border-color: #171717; background: #171717; color: #fff; }\n.btn:disabled { cursor: not-allowed; opacity: 0.5; }\n.field { display: flex; flex-direction: column; gap: 0.25rem; }\n.field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; background: #fff; }\n.badge { display: inline-block; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); padding: 0.125rem 0.5rem; font-size: 0.875rem; }\n.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n@media (max-width: 640px) { main { padding: 1rem; } }\n",
+                  "src/main.js": "import './styles.css'\n\nconst root = document.getElementById('root')\nif (!root) throw new Error('Application root is missing.')\nconst heading = document.createElement('h1')\nheading.textContent = 'Application'\nconst main = document.createElement('main')\nmain.append(heading)\nroot.append(main)\n"
+                }
+              },
+              "reason": "Vanilla JavaScript, semantic HTML and the shared stylesheet."
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0/tool-0-submit_plan",
+            "type": "tool_end",
+            "data": {
+              "id": "flow-v1/plan-0/tool-0-submit_plan",
+              "name": "submit_plan",
+              "agent": "emma",
+              "output": {
+                "template": "vanilla",
+                "files": ["index.html", "package.json", "src/main.js", "src/styles.css"],
+                "checks": 3
+              }
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0",
+            "type": "message_start",
+            "data": {
+              "id": "56964838-d7e3-596c-9b3d-425123d183a3",
+              "role": "agent",
+              "agent": "emma"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0",
+            "type": "message_done",
+            "data": {
+              "id": "56964838-d7e3-596c-9b3d-425123d183a3",
+              "role": "agent",
+              "agent": "emma",
+              "content": "A counter showing the current date.\n\nC1. Show today's date at either pinned clock.\nC2. Add increases the counter by one.\n\n- Counter state lasts for the page session.",
+              "createdAt": 1774137600000
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0",
+            "type": "agent_end",
+            "data": {
+              "id": "emma",
+              "name": "Emma"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0",
+            "type": "tool_end",
+            "data": {
+              "id": "flow-v1/plan-0",
+              "name": "delegate_emma",
+              "agent": "mike",
+              "childAgent": "emma",
+              "output": "A counter showing the current date.\n\nC1. Show today's date at either pinned clock.\nC2. Add increases the counter by one.\n\n- Counter state lasts for the page session."
+            }
+          },
+          {
+            "scope": "flow-v1/plan-architecture",
+            "type": "agent_start",
+            "data": {
+              "id": "bob",
+              "name": "Bob",
+              "task": "Architecture"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-architecture",
+            "type": "message_start",
+            "data": {
+              "id": "ffb9be98-05f7-552b-9963-386326ba42d5",
+              "role": "agent",
+              "agent": "bob"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-architecture",
+            "type": "message_done",
+            "data": {
+              "id": "ffb9be98-05f7-552b-9963-386326ba42d5",
+              "role": "agent",
+              "agent": "bob",
+              "content": "Vanilla JavaScript, semantic HTML and the shared stylesheet.",
+              "createdAt": 1774137600000
+            }
+          },
+          {
+            "scope": "flow-v1/plan-architecture",
+            "type": "agent_end",
+            "data": {
+              "id": "bob",
+              "name": "Bob"
+            }
+          },
+          {
+            "scope": "flow-v1/build",
+            "type": "tool_start",
+            "data": {
+              "id": "flow-v1/build",
+              "name": "delegate_alex",
+              "agent": "mike",
+              "childAgent": "alex",
+              "input": "Implement the plan"
+            }
+          },
+          {
+            "scope": "flow-v1/build",
+            "type": "agent_start",
+            "data": {
+              "id": "alex",
+              "name": "Alex",
+              "task": "Implement the plan"
+            }
+          },
+          {
+            "scope": "flow-v1/build/llm-0",
+            "type": "project_reset",
+            "data": {
+              "source": {
+                "template": "vanilla",
+                "files": {
+                  "package.json": "{\n  \"name\": \"generated-app\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite --host 127.0.0.1\",\n    \"build\": \"vite build\",\n    \"preview\": \"vite preview --host 127.0.0.1\"\n  },\n  \"devDependencies\": {\n    \"vite\": \"8.3.7\"\n  }\n}\n",
+                  "index.html": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>Application</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.js\"></script>\n  </body>\n</html>\n",
+                  "src/styles.css": ":root { font-family: system-ui, sans-serif; color: #171717; background: #fff; --muted: #525252; --line: #e5e5e5; --surface: #fafafa; --accent: #0284c7; --radius: 0.75rem; }\n* { box-sizing: border-box; }\nbody { margin: 0; line-height: 1.5; }\nmain { max-width: 64rem; margin: 0 auto; padding: 2rem; }\nh1, h2, h3, p { margin: 0; }\nbutton, input, select, textarea { font: inherit; }\nbutton { cursor: pointer; }\n:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }\n.stack { display: flex; flex-direction: column; gap: 1rem; }\n.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }\n.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }\n.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }\n.muted { color: var(--muted); }\n.btn { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: inherit; padding: 0.5rem 1rem; }\n.btn-primary { border-color: #171717; background: #171717; color: #fff; }\n.btn:disabled { cursor: not-allowed; opacity: 0.5; }\n.field { display: flex; flex-direction: column; gap: 0.25rem; }\n.field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; background: #fff; }\n.badge { display: inline-block; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); padding: 0.125rem 0.5rem; font-size: 0.875rem; }\n.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n@media (max-width: 640px) { main { padding: 1rem; } }\n",
+                  "src/main.js": "import './styles.css'\n\nconst root = document.getElementById('root')\nif (!root) throw new Error('Application root is missing.')\nconst heading = document.createElement('h1')\nheading.textContent = 'Application'\nconst main = document.createElement('main')\nmain.append(heading)\nroot.append(main)\n"
+                }
+              }
+            }
+          },
+          {
+            "scope": "flow-v1/build/llm-0",
+            "type": "message_start",
+            "data": {
+              "id": "04e1230b-8e5c-5c6b-9546-7502a211ce6a",
+              "role": "agent",
+              "agent": "alex"
+            }
+          },
+          {
+            "scope": "flow-v1/build/llm-0",
+            "type": "file_start",
+            "data": {
+              "path": "src/main.js",
+              "agent": "alex"
+            }
+          },
+          {
+            "scope": "flow-v1/build/llm-0",
+            "type": "file_delta",
+            "data": {
+              "path": "src/main.js",
+              "text": "im"
+            }
+          },
+          {
+            "scope": "flow-v1/build/llm-0",
+            "type": "file_delta",
+            "data": {
+              "path": "src/main.js",
+              "text": "port './styles.css'\nconst root = document.getElementById('root')\nroot.innerHTML = '<main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main>'\ndocument.querySelector('time').textContent = new Date().toISOString().slice(0, 10)\nlet count = 0\ndocument.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }\n"
+            }
+          },
+          {
+            "scope": "flow-v1/build/llm-0",
+            "type": "token",
+            "data": {
+              "id": "04e1230b-8e5c-5c6b-9546-7502a211ce6a",
+              "text": "Writing the counter and compiling this source."
+            }
+          },
+          {
+            "scope": "flow-v1/build/tool-0-write_file",
+            "type": "tool_start",
+            "data": {
+              "id": "flow-v1/build/tool-0-write_file",
+              "name": "write_file",
+              "agent": "alex"
+            }
+          },
+          {
+            "scope": "flow-v1/build/tool-0-write_file",
+            "type": "tool_end",
+            "data": {
+              "id": "flow-v1/build/tool-0-write_file",
+              "name": "write_file",
+              "agent": "alex",
+              "output": {
+                "path": "src/main.js",
+                "revision": 2,
+                "message": "Source changed. Build before submitting."
+              }
+            }
+          },
+          {
+            "scope": "flow-v1/build",
+            "type": "file_saved",
+            "data": {
+              "path": "src/main.js",
+              "content": "import './styles.css'\nconst root = document.getElementById('root')\nroot.innerHTML = '<main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main>'\ndocument.querySelector('time').textContent = new Date().toISOString().slice(0, 10)\nlet count = 0\ndocument.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }\n"
+            }
+          },
+          {
+            "scope": "flow-v1/build/tool-1-build_project",
+            "type": "tool_start",
+            "data": {
+              "id": "flow-v1/build/tool-1-build_project",
+              "name": "build_project",
+              "agent": "alex"
+            }
+          },
+          {
+            "scope": "flow-v1/build/tool-1-build_project",
+            "type": "build_result",
+            "data": {
+              "ok": true,
+              "issues": [],
+              "sourceHash": "ec527de335728118121fe07558ce2da12877aed54c091118e29f23ac7f266e7c"
+            }
+          },
+          {
+            "scope": "flow-v1/build/tool-1-build_project",
+            "type": "tool_end",
+            "data": {
+              "id": "flow-v1/build/tool-1-build_project",
+              "name": "build_project",
+              "agent": "alex",
+              "output": {
+                "ok": true,
+                "issues": [],
+                "sourceHash": "ec527de335728118121fe07558ce2da12877aed54c091118e29f23ac7f266e7c"
+              }
+            }
+          },
+          {
+            "scope": "flow-v1/build/llm-1",
+            "type": "project_reset",
+            "data": {
+              "source": {
+                "template": "vanilla",
+                "files": {
+                  "package.json": "{\n  \"name\": \"generated-app\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite --host 127.0.0.1\",\n    \"build\": \"vite build\",\n    \"preview\": \"vite preview --host 127.0.0.1\"\n  },\n  \"devDependencies\": {\n    \"vite\": \"8.3.7\"\n  }\n}\n",
+                  "index.html": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>Application</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.js\"></script>\n  </body>\n</html>\n",
+                  "src/styles.css": ":root { font-family: system-ui, sans-serif; color: #171717; background: #fff; --muted: #525252; --line: #e5e5e5; --surface: #fafafa; --accent: #0284c7; --radius: 0.75rem; }\n* { box-sizing: border-box; }\nbody { margin: 0; line-height: 1.5; }\nmain { max-width: 64rem; margin: 0 auto; padding: 2rem; }\nh1, h2, h3, p { margin: 0; }\nbutton, input, select, textarea { font: inherit; }\nbutton { cursor: pointer; }\n:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }\n.stack { display: flex; flex-direction: column; gap: 1rem; }\n.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }\n.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }\n.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }\n.muted { color: var(--muted); }\n.btn { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: inherit; padding: 0.5rem 1rem; }\n.btn-primary { border-color: #171717; background: #171717; color: #fff; }\n.btn:disabled { cursor: not-allowed; opacity: 0.5; }\n.field { display: flex; flex-direction: column; gap: 0.25rem; }\n.field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; background: #fff; }\n.badge { display: inline-block; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); padding: 0.125rem 0.5rem; font-size: 0.875rem; }\n.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n@media (max-width: 640px) { main { padding: 1rem; } }\n",
+                  "src/main.js": "import './styles.css'\nconst root = document.getElementById('root')\nroot.innerHTML = '<main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main>'\ndocument.querySelector('time').textContent = new Date().toISOString().slice(0, 10)\nlet count = 0\ndocument.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }\n"
+                }
+              }
+            }
+          },
+          {
+            "scope": "flow-v1/build/llm-1",
+            "type": "message_start",
+            "data": {
+              "id": "04e1230b-8e5c-5c6b-9546-7502a211ce6a",
+              "role": "agent",
+              "agent": "alex"
+            }
+          },
+          {
+            "scope": "flow-v1/build/tool-2-validate_preview",
+            "type": "tool_start",
+            "data": {
+              "id": "flow-v1/build/tool-2-validate_preview",
+              "name": "validate_preview",
+              "agent": "alex"
+            }
+          },
+          {
+            "scope": "flow-v1/build/tool-2-validate_preview",
+            "type": "validation",
+            "data": {
+              "valid": true,
+              "issues": [],
+              "checks": [
+                {
+                  "name": "smoke: 375px render without runtime errors",
+                  "passed": true,
+                  "actual": "true"
+                },
+                {
+                  "name": "calendar today",
+                  "passed": true,
+                  "actual": "2026-03-22"
+                },
+                {
+                  "name": "increment tomorrow",
+                  "passed": true,
+                  "actual": "1: 2026-03-23; 2: 1"
+                }
+              ],
+              "artifactHash": "2ab2908192bd507ab87138d18d589682d8ccdf39f19dc5553e2374dc90d98003"
+            }
+          },
+          {
+            "scope": "flow-v1/build/tool-2-validate_preview",
+            "type": "tool_end",
+            "data": {
+              "id": "flow-v1/build/tool-2-validate_preview",
+              "name": "validate_preview",
+              "agent": "alex",
+              "output": {
+                "valid": true,
+                "issues": [],
+                "checks": [
+                  {
+                    "name": "smoke: 375px render without runtime errors",
+                    "passed": true,
+                    "actual": "true"
+                  },
+                  {
+                    "name": "calendar today",
+                    "passed": true,
+                    "actual": "2026-03-22"
+                  },
+                  {
+                    "name": "increment tomorrow",
+                    "passed": true,
+                    "actual": "1: 2026-03-23; 2: 1"
+                  }
+                ],
+                "artifactHash": "2ab2908192bd507ab87138d18d589682d8ccdf39f19dc5553e2374dc90d98003"
+              }
+            }
+          },
+          {
+            "scope": "flow-v1/build/llm-2",
+            "type": "project_reset",
+            "data": {
+              "source": {
+                "template": "vanilla",
+                "files": {
+                  "package.json": "{\n  \"name\": \"generated-app\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite --host 127.0.0.1\",\n    \"build\": \"vite build\",\n    \"preview\": \"vite preview --host 127.0.0.1\"\n  },\n  \"devDependencies\": {\n    \"vite\": \"8.3.7\"\n  }\n}\n",
+                  "index.html": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>Application</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.js\"></script>\n  </body>\n</html>\n",
+                  "src/styles.css": ":root { font-family: system-ui, sans-serif; color: #171717; background: #fff; --muted: #525252; --line: #e5e5e5; --surface: #fafafa; --accent: #0284c7; --radius: 0.75rem; }\n* { box-sizing: border-box; }\nbody { margin: 0; line-height: 1.5; }\nmain { max-width: 64rem; margin: 0 auto; padding: 2rem; }\nh1, h2, h3, p { margin: 0; }\nbutton, input, select, textarea { font: inherit; }\nbutton { cursor: pointer; }\n:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }\n.stack { display: flex; flex-direction: column; gap: 1rem; }\n.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }\n.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }\n.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }\n.muted { color: var(--muted); }\n.btn { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: inherit; padding: 0.5rem 1rem; }\n.btn-primary { border-color: #171717; background: #171717; color: #fff; }\n.btn:disabled { cursor: not-allowed; opacity: 0.5; }\n.field { display: flex; flex-direction: column; gap: 0.25rem; }\n.field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; background: #fff; }\n.badge { display: inline-block; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); padding: 0.125rem 0.5rem; font-size: 0.875rem; }\n.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n@media (max-width: 640px) { main { padding: 1rem; } }\n",
+                  "src/main.js": "import './styles.css'\nconst root = document.getElementById('root')\nroot.innerHTML = '<main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main>'\ndocument.querySelector('time').textContent = new Date().toISOString().slice(0, 10)\nlet count = 0\ndocument.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }\n"
+                }
+              }
+            }
+          },
+          {
+            "scope": "flow-v1/build/llm-2",
+            "type": "message_start",
+            "data": {
+              "id": "04e1230b-8e5c-5c6b-9546-7502a211ce6a",
+              "role": "agent",
+              "agent": "alex"
+            }
+          },
+          {
+            "scope": "flow-v1/build/tool-3-submit_candidate",
+            "type": "tool_start",
+            "data": {
+              "id": "flow-v1/build/tool-3-submit_candidate",
+              "name": "submit_candidate",
+              "agent": "alex"
+            }
+          },
+          {
+            "scope": "flow-v1/build/tool-3-submit_candidate",
+            "type": "tool_end",
+            "data": {
+              "id": "flow-v1/build/tool-3-submit_candidate",
+              "name": "submit_candidate",
+              "agent": "alex",
+              "output": {
+                "submitted": true,
+                "revision": 2
+              }
+            }
+          },
+          {
+            "scope": "flow-v1/build",
+            "type": "message_start",
+            "data": {
+              "id": "04e1230b-8e5c-5c6b-9546-7502a211ce6a",
+              "role": "agent",
+              "agent": "alex"
+            }
+          },
+          {
+            "scope": "flow-v1/build",
+            "type": "message_done",
+            "data": {
+              "id": "04e1230b-8e5c-5c6b-9546-7502a211ce6a",
+              "role": "agent",
+              "agent": "alex",
+              "content": "Counter candidate 0.",
+              "createdAt": 1774137600000
+            }
+          },
+          {
+            "scope": "flow-v1/build",
+            "type": "agent_end",
+            "data": {
+              "id": "alex",
+              "name": "Alex"
+            }
+          },
+          {
+            "scope": "flow-v1/build",
+            "type": "tool_end",
+            "data": {
+              "id": "flow-v1/build",
+              "name": "delegate_alex",
+              "agent": "mike",
+              "childAgent": "alex",
+              "output": "Counter candidate 0."
+            }
+          },
+          {
+            "scope": "flow-v1/review-0",
+            "type": "tool_start",
+            "data": {
+              "id": "flow-v1/review-0",
+              "name": "delegate_david",
+              "agent": "mike",
+              "childAgent": "david",
+              "input": "Independently validate and review the current build"
+            }
+          },
+          {
+            "scope": "flow-v1/review-0",
+            "type": "agent_start",
+            "data": {
+              "id": "david",
+              "name": "David",
+              "task": "Independently validate and review the current build"
+            }
+          },
+          {
+            "scope": "flow-v1/review-0/llm-0",
+            "type": "project_reset",
+            "data": {
+              "source": {
+                "template": "vanilla",
+                "files": {
+                  "package.json": "{\n  \"name\": \"generated-app\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite --host 127.0.0.1\",\n    \"build\": \"vite build\",\n    \"preview\": \"vite preview --host 127.0.0.1\"\n  },\n  \"devDependencies\": {\n    \"vite\": \"8.3.7\"\n  }\n}\n",
+                  "index.html": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>Application</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.js\"></script>\n  </body>\n</html>\n",
+                  "src/styles.css": ":root { font-family: system-ui, sans-serif; color: #171717; background: #fff; --muted: #525252; --line: #e5e5e5; --surface: #fafafa; --accent: #0284c7; --radius: 0.75rem; }\n* { box-sizing: border-box; }\nbody { margin: 0; line-height: 1.5; }\nmain { max-width: 64rem; margin: 0 auto; padding: 2rem; }\nh1, h2, h3, p { margin: 0; }\nbutton, input, select, textarea { font: inherit; }\nbutton { cursor: pointer; }\n:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }\n.stack { display: flex; flex-direction: column; gap: 1rem; }\n.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }\n.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }\n.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }\n.muted { color: var(--muted); }\n.btn { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: inherit; padding: 0.5rem 1rem; }\n.btn-primary { border-color: #171717; background: #171717; color: #fff; }\n.btn:disabled { cursor: not-allowed; opacity: 0.5; }\n.field { display: flex; flex-direction: column; gap: 0.25rem; }\n.field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; background: #fff; }\n.badge { display: inline-block; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); padding: 0.125rem 0.5rem; font-size: 0.875rem; }\n.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n@media (max-width: 640px) { main { padding: 1rem; } }\n",
+                  "src/main.js": "import './styles.css'\nconst root = document.getElementById('root')\nroot.innerHTML = '<main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main>'\ndocument.querySelector('time').textContent = new Date().toISOString().slice(0, 10)\nlet count = 0\ndocument.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }\n"
+                }
+              }
+            }
+          },
+          {
+            "scope": "flow-v1/review-0/llm-0",
+            "type": "message_start",
+            "data": {
+              "id": "fc9ce9bc-50fa-5eaa-828d-192f815f0c47",
+              "role": "agent",
+              "agent": "david"
+            }
+          },
+          {
+            "scope": "flow-v1/review-0/tool-0-read_review_files",
+            "type": "tool_start",
+            "data": {
+              "id": "flow-v1/review-0/tool-0-read_review_files",
+              "name": "read_review_files",
+              "agent": "david"
+            }
+          },
+          {
+            "scope": "flow-v1/review-0/tool-0-read_review_files",
+            "type": "tool_end",
+            "data": {
+              "id": "flow-v1/review-0/tool-0-read_review_files",
+              "name": "read_review_files",
+              "agent": "david",
+              "output": {
+                "revision": 2
+              }
+            }
+          },
+          {
+            "scope": "flow-v1/review-0/llm-1",
+            "type": "project_reset",
+            "data": {
+              "source": {
+                "template": "vanilla",
+                "files": {
+                  "package.json": "{\n  \"name\": \"generated-app\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite --host 127.0.0.1\",\n    \"build\": \"vite build\",\n    \"preview\": \"vite preview --host 127.0.0.1\"\n  },\n  \"devDependencies\": {\n    \"vite\": \"8.3.7\"\n  }\n}\n",
+                  "index.html": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>Application</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.js\"></script>\n  </body>\n</html>\n",
+                  "src/styles.css": ":root { font-family: system-ui, sans-serif; color: #171717; background: #fff; --muted: #525252; --line: #e5e5e5; --surface: #fafafa; --accent: #0284c7; --radius: 0.75rem; }\n* { box-sizing: border-box; }\nbody { margin: 0; line-height: 1.5; }\nmain { max-width: 64rem; margin: 0 auto; padding: 2rem; }\nh1, h2, h3, p { margin: 0; }\nbutton, input, select, textarea { font: inherit; }\nbutton { cursor: pointer; }\n:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }\n.stack { display: flex; flex-direction: column; gap: 1rem; }\n.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }\n.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }\n.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }\n.muted { color: var(--muted); }\n.btn { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: inherit; padding: 0.5rem 1rem; }\n.btn-primary { border-color: #171717; background: #171717; color: #fff; }\n.btn:disabled { cursor: not-allowed; opacity: 0.5; }\n.field { display: flex; flex-direction: column; gap: 0.25rem; }\n.field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; background: #fff; }\n.badge { display: inline-block; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); padding: 0.125rem 0.5rem; font-size: 0.875rem; }\n.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n@media (max-width: 640px) { main { padding: 1rem; } }\n",
+                  "src/main.js": "import './styles.css'\nconst root = document.getElementById('root')\nroot.innerHTML = '<main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main>'\ndocument.querySelector('time').textContent = new Date().toISOString().slice(0, 10)\nlet count = 0\ndocument.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }\n"
+                }
+              }
+            }
+          },
+          {
+            "scope": "flow-v1/review-0/llm-1",
+            "type": "message_start",
+            "data": {
+              "id": "fc9ce9bc-50fa-5eaa-828d-192f815f0c47",
+              "role": "agent",
+              "agent": "david"
+            }
+          },
+          {
+            "scope": "flow-v1/review-0/tool-1-validate_preview",
+            "type": "tool_start",
+            "data": {
+              "id": "flow-v1/review-0/tool-1-validate_preview",
+              "name": "validate_preview",
+              "agent": "david"
+            }
+          },
+          {
+            "scope": "flow-v1/review-0/tool-1-validate_preview",
+            "type": "validation",
+            "data": {
+              "valid": true,
+              "issues": [],
+              "checks": [
+                {
+                  "name": "smoke: 375px render without runtime errors",
+                  "passed": true,
+                  "actual": "true"
+                },
+                {
+                  "name": "calendar today",
+                  "passed": true,
+                  "actual": "2026-03-22"
+                },
+                {
+                  "name": "increment tomorrow",
+                  "passed": true,
+                  "actual": "1: 2026-03-23; 2: 1"
+                }
+              ],
+              "artifactHash": "2ab2908192bd507ab87138d18d589682d8ccdf39f19dc5553e2374dc90d98003"
+            }
+          },
+          {
+            "scope": "flow-v1/review-0/tool-1-validate_preview",
+            "type": "tool_end",
+            "data": {
+              "id": "flow-v1/review-0/tool-1-validate_preview",
+              "name": "validate_preview",
+              "agent": "david",
+              "output": {
+                "valid": true,
+                "issues": [],
+                "checks": [
+                  {
+                    "name": "smoke: 375px render without runtime errors",
+                    "passed": true,
+                    "actual": "true"
+                  },
+                  {
+                    "name": "calendar today",
+                    "passed": true,
+                    "actual": "2026-03-22"
+                  },
+                  {
+                    "name": "increment tomorrow",
+                    "passed": true,
+                    "actual": "1: 2026-03-23; 2: 1"
+                  }
+                ],
+                "artifactHash": "2ab2908192bd507ab87138d18d589682d8ccdf39f19dc5553e2374dc90d98003"
+              }
+            }
+          },
+          {
+            "scope": "flow-v1/review-0/llm-2",
+            "type": "project_reset",
+            "data": {
+              "source": {
+                "template": "vanilla",
+                "files": {
+                  "package.json": "{\n  \"name\": \"generated-app\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite --host 127.0.0.1\",\n    \"build\": \"vite build\",\n    \"preview\": \"vite preview --host 127.0.0.1\"\n  },\n  \"devDependencies\": {\n    \"vite\": \"8.3.7\"\n  }\n}\n",
+                  "index.html": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>Application</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.js\"></script>\n  </body>\n</html>\n",
+                  "src/styles.css": ":root { font-family: system-ui, sans-serif; color: #171717; background: #fff; --muted: #525252; --line: #e5e5e5; --surface: #fafafa; --accent: #0284c7; --radius: 0.75rem; }\n* { box-sizing: border-box; }\nbody { margin: 0; line-height: 1.5; }\nmain { max-width: 64rem; margin: 0 auto; padding: 2rem; }\nh1, h2, h3, p { margin: 0; }\nbutton, input, select, textarea { font: inherit; }\nbutton { cursor: pointer; }\n:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }\n.stack { display: flex; flex-direction: column; gap: 1rem; }\n.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }\n.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }\n.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }\n.muted { color: var(--muted); }\n.btn { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: inherit; padding: 0.5rem 1rem; }\n.btn-primary { border-color: #171717; background: #171717; color: #fff; }\n.btn:disabled { cursor: not-allowed; opacity: 0.5; }\n.field { display: flex; flex-direction: column; gap: 0.25rem; }\n.field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; background: #fff; }\n.badge { display: inline-block; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); padding: 0.125rem 0.5rem; font-size: 0.875rem; }\n.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n@media (max-width: 640px) { main { padding: 1rem; } }\n",
+                  "src/main.js": "import './styles.css'\nconst root = document.getElementById('root')\nroot.innerHTML = '<main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main>'\ndocument.querySelector('time').textContent = new Date().toISOString().slice(0, 10)\nlet count = 0\ndocument.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }\n"
+                }
+              }
+            }
+          },
+          {
+            "scope": "flow-v1/review-0/llm-2",
+            "type": "message_start",
+            "data": {
+              "id": "fc9ce9bc-50fa-5eaa-828d-192f815f0c47",
+              "role": "agent",
+              "agent": "david"
+            }
+          },
+          {
+            "scope": "flow-v1/review-0/tool-2-record_review",
+            "type": "tool_start",
+            "data": {
+              "id": "flow-v1/review-0/tool-2-record_review",
+              "name": "record_review",
+              "agent": "david"
+            }
+          },
+          {
+            "scope": "flow-v1/review-0/tool-2-record_review",
+            "type": "tool_end",
+            "data": {
+              "id": "flow-v1/review-0/tool-2-record_review",
+              "name": "record_review",
+              "agent": "david",
+              "output": {
+                "accepted": true,
+                "findings": "Accepted the current counter.",
+                "sourceHash": "ec527de335728118121fe07558ce2da12877aed54c091118e29f23ac7f266e7c",
+                "artifactHash": "2ab2908192bd507ab87138d18d589682d8ccdf39f19dc5553e2374dc90d98003",
+                "checksHash": "2fd704de28d7a8a86d55308ce226e8b3f8a6788dac2ad18fdd747367aa8c3024",
+                "completion": {
+                  "ready": true,
+                  "missing": []
+                }
+              }
+            }
+          },
+          {
+            "scope": "flow-v1/review-0",
+            "type": "message_start",
+            "data": {
+              "id": "fc9ce9bc-50fa-5eaa-828d-192f815f0c47",
+              "role": "agent",
+              "agent": "david"
+            }
+          },
+          {
+            "scope": "flow-v1/review-0",
+            "type": "message_done",
+            "data": {
+              "id": "fc9ce9bc-50fa-5eaa-828d-192f815f0c47",
+              "role": "agent",
+              "agent": "david",
+              "content": "Accepted the current counter.",
+              "createdAt": 1774137600000
+            }
+          },
+          {
+            "scope": "flow-v1/review-0",
+            "type": "agent_end",
+            "data": {
+              "id": "david",
+              "name": "David"
+            }
+          },
+          {
+            "scope": "flow-v1/review-0",
+            "type": "tool_end",
+            "data": {
+              "id": "flow-v1/review-0",
+              "name": "delegate_david",
+              "agent": "mike",
+              "childAgent": "david",
+              "output": "Accepted the current counter."
+            }
+          },
+          {
+            "scope": "flow-v1/run-end",
+            "type": "agent_end",
+            "data": {
+              "id": "mike",
+              "name": "Mike"
+            }
+          }
+        ],
+        "steps": [
+          {
+            "name": "flow-v1/plan-0/llm-0",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/plan-0/tool-0-submit_plan",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/candidate/000000",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/build/llm-0",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/build/tool-0-write_file",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/candidate/000001",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/build/tool-1-build_project",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/candidate/000002",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/build/llm-1",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/build/tool-2-validate_preview",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/build/llm-2",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/build/tool-3-submit_candidate",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/review-0/llm-0",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/review-0/tool-0-read_review_files",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/review-0/llm-1",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/review-0/tool-1-validate_preview",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/review-0/llm-2",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/review-0/tool-2-record_review",
+            "cached": false
+          }
+        ],
+        "scopes": [
+          {
+            "enter": "flow-v1/run"
+          },
+          {
+            "exit": "flow-v1/run"
+          },
+          {
+            "enter": "flow-v1/plan-0"
+          },
+          {
+            "enter": "flow-v1/plan-0/llm-0"
+          },
+          {
+            "exit": "flow-v1/plan-0/llm-0"
+          },
+          {
+            "enter": "flow-v1/plan-0/tool-0-submit_plan"
+          },
+          {
+            "exit": "flow-v1/plan-0/tool-0-submit_plan"
+          },
+          {
+            "enter": "flow-v1/candidate/000000"
+          },
+          {
+            "exit": "flow-v1/candidate/000000"
+          },
+          {
+            "exit": "flow-v1/plan-0"
+          },
+          {
+            "enter": "flow-v1/plan-architecture"
+          },
+          {
+            "exit": "flow-v1/plan-architecture"
+          },
+          {
+            "enter": "flow-v1/build"
+          },
+          {
+            "enter": "flow-v1/build/llm-0"
+          },
+          {
+            "exit": "flow-v1/build/llm-0"
+          },
+          {
+            "enter": "flow-v1/build/tool-0-write_file"
+          },
+          {
+            "exit": "flow-v1/build/tool-0-write_file"
+          },
+          {
+            "enter": "flow-v1/candidate/000001"
+          },
+          {
+            "exit": "flow-v1/candidate/000001"
+          },
+          {
+            "enter": "flow-v1/build/tool-1-build_project"
+          },
+          {
+            "exit": "flow-v1/build/tool-1-build_project"
+          },
+          {
+            "enter": "flow-v1/candidate/000002"
+          },
+          {
+            "exit": "flow-v1/candidate/000002"
+          },
+          {
+            "enter": "flow-v1/build/llm-1"
+          },
+          {
+            "exit": "flow-v1/build/llm-1"
+          },
+          {
+            "enter": "flow-v1/build/tool-2-validate_preview"
+          },
+          {
+            "exit": "flow-v1/build/tool-2-validate_preview"
+          },
+          {
+            "enter": "flow-v1/build/llm-2"
+          },
+          {
+            "exit": "flow-v1/build/llm-2"
+          },
+          {
+            "enter": "flow-v1/build/tool-3-submit_candidate"
+          },
+          {
+            "exit": "flow-v1/build/tool-3-submit_candidate"
+          },
+          {
+            "exit": "flow-v1/build"
+          },
+          {
+            "enter": "flow-v1/review-0"
+          },
+          {
+            "enter": "flow-v1/review-0/llm-0"
+          },
+          {
+            "exit": "flow-v1/review-0/llm-0"
+          },
+          {
+            "enter": "flow-v1/review-0/tool-0-read_review_files"
+          },
+          {
+            "exit": "flow-v1/review-0/tool-0-read_review_files"
+          },
+          {
+            "enter": "flow-v1/review-0/llm-1"
+          },
+          {
+            "exit": "flow-v1/review-0/llm-1"
+          },
+          {
+            "enter": "flow-v1/review-0/tool-1-validate_preview"
+          },
+          {
+            "exit": "flow-v1/review-0/tool-1-validate_preview"
+          },
+          {
+            "enter": "flow-v1/review-0/llm-2"
+          },
+          {
+            "exit": "flow-v1/review-0/llm-2"
+          },
+          {
+            "enter": "flow-v1/review-0/tool-2-record_review"
+          },
+          {
+            "exit": "flow-v1/review-0/tool-2-record_review"
+          },
+          {
+            "exit": "flow-v1/review-0"
+          },
+          {
+            "enter": "flow-v1/run-end"
+          },
+          {
+            "exit": "flow-v1/run-end"
+          }
+        ],
+        "committed": [
+          "flow-v1/plan-0/llm-0",
+          "flow-v1/plan-0/tool-0-submit_plan",
+          "flow-v1/candidate/000000",
+          "flow-v1/build/llm-0",
+          "flow-v1/build/tool-0-write_file",
+          "flow-v1/candidate/000001",
+          "flow-v1/build/tool-1-build_project",
+          "flow-v1/candidate/000002",
+          "flow-v1/build/llm-1",
+          "flow-v1/build/tool-2-validate_preview",
+          "flow-v1/build/llm-2",
+          "flow-v1/build/tool-3-submit_candidate",
+          "flow-v1/review-0/llm-0",
+          "flow-v1/review-0/tool-0-read_review_files",
+          "flow-v1/review-0/llm-1",
+          "flow-v1/review-0/tool-1-validate_preview",
+          "flow-v1/review-0/llm-2",
+          "flow-v1/review-0/tool-2-record_review"
+        ],
+        "result": {
+          "source": {
+            "template": "vanilla",
+            "files": {
+              "package.json": "{\n  \"name\": \"generated-app\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite --host 127.0.0.1\",\n    \"build\": \"vite build\",\n    \"preview\": \"vite preview --host 127.0.0.1\"\n  },\n  \"devDependencies\": {\n    \"vite\": \"8.3.7\"\n  }\n}\n",
+              "index.html": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>Application</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.js\"></script>\n  </body>\n</html>\n",
+              "src/styles.css": ":root { font-family: system-ui, sans-serif; color: #171717; background: #fff; --muted: #525252; --line: #e5e5e5; --surface: #fafafa; --accent: #0284c7; --radius: 0.75rem; }\n* { box-sizing: border-box; }\nbody { margin: 0; line-height: 1.5; }\nmain { max-width: 64rem; margin: 0 auto; padding: 2rem; }\nh1, h2, h3, p { margin: 0; }\nbutton, input, select, textarea { font: inherit; }\nbutton { cursor: pointer; }\n:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }\n.stack { display: flex; flex-direction: column; gap: 1rem; }\n.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }\n.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }\n.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }\n.muted { color: var(--muted); }\n.btn { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: inherit; padding: 0.5rem 1rem; }\n.btn-primary { border-color: #171717; background: #171717; color: #fff; }\n.btn:disabled { cursor: not-allowed; opacity: 0.5; }\n.field { display: flex; flex-direction: column; gap: 0.25rem; }\n.field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; background: #fff; }\n.badge { display: inline-block; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); padding: 0.125rem 0.5rem; font-size: 0.875rem; }\n.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n@media (max-width: 640px) { main { padding: 1rem; } }\n",
+              "src/main.js": "import './styles.css'\nconst root = document.getElementById('root')\nroot.innerHTML = '<main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main>'\ndocument.querySelector('time').textContent = new Date().toISOString().slice(0, 10)\nlet count = 0\ndocument.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }\n"
+            }
+          },
+          "html": "<!doctype html><html><head><meta name=viewport content=\"width=device-width,initial-scale=1\"></head><body><main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main><script>document.querySelector('time').textContent = new Date().toISOString().slice(0, 10); let count = 0; document.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }</script></body></html>",
+          "checks": [
+            {
+              "name": "smoke: 375px render without runtime errors",
+              "viewport": {
+                "width": 375,
+                "height": 812
+              },
+              "actions": [],
+              "assertions": [
+                {
+                  "selector": "body",
+                  "kind": "no-horizontal-overflow",
+                  "expected": "true",
+                  "attribute": null
+                }
+              ]
+            },
+            {
+              "name": "calendar today",
+              "viewport": null,
+              "actions": [],
+              "clock": {
+                "now": "2026-03-22T00:00:00.000Z",
+                "timezone": "UTC"
+              },
+              "seed": 73,
+              "assertions": [],
+              "assertion": {
+                "selector": "time",
+                "kind": "text",
+                "expected": "2026-03-22",
+                "attribute": null
+              }
+            },
+            {
+              "name": "increment tomorrow",
+              "viewport": {
+                "width": 375,
+                "height": 812
+              },
+              "actions": [
+                {
+                  "kind": "click",
+                  "selector": "#increment",
+                  "value": null
+                }
+              ],
+              "clock": {
+                "now": "2026-03-23T00:00:00.000Z",
+                "timezone": "UTC"
+              },
+              "seed": 917,
+              "assertions": [
+                {
+                  "selector": "time",
+                  "kind": "text",
+                  "expected": "2026-03-23",
+                  "attribute": null
+                },
+                {
+                  "selector": "output",
+                  "kind": "text",
+                  "expected": "1",
+                  "attribute": null
+                }
+              ],
+              "assertion": null
+            }
+          ],
+          "summary": "Counter candidate 0.\n\nAccepted the current counter."
+        },
+        "failure": null,
+        "providerRequestsConsumed": 7,
+        "externalOutcomesConsumed": 3
+      }
+    ],
+    "provider_requests": [
+      {
+        "model": "gpt-5.4",
+        "reasoning_effort": "low",
+        "stream": true,
+        "parallel_tool_calls": false,
+        "tools": ["read_workspace", "submit_plan"],
+        "tool_results": []
+      },
+      {
+        "model": "gpt-5.4",
+        "reasoning_effort": "medium",
+        "stream": true,
+        "parallel_tool_calls": false,
+        "tools": [
+          "read_workspace",
+          "read_file",
+          "search_files",
+          "write_file",
+          "edit_file",
+          "delete_file",
+          "build_project",
+          "inspect_preview",
+          "validate_preview",
+          "submit_candidate"
+        ],
+        "tool_results": []
+      },
+      {
+        "model": "gpt-5.4",
+        "reasoning_effort": "medium",
+        "stream": true,
+        "parallel_tool_calls": false,
+        "tools": [
+          "read_workspace",
+          "read_file",
+          "search_files",
+          "write_file",
+          "edit_file",
+          "delete_file",
+          "build_project",
+          "inspect_preview",
+          "validate_preview",
+          "submit_candidate"
+        ],
+        "tool_results": [
+          {
+            "role": "tool",
+            "tool_call_id": "call-1-0",
+            "name": "write_file",
+            "content": "{\"path\": \"src/main.js\", \"revision\": 2, \"message\": \"Source changed. Build before submitting.\"}"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call-1-1",
+            "name": "build_project",
+            "content": "{\"ok\": true, \"issues\": [], \"sourceHash\": \"ec527de335728118121fe07558ce2da12877aed54c091118e29f23ac7f266e7c\"}"
+          }
+        ]
+      },
+      {
+        "model": "gpt-5.4",
+        "reasoning_effort": "medium",
+        "stream": true,
+        "parallel_tool_calls": false,
+        "tools": [
+          "read_workspace",
+          "read_file",
+          "search_files",
+          "write_file",
+          "edit_file",
+          "delete_file",
+          "build_project",
+          "inspect_preview",
+          "validate_preview",
+          "submit_candidate"
+        ],
+        "tool_results": [
+          {
+            "role": "tool",
+            "tool_call_id": "call-1-0",
+            "name": "write_file",
+            "content": "{\"path\": \"src/main.js\", \"revision\": 2, \"message\": \"Source changed. Build before submitting.\"}"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call-1-1",
+            "name": "build_project",
+            "content": "{\"ok\": true, \"issues\": [], \"sourceHash\": \"ec527de335728118121fe07558ce2da12877aed54c091118e29f23ac7f266e7c\"}"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call-2-0",
+            "name": "validate_preview",
+            "content": "{\"valid\": true, \"issues\": [], \"checks\": [{\"name\": \"smoke: 375px render without runtime errors\", \"passed\": true, \"actual\": \"true\"}, {\"name\": \"calendar today\", \"passed\": true, \"actual\": \"2026-03-22\"}, {\"name\": \"increment tomorrow\", \"passed\": true, \"actual\": \"1: 2026-03-23; 2: 1\"}], \"artifactHash\": \"2ab2908192bd507ab87138d18d589682d8ccdf39f19dc5553e2374dc90d98003\"}"
+          }
+        ]
+      },
+      {
+        "model": "gpt-5.4",
+        "reasoning_effort": "medium",
+        "stream": true,
+        "parallel_tool_calls": false,
+        "tools": [
+          "read_workspace",
+          "read_review_files",
+          "search_files",
+          "inspect_preview",
+          "set_acceptance_checks",
+          "validate_preview",
+          "record_review"
+        ],
+        "tool_results": []
+      },
+      {
+        "model": "gpt-5.4",
+        "reasoning_effort": "medium",
+        "stream": true,
+        "parallel_tool_calls": false,
+        "tools": [
+          "read_workspace",
+          "read_review_files",
+          "search_files",
+          "inspect_preview",
+          "set_acceptance_checks",
+          "validate_preview",
+          "record_review"
+        ],
+        "tool_results": [
+          {
+            "role": "tool",
+            "tool_call_id": "call-4-0",
+            "name": "read_review_files",
+            "content": "{\"revision\": 2, \"files\": [{\"path\": \"index.html\", \"status\": \"added\", \"current\": \"<!doctype html>\\n<html lang=\\\"en\\\">\\n  <head>\\n    <meta charset=\\\"UTF-8\\\" />\\n    <meta name=\\\"viewport\\\" content=\\\"width=device-width, initial-scale=1.0\\\" />\\n    <title>Application</title>\\n  </head>\\n  <body>\\n    <div id=\\\"root\\\"></div>\\n    <script type=\\\"module\\\" src=\\\"/src/main.js\\\"></script>\\n  </body>\\n</html>\\n\", \"previous\": null}, {\"path\": \"package.json\", \"status\": \"added\", \"current\": \"{\\n  \\\"name\\\": \\\"generated-app\\\",\\n  \\\"version\\\": \\\"1.0.0\\\",\\n  \\\"private\\\": true,\\n  \\\"type\\\": \\\"module\\\",\\n  \\\"scripts\\\": {\\n    \\\"dev\\\": \\\"vite --host 127.0.0.1\\\",\\n    \\\"build\\\": \\\"vite build\\\",\\n    \\\"preview\\\": \\\"vite preview --host 127.0.0.1\\\"\\n  },\\n  \\\"devDependencies\\\": {\\n    \\\"vite\\\": \\\"8.3.7\\\"\\n  }\\n}\\n\", \"previous\": null}, {\"path\": \"src/main.js\", \"status\": \"added\", \"current\": \"import './styles.css'\\nconst root = document.getElementById('root')\\nroot.innerHTML = '<main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main>'\\ndocument.querySelector('time').textContent = new Date().toISOString().slice(0, 10)\\nlet count = 0\\ndocument.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }\\n\", \"previous\": null}, {\"path\": \"src/styles.css\", \"status\": \"added\", \"current\": \":root { font-family: system-ui, sans-serif; color: #171717; background: #fff; --muted: #525252; --line: #e5e5e5; --surface: #fafafa; --accent: #0284c7; --radius: 0.75rem; }\\n* { box-sizing: border-box; }\\nbody { margin: 0; line-height: 1.5; }\\nmain { max-width: 64rem; margin: 0 auto; padding: 2rem; }\\nh1, h2, h3, p { margin: 0; }\\nbutton, input, select, textarea { font: inherit; }\\nbutton { cursor: pointer; }\\n:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }\\n.stack { display: flex; flex-direction: column; gap: 1rem; }\\n.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }\\n.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }\\n.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }\\n.muted { color: var(--muted); }\\n.btn { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: inherit; padding: 0.5rem 1rem; }\\n.btn-primary { border-color: #171717; background: #171717; color: #fff; }\\n.btn:disabled { cursor: not-allowed; opacity: 0.5; }\\n.field { display: flex; flex-direction: column; gap: 0.25rem; }\\n.field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; background: #fff; }\\n.badge { display: inline-block; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); padding: 0.125rem 0.5rem; font-size: 0.875rem; }\\n.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\\n@media (max-width: 640px) { main { padding: 1rem; } }\\n\", \"previous\": null}]}"
+          }
+        ]
+      },
+      {
+        "model": "gpt-5.4",
+        "reasoning_effort": "medium",
+        "stream": true,
+        "parallel_tool_calls": false,
+        "tools": [
+          "read_workspace",
+          "read_review_files",
+          "search_files",
+          "inspect_preview",
+          "set_acceptance_checks",
+          "validate_preview",
+          "record_review"
+        ],
+        "tool_results": [
+          {
+            "role": "tool",
+            "tool_call_id": "call-4-0",
+            "name": "read_review_files",
+            "content": "{\"revision\": 2, \"files\": [{\"path\": \"index.html\", \"status\": \"added\", \"current\": \"<!doctype html>\\n<html lang=\\\"en\\\">\\n  <head>\\n    <meta charset=\\\"UTF-8\\\" />\\n    <meta name=\\\"viewport\\\" content=\\\"width=device-width, initial-scale=1.0\\\" />\\n    <title>Application</title>\\n  </head>\\n  <body>\\n    <div id=\\\"root\\\"></div>\\n    <script type=\\\"module\\\" src=\\\"/src/main.js\\\"></script>\\n  </body>\\n</html>\\n\", \"previous\": null}, {\"path\": \"package.json\", \"status\": \"added\", \"current\": \"{\\n  \\\"name\\\": \\\"generated-app\\\",\\n  \\\"version\\\": \\\"1.0.0\\\",\\n  \\\"private\\\": true,\\n  \\\"type\\\": \\\"module\\\",\\n  \\\"scripts\\\": {\\n    \\\"dev\\\": \\\"vite --host 127.0.0.1\\\",\\n    \\\"build\\\": \\\"vite build\\\",\\n    \\\"preview\\\": \\\"vite preview --host 127.0.0.1\\\"\\n  },\\n  \\\"devDependencies\\\": {\\n    \\\"vite\\\": \\\"8.3.7\\\"\\n  }\\n}\\n\", \"previous\": null}, {\"path\": \"src/main.js\", \"status\": \"added\", \"current\": \"import './styles.css'\\nconst root = document.getElementById('root')\\nroot.innerHTML = '<main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main>'\\ndocument.querySelector('time').textContent = new Date().toISOString().slice(0, 10)\\nlet count = 0\\ndocument.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }\\n\", \"previous\": null}, {\"path\": \"src/styles.css\", \"status\": \"added\", \"current\": \":root { font-family: system-ui, sans-serif; color: #171717; background: #fff; --muted: #525252; --line: #e5e5e5; --surface: #fafafa; --accent: #0284c7; --radius: 0.75rem; }\\n* { box-sizing: border-box; }\\nbody { margin: 0; line-height: 1.5; }\\nmain { max-width: 64rem; margin: 0 auto; padding: 2rem; }\\nh1, h2, h3, p { margin: 0; }\\nbutton, input, select, textarea { font: inherit; }\\nbutton { cursor: pointer; }\\n:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }\\n.stack { display: flex; flex-direction: column; gap: 1rem; }\\n.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }\\n.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }\\n.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }\\n.muted { color: var(--muted); }\\n.btn { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: inherit; padding: 0.5rem 1rem; }\\n.btn-primary { border-color: #171717; background: #171717; color: #fff; }\\n.btn:disabled { cursor: not-allowed; opacity: 0.5; }\\n.field { display: flex; flex-direction: column; gap: 0.25rem; }\\n.field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; background: #fff; }\\n.badge { display: inline-block; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); padding: 0.125rem 0.5rem; font-size: 0.875rem; }\\n.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\\n@media (max-width: 640px) { main { padding: 1rem; } }\\n\", \"previous\": null}]}"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call-5-0",
+            "name": "validate_preview",
+            "content": "{\"valid\": true, \"issues\": [], \"checks\": [{\"name\": \"smoke: 375px render without runtime errors\", \"passed\": true, \"actual\": \"true\"}, {\"name\": \"calendar today\", \"passed\": true, \"actual\": \"2026-03-22\"}, {\"name\": \"increment tomorrow\", \"passed\": true, \"actual\": \"1: 2026-03-23; 2: 1\"}], \"artifactHash\": \"2ab2908192bd507ab87138d18d589682d8ccdf39f19dc5553e2374dc90d98003\"}"
+          }
+        ]
+      }
+    ],
+    "external_outcomes": [
+      {
+        "kind": "compiler",
+        "source": {
+          "template": "vanilla",
+          "files": {
+            "package.json": "{\n  \"name\": \"generated-app\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite --host 127.0.0.1\",\n    \"build\": \"vite build\",\n    \"preview\": \"vite preview --host 127.0.0.1\"\n  },\n  \"devDependencies\": {\n    \"vite\": \"8.3.7\"\n  }\n}\n",
+            "index.html": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>Application</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.js\"></script>\n  </body>\n</html>\n",
+            "src/styles.css": ":root { font-family: system-ui, sans-serif; color: #171717; background: #fff; --muted: #525252; --line: #e5e5e5; --surface: #fafafa; --accent: #0284c7; --radius: 0.75rem; }\n* { box-sizing: border-box; }\nbody { margin: 0; line-height: 1.5; }\nmain { max-width: 64rem; margin: 0 auto; padding: 2rem; }\nh1, h2, h3, p { margin: 0; }\nbutton, input, select, textarea { font: inherit; }\nbutton { cursor: pointer; }\n:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }\n.stack { display: flex; flex-direction: column; gap: 1rem; }\n.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }\n.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }\n.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }\n.muted { color: var(--muted); }\n.btn { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: inherit; padding: 0.5rem 1rem; }\n.btn-primary { border-color: #171717; background: #171717; color: #fff; }\n.btn:disabled { cursor: not-allowed; opacity: 0.5; }\n.field { display: flex; flex-direction: column; gap: 0.25rem; }\n.field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; background: #fff; }\n.badge { display: inline-block; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); padding: 0.125rem 0.5rem; font-size: 0.875rem; }\n.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n@media (max-width: 640px) { main { padding: 1rem; } }\n",
+            "src/main.js": "import './styles.css'\nconst root = document.getElementById('root')\nroot.innerHTML = '<main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main>'\ndocument.querySelector('time').textContent = new Date().toISOString().slice(0, 10)\nlet count = 0\ndocument.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }\n"
+          }
+        },
+        "result": {
+          "html": "<!doctype html><html><head><meta name=viewport content=\"width=device-width,initial-scale=1\"></head><body><main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main><script>document.querySelector('time').textContent = new Date().toISOString().slice(0, 10); let count = 0; document.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }</script></body></html>",
+          "sourceHash": "ec527de335728118121fe07558ce2da12877aed54c091118e29f23ac7f266e7c"
+        }
+      },
+      {
+        "kind": "browser",
+        "payload": {
+          "html": "<!doctype html><html><head><meta name=viewport content=\"width=device-width,initial-scale=1\"></head><body><main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main><script>document.querySelector('time').textContent = new Date().toISOString().slice(0, 10); let count = 0; document.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }</script></body></html>",
+          "checks": [
+            {
+              "name": "smoke: 375px render without runtime errors",
+              "viewport": {
+                "width": 375,
+                "height": 812
+              },
+              "actions": [],
+              "assertions": [
+                {
+                  "selector": "body",
+                  "kind": "no-horizontal-overflow",
+                  "expected": "true",
+                  "attribute": null
+                }
+              ]
+            },
+            {
+              "name": "calendar today",
+              "viewport": null,
+              "actions": [],
+              "clock": {
+                "now": "2026-03-22T00:00:00.000Z",
+                "timezone": "UTC"
+              },
+              "seed": 73,
+              "assertions": [],
+              "assertion": {
+                "selector": "time",
+                "kind": "text",
+                "expected": "2026-03-22",
+                "attribute": null
+              }
+            },
+            {
+              "name": "increment tomorrow",
+              "viewport": {
+                "width": 375,
+                "height": 812
+              },
+              "actions": [
+                {
+                  "kind": "click",
+                  "selector": "#increment",
+                  "value": null
+                }
+              ],
+              "clock": {
+                "now": "2026-03-23T00:00:00.000Z",
+                "timezone": "UTC"
+              },
+              "seed": 917,
+              "assertions": [
+                {
+                  "selector": "time",
+                  "kind": "text",
+                  "expected": "2026-03-23",
+                  "attribute": null
+                },
+                {
+                  "selector": "output",
+                  "kind": "text",
+                  "expected": "1",
+                  "attribute": null
+                }
+              ],
+              "assertion": null
+            }
+          ],
+          "browserExecutable": null
+        },
+        "timeout": 180,
+        "result": {
+          "valid": true,
+          "issues": [],
+          "checks": [
+            {
+              "name": "smoke: 375px render without runtime errors",
+              "passed": true,
+              "actual": "true"
+            },
+            {
+              "name": "calendar today",
+              "passed": true,
+              "actual": "2026-03-22"
+            },
+            {
+              "name": "increment tomorrow",
+              "passed": true,
+              "actual": "1: 2026-03-23; 2: 1"
+            }
+          ],
+          "artifactHash": "2ab2908192bd507ab87138d18d589682d8ccdf39f19dc5553e2374dc90d98003"
+        }
+      },
+      {
+        "kind": "browser",
+        "payload": {
+          "html": "<!doctype html><html><head><meta name=viewport content=\"width=device-width,initial-scale=1\"></head><body><main><h1>Counter</h1><time></time><button id=increment>Add</button><output>0</output></main><script>document.querySelector('time').textContent = new Date().toISOString().slice(0, 10); let count = 0; document.querySelector('button').onclick = () => { document.querySelector('output').textContent = String(++count) }</script></body></html>",
+          "checks": [
+            {
+              "name": "smoke: 375px render without runtime errors",
+              "viewport": {
+                "width": 375,
+                "height": 812
+              },
+              "actions": [],
+              "assertions": [
+                {
+                  "selector": "body",
+                  "kind": "no-horizontal-overflow",
+                  "expected": "true",
+                  "attribute": null
+                }
+              ]
+            },
+            {
+              "name": "calendar today",
+              "viewport": null,
+              "actions": [],
+              "clock": {
+                "now": "2026-03-22T00:00:00.000Z",
+                "timezone": "UTC"
+              },
+              "seed": 73,
+              "assertions": [],
+              "assertion": {
+                "selector": "time",
+                "kind": "text",
+                "expected": "2026-03-22",
+                "attribute": null
+              }
+            },
+            {
+              "name": "increment tomorrow",
+              "viewport": {
+                "width": 375,
+                "height": 812
+              },
+              "actions": [
+                {
+                  "kind": "click",
+                  "selector": "#increment",
+                  "value": null
+                }
+              ],
+              "clock": {
+                "now": "2026-03-23T00:00:00.000Z",
+                "timezone": "UTC"
+              },
+              "seed": 917,
+              "assertions": [
+                {
+                  "selector": "time",
+                  "kind": "text",
+                  "expected": "2026-03-23",
+                  "attribute": null
+                },
+                {
+                  "selector": "output",
+                  "kind": "text",
+                  "expected": "1",
+                  "attribute": null
+                }
+              ],
+              "assertion": null
+            }
+          ],
+          "browserExecutable": null
+        },
+        "timeout": 180,
+        "result": {
+          "valid": true,
+          "issues": [],
+          "checks": [
+            {
+              "name": "smoke: 375px render without runtime errors",
+              "passed": true,
+              "actual": "true"
+            },
+            {
+              "name": "calendar today",
+              "passed": true,
+              "actual": "2026-03-22"
+            },
+            {
+              "name": "increment tomorrow",
+              "passed": true,
+              "actual": "1: 2026-03-23; 2: 1"
+            }
+          ],
+          "artifactHash": "2ab2908192bd507ab87138d18d589682d8ccdf39f19dc5553e2374dc90d98003"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,2 @@
+Repair
+The current candidate failed. The failure evidence is in the task and in read_workspace. Reproduce with validate_preview or inspect_preview, fix the application defects with targeted edit_file changes, and validate again; do not rewrite working files or change unrelated behavior. Acceptance checks are fixed for you: a failure caused by a wrong check goes in check_defects, never into a workaround in the app.

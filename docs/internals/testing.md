@@ -25,6 +25,32 @@ Backend tests live in [apps/backend/tests](../../apps/backend/tests/); compiler 
 
 Browser tests require a sandbox-capable Chromium/Chrome compatible with Python Playwright. Select it through `BROWSER_EXECUTABLE_PATH` when needed. Preserve non-root execution and the sandbox; on Ubuntu, account for the host's AppArmor/user-namespace policy instead of adding `--no-sandbox`. Compiler and browser descendants must lose provider/database credentials and terminate on cancellation.
 
+## Flow equivalence and library upgrade gates
+
+The two approved seams are the public [delivery.execute_harness](../../apps/backend/src/formlane/delivery/__init__.py) entry point and the installed CrewAI/DBOS runtime. Use the prepared backend environment, a built compiler, sandboxed Chrome and an isolated PostgreSQL database through `TEST_DATABASE_URL`. From the repository root, the owner can run each gate explicitly:
+
+```bash
+# Gate 1: complete observable equivalence with the pre-refactor Flow.
+uv run --project apps/backend pytest apps/backend/tests/test_flow_equivalence.py
+
+# Gate 2: installed-library behavior plus real DBOS recovery and compatibility.
+uv run --project apps/backend pytest apps/backend/tests/test_runtime_contract.py apps/backend/tests/test_durable_execution.py apps/backend/tests/test_execution_compatibility.py
+```
+
+Gate 1 replays twelve frozen scenarios: initial build, quick edit, plan follow-up, verify repair and its limit, review repair and its limit, disputed check, tool-budget exhaustion, missing key, cancellation and resume reusing committed operations. The [recordings](../../apps/backend/tests/fixtures/flow_equivalence/) were captured through the original harness at `af5e54f` before restructuring. `inputs.record` retains the original JSON bytes (SHA-256 `f433e43bc356abbdec48a443704641a308cabe2f947b72e54751c1efa8d1a000`); its extension prevents a generic JSON formatter from changing provenance. Each golden asserts that baseline and the input-byte hash, then compares the complete observation: source, HTML, accepted checks, event sequence/payloads, failure categories, provider tool-result messages, external outcomes and durable names/order. No event sorting, timestamp/ID masking or payload filtering is allowed. The suite has no capture/update mode, and missing recordings fail. Never regenerate or edit the inputs/goldens to bless a refactor.
+
+Only external provider transport, compiler/browser outcomes, time/identity/randomness and the in-memory durable journal are controlled in equivalence replay. The real Flow, stages, workspace, tools, native executor and model-call boundary run unchanged. Those recordings establish behavior equivalence, not live-provider acceptance or real database recovery.
+
+Gate 2 uses CrewAI `1.15.40` and DBOS `3.5.0` as installed. Native contracts prove raw file deltas precede tool execution, retry fragments reset, ordinary nonterminal tool batches stay sequential on the provider thread, PRE can block without executing a tool, POST relays the exact reason, and authority aborts stop execution. They also characterize why official stream listeners are not adopted: dependency dispatch can finish after provider return and the live durable scope, while ordinary listener errors are swallowed. The safe inline case and unsafe dependency case are both executable contracts, not skipped tests or a blanket listener guarantee. Application budget/lifecycle regressions in `test_agents.py` exercise invalid arguments without budget consumption, normal/abort cleanup, concurrent stage isolation and replay without repeated effects.
+
+The PostgreSQL/DBOS cases exercise actual process death, dormant enqueue before dispatch, committed-operation reuse, same-run/new-attempt resume, scheduling-connection termination, replacement-lease fencing and cancellation of old producers. Compatibility cases cover `flow-v2` eligibility; retained but non-resumable `flow-v1`, `crew-v1` and `dbos-v1` history; portable sorted manifests of all packaged Python/YAML/YML/text files; credentials/cache exclusion; and source/resource additions, changes and removals. Drift or missing manifest evidence blocks unfinished replay and cached `SUCCESS` completion without repeating effects. Missing evidence after committed work fails closed, while an empty dormant enqueue remains recoverable. Durable names remain `formlane.flow.v1` and `flow-v1/...`. Do not substitute the in-memory equivalence journal for these database tests.
+
+[Python CI](../../.github/workflows/python-checks.yml) partitions collection into four disjoint steps: frozen equivalence; native CrewAI contracts; DBOS recovery plus execution compatibility; and the complete `apps/backend/tests` root excluding exactly those four named files. The remainder includes configuration/startup, application hooks, model streaming, validator, storage, worker and API tests; future test files are included automatically. No file runs twice across these steps. Both gates must pass before a library bump or replay-affecting refactor; the full remainder and normal lint/compiler gates remain required. CI configuration alone is not evidence of a green candidate run.
+
+Configuration coverage in `test_configuration.py` checks malformed resources fail before worker polling and loaded policy stays immutable/cached. Packaging verification must load all fourteen resources from both wheel and source distribution, including a fresh interpreter loading configuration from the wheel, not only a source checkout. Prompt wording assertions are not a substitute for the frozen gate or real-provider acceptance.
+
+The configuration suite also reuses the native recording observation helper for initial builds and quick edits, checking that a customized Mike display name reaches both entry-point lifecycle events. The frozen equivalence suite still compares complete default observations and verifies recording provenance without normalization.
+
 ## End-to-end evidence
 
 A real-provider acceptance pass covers idea → plan/build/verify/review Flow → validated saved preview → follow-up → history/restore/Undo → remix/download → publish/republish/unpublish → reload. Separately exercise reconnect, cancellation, individual operation timeouts and restart/reclaim with the current deployed backend. Healthy execution and queue waiting have no whole-run deadline; long-running work must retain renewable lease authority. Record release, run/version identity and observed result; a successful tool probe is narrower evidence.
