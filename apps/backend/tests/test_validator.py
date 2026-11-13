@@ -489,3 +489,100 @@ def test_viewports_drive_real_horizontal_overflow_checks():
     assert report["issues"] == [
         'mobile overflow assertion 1 (no-horizontal-overflow, body): expected "true", got "false".'
     ]
+
+
+@pytest.mark.parametrize(
+    "clock",
+    [
+        {"now": "2026-03-18T10:00:00"},
+        {"now": "not a time"},
+        {"now": "2026-03-18T10:00:00+08:00", "timezone": "Mars/Base"},
+        {"now": "2026-03-18T10:00:00+08:00", "script": "alert(1)"},
+    ],
+)
+def test_rejects_invalid_clocks(clock):
+    with pytest.raises(ValueError):
+        validate_checks([check(clock=clock), check()])
+
+
+TODAY_HTML = """<!doctype html><html><body><output id="today"></output><button id="go">Go</button>
+<script>const d = new Date(); document.querySelector('#today').textContent =
+d.toLocaleDateString('en-CA', {timeZone: 'Asia/Shanghai'}) + ' ' + Intl.DateTimeFormat().resolvedOptions().timeZone;</script>
+</body></html>"""
+FIXED_HTML = TODAY_HTML.replace(
+    "const d = new Date()", "const d = new Date('2026-03-18T10:00:00+08:00')"
+)
+
+
+def dated(name, now, expected):
+    return check(
+        name,
+        actions=[{"kind": "click", "selector": "#go", "value": None}],
+        assertions=[assertion(selector="#today", expected=expected)],
+        clock={"now": now, "timezone": "Asia/Shanghai"},
+    )
+
+
+def test_pinned_clocks_distinguish_computed_dates_from_hardcoded_ones():
+    checks = [
+        dated("wednesday", "2026-03-18T10:00:00+08:00", "2026-03-18 Asia/Shanghai"),
+        dated("friday", "2026-03-20T23:30:00+08:00", "2026-03-20 Asia/Shanghai"),
+    ]
+    assert validate(TODAY_HTML, checks)["valid"]
+    hardcoded = validate(FIXED_HTML, checks)
+    assert not hardcoded["valid"]
+    assert [item["passed"] for item in hardcoded["checks"]] == [True, False]
+
+
+def test_inspection_observes_tree_console_and_errors_without_judging():
+    from formlane.validator import inspect_artifact
+
+    html = """<!doctype html><html><body><button id="b" onclick="console.log('clicked');
+    document.querySelector('#s').textContent='Done'; undefinedCall()">Act</button>
+    <p id="s">Idle</p></body></html>"""
+    result = inspect_artifact(
+        html,
+        {"actions": [{"kind": "click", "selector": "#b", "value": None}], "selector": "body"},
+        settings(),
+        lambda: False,
+    )
+    assert result["actionsPerformed"] == 1 and result["actionFailure"] is None
+    assert "Done" in result["accessibilityTree"] and 'button "Act"' in result["accessibilityTree"]
+    assert any("clicked" in line for line in result["console"])
+    assert any("undefinedCall" in error for error in result["pageErrors"])
+    missing = inspect_artifact(
+        html,
+        {"actions": [{"kind": "click", "selector": "#missing", "value": None}]},
+        settings(),
+        lambda: False,
+    )
+    assert missing["actionsPerformed"] == 0 and "#missing" in missing["actionFailure"]
+
+
+RANDOM_HTML = """<!doctype html><html><body><output id="tile"></output><button id="spawn">Spawn</button>
+<script>const tile = document.querySelector('#tile');
+document.querySelector('#spawn').onclick = () => {
+  const bytes = crypto.getRandomValues(new Uint8Array(1));
+  tile.textContent = Math.floor(Math.random() * 16) + ':' + (bytes[0] % 2 ? 4 : 2);
+};</script></body></html>"""
+
+
+def test_seeded_randomness_makes_random_apps_reproducible():
+    spawn = [{"kind": "click", "selector": "#spawn", "value": None}]
+
+    def observe(seed):
+        probe = check(
+            "probe", actions=spawn, assertions=[assertion(selector="#tile", expected="none")]
+        )
+        report = validate(RANDOM_HTML, [dict(probe, seed=seed), dict(probe, name="b", seed=seed)])
+        return [item["actual"] for item in report["checks"]]
+
+    first, again, other = observe(1), observe(1), observe(2)
+    assert first[0] == first[1] == again[0] and ":" in first[0]
+    assert other[0] != first[0]
+    seeded = [
+        check(name, actions=spawn, assertions=[assertion(selector="#tile", expected=first[0])])
+        for name in ("one", "two")
+    ]
+    assert validate(RANDOM_HTML, seeded)["valid"]
+    assert not validate(RANDOM_HTML, [dict(item, seed=2) for item in seeded])["valid"]
