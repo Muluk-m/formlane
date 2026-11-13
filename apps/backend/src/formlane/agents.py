@@ -248,6 +248,16 @@ def source_changes(source: dict | None, previous: Any) -> list[dict]:
     ]
 
 
+# Observation is cheap per call but unbounded exploration exhausted a review stage
+# (22 inspections, no verdict). Budgets force a decision with the evidence at hand.
+TOOL_BUDGETS = {
+    "alex": {"inspect_preview": 12, "validate_preview": 8},
+    "david": {"inspect_preview": 6, "validate_preview": 3, "set_acceptance_checks": 2},
+}
+BUDGET_NEXT = {
+    "alex": "Submit now with submit_candidate, naming disputed failing checks in check_defects.",
+    "david": "Decide with the evidence you have and call record_review now.",
+}
 DATE_LITERAL = re.compile(
     r"\d{4}\s*[-/.年]\s*\d{1,2}\s*[-/.月]\s*\d{1,2}|\d{1,2}\s*月\s*\d{1,2}\s*[日号]"
 )
@@ -389,6 +399,7 @@ class Runtime:
             "message_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"{self.context['runId']}:{path}")),
             "llm_index": 0,
             "tool_index": 0,
+            "uses": {},
         }
 
     def begin_model_call(self, scope: dict) -> None:
@@ -720,6 +731,17 @@ class Runtime:
         def execute(**kwargs: Any) -> str:
             self.check()
             args = schema.model_validate(kwargs).model_dump()
+            role = self.scope["role"]
+            limit = TOOL_BUDGETS.get(role, {}).get(name)
+            uses = self.scope["uses"]
+            if limit is not None and uses.get(name, 0) >= limit:
+                # Deterministic on replay: the same cached model calls hit the same count.
+                return json.dumps(
+                    {
+                        "error": f"{name} budget of {limit} for this stage is used up. {BUDGET_NEXT[role]}"
+                    }
+                )
+            uses[name] = uses.get(name, 0) + 1
             return json.dumps(self.invoke(name, args), ensure_ascii=False)
 
         return Tool(
