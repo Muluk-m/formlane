@@ -84,8 +84,9 @@ def _block(connection, state):
 def _native_child(settings_data, job, connection, mode):
     from crewai.llms.providers.openai.completion import OpenAICompletion
 
-    from formlane.agents import Delivery, Runtime
-    from formlane.model_stream import ObservedOpenAI
+    from formlane.delivery._crewai import ObservedOpenAI
+    from formlane.delivery.stages import Delivery
+    from formlane.delivery.workspace import Runtime
 
     settings = Settings.model_validate(settings_data)
     store = Store(settings.database_url)
@@ -96,13 +97,13 @@ def _native_child(settings_data, job, connection, mode):
             context = store.harness_context(job["id"], job["lease_token"])
             context["previousSource"] = create_source("vanilla")
             runtime = Runtime(settings, context, durable, durable.emit, lambda: False)
-            original_operation = runtime.operation
+            original_write_file = runtime.write_file
 
-            def operation(name, args):
-                _record(store, name)
-                return original_operation(name, args)
+            def write_file(args):
+                _record(store, "write_file")
+                return original_write_file(args)
 
-            runtime.operation = operation
+            runtime.write_file = write_file
 
             def provider(llm, *args, **kwargs):
                 index = runtime.scope["llm_index"] - 1
@@ -146,8 +147,7 @@ def _native_child(settings_data, job, connection, mode):
                 }
             finally:
                 for llm in llms:
-                    if llm._client is not None:
-                        llm._client.close()
+                    llm.close()
 
         if mode == "kill-after-enqueue":
             enqueue = DBOS.enqueue_workflow

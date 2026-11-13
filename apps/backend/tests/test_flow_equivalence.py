@@ -3,22 +3,17 @@
 Only HTTP, compiler/browser processes, clock/identity and the durable journal are
 controlled. No stage, workspace, model call, executor or tool is replaced.
 
-Owner-only baseline capture (before refactoring, with PYTHONHASHSEED=0):
-    FORMLANE_EQUIVALENCE_CAPTURE=af5e54f pytest tests/test_flow_equivalence.py
-Then unset FORMLANE_EQUIVALENCE_CAPTURE and run the same test on the new entry.
-Missing recordings fail; normal runs never write or update golden files. Capture
-refuses to overwrite files. inputs.json contains controlled external inputs, not
-claimed live-provider evidence. Golden outputs are always observed, never authored.
+The twelve golden recordings were captured from baseline af5e54f before the
+refactor. Missing recordings fail; this suite never writes or updates them.
+inputs.json contains controlled external inputs, not claimed live-provider
+evidence. Golden outputs are always observed, never authored.
 """
 
 from __future__ import annotations
 
 import copy
 import hashlib
-import importlib
-import importlib.util
 import json
-import os
 import random
 import sys
 import time
@@ -32,10 +27,11 @@ import httpx
 import pytest
 
 from formlane import compiler, validator
+from formlane.delivery import execute_harness
 from formlane.project import artifact_hash, create_source, source_hash
 
 FIXTURES = Path(__file__).parent / "fixtures" / "flow_equivalence"
-INPUTS = json.loads((FIXTURES / "inputs.json").read_text())
+INPUTS = json.loads((FIXTURES / "inputs.record").read_text())
 BASELINE = "af5e54f"
 
 
@@ -318,12 +314,6 @@ class Journal:
         return clone(self.committed[name])
 
 
-def entry_point():
-    # Only the public seam changes its import path during this migration.
-    module = "formlane.delivery" if importlib.util.find_spec("formlane.delivery") else "formlane.agents"
-    return importlib.import_module(module).execute_harness
-
-
 def freeze_inputs(monkeypatch):
     monkeypatch.setenv("CREWAI_DISABLE_TELEMETRY", "true")
     monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
@@ -351,7 +341,7 @@ def freeze_inputs(monkeypatch):
 
 
 def assert_scenario(name, observed, provider, external, context):
-    """Independent invariants keep capture from blessing an unintended path."""
+    """Independent invariants ensure each recording exercises the intended path."""
     last = observed["attempts"][-1]
     assert provider.index == len(provider.responses), "Unused provider response records"
     assert external.index == len(external.browser), "Unused browser outcome records"
@@ -421,18 +411,8 @@ def assert_scenario(name, observed, provider, external, context):
 
 @pytest.mark.parametrize("name", INPUTS["scenarios"])
 def test_flow_equivalence(name, monkeypatch):
-    execute_harness = entry_point()
-    capture = os.environ.get("FORMLANE_EQUIVALENCE_CAPTURE")
     golden = FIXTURES / f"{name}.json"
-    if capture:
-        assert capture == BASELINE, "Capture must explicitly name the original baseline"
-        assert execute_harness.__module__ == "formlane.agents", "Capture before the module refactor"
-        assert not golden.exists(), f"Refusing to overwrite baseline recording: {golden}"
-    else:
-        assert golden.exists(), (
-            f"Missing observed baseline {golden.name}. Integration owner must capture "
-            "with FORMLANE_EQUIVALENCE_CAPTURE=af5e54f on the original implementation."
-        )
+    assert golden.exists(), f"Missing frozen baseline recording: {golden.name}"
     random_state = random.getstate()
     random.seed(73)
     freeze_inputs(monkeypatch)
@@ -501,28 +481,13 @@ def test_flow_equivalence(name, monkeypatch):
         observed["provider_requests"] = provider.requests
         observed["external_outcomes"] = external.calls
         assert_scenario(name, observed, provider, external, context)
-        if capture:
-            # This branch records observations only after the independent scenario
-            # invariants pass. It cannot become an automatic snapshot update mode.
-            provenance = {
-                "baseline": BASELINE,
-                "entrySourceSha256": hashlib.sha256(
-                    Path(sys.modules[execute_harness.__module__].__file__).read_bytes()
-                ).hexdigest(),
-                "inputSha256": hashlib.sha256((FIXTURES / "inputs.json").read_bytes()).hexdigest(),
-            }
-            with golden.open("x") as stream:
-                json.dump({"provenance": provenance, "observed": observed}, stream,
-                          ensure_ascii=False, indent=2)
-                stream.write("\n")
-        else:
-            expected = json.loads(golden.read_text())
-            assert expected["provenance"]["baseline"] == BASELINE
-            assert expected["provenance"]["inputSha256"] == hashlib.sha256(
-                (FIXTURES / "inputs.json").read_bytes()
-            ).hexdigest()
-            # No payload normalization, timestamp stripping, ID substitution,
-            # event sorting or source/HTML filtering is allowed here.
-            assert observed == expected["observed"]
+        expected = json.loads(golden.read_text())
+        assert expected["provenance"]["baseline"] == BASELINE
+        assert expected["provenance"]["inputSha256"] == hashlib.sha256(
+            (FIXTURES / "inputs.record").read_bytes()
+        ).hexdigest()
+        # No payload normalization, timestamp stripping, ID substitution,
+        # event sorting or source/HTML filtering is allowed here.
+        assert observed == expected["observed"]
     finally:
         random.setstate(random_state)

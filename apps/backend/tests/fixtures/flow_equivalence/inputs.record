@@ -9,20 +9,20 @@
   "checks": [
     {
       "name": "calendar today",
-      "clock": { "now": "2026-03-22T00:00:00.000Z", "timezone": "UTC" },
+      "clock": {"now": "2026-03-22T00:00:00.000Z", "timezone": "UTC"},
       "seed": 73,
       "actions": [],
-      "assertion": { "kind": "text", "selector": "time", "expected": "2026-03-22" }
+      "assertion": {"kind": "text", "selector": "time", "expected": "2026-03-22"}
     },
     {
       "name": "increment tomorrow",
-      "viewport": { "width": 375, "height": 812 },
-      "clock": { "now": "2026-03-23T00:00:00.000Z", "timezone": "UTC" },
+      "viewport": {"width": 375, "height": 812},
+      "clock": {"now": "2026-03-23T00:00:00.000Z", "timezone": "UTC"},
       "seed": 917,
-      "actions": [{ "kind": "click", "selector": "#increment", "value": null }],
+      "actions": [{"kind": "click", "selector": "#increment", "value": null}],
       "assertions": [
-        { "kind": "text", "selector": "time", "expected": "2026-03-23" },
-        { "kind": "text", "selector": "output", "expected": "1" }
+        {"kind": "text", "selector": "time", "expected": "2026-03-23"},
+        {"kind": "text", "selector": "output", "expected": "1"}
       ]
     }
   ],
@@ -31,27 +31,27 @@
       "valid": true,
       "issues": [],
       "checks": [
-        { "name": "smoke: 375px render without runtime errors", "passed": true, "actual": "true" },
-        { "name": "calendar today", "passed": true, "actual": "2026-03-22" },
-        { "name": "increment tomorrow", "passed": true, "actual": "1: 2026-03-23; 2: 1" }
+        {"name": "smoke: 375px render without runtime errors", "passed": true, "actual": "true"},
+        {"name": "calendar today", "passed": true, "actual": "2026-03-22"},
+        {"name": "increment tomorrow", "passed": true, "actual": "1: 2026-03-23; 2: 1"}
       ]
     },
     "fail": {
       "valid": false,
       "issues": ["increment tomorrow: assertion 2 expected 1, received 0"],
       "checks": [
-        { "name": "smoke: 375px render without runtime errors", "passed": true, "actual": "true" },
-        { "name": "calendar today", "passed": true, "actual": "2026-03-22" },
-        { "name": "increment tomorrow", "passed": false, "actual": "1: 2026-03-23; 2: 0" }
+        {"name": "smoke: 375px render without runtime errors", "passed": true, "actual": "true"},
+        {"name": "calendar today", "passed": true, "actual": "2026-03-22"},
+        {"name": "increment tomorrow", "passed": false, "actual": "1: 2026-03-23; 2: 0"}
       ]
     },
     "defect": {
       "valid": false,
       "issues": ["increment tomorrow: assertion 2 expected 2, received 1"],
       "checks": [
-        { "name": "smoke: 375px render without runtime errors", "passed": true, "actual": "true" },
-        { "name": "calendar today", "passed": true, "actual": "2026-03-22" },
-        { "name": "increment tomorrow", "passed": false, "actual": "1: 2026-03-23; 2: 1" }
+        {"name": "smoke: 375px render without runtime errors", "passed": true, "actual": "true"},
+        {"name": "calendar today", "passed": true, "actual": "2026-03-22"},
+        {"name": "increment tomorrow", "passed": false, "actual": "1: 2026-03-23; 2: 1"}
       ]
     },
     "inspect": {

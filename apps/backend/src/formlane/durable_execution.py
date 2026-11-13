@@ -59,7 +59,14 @@ def compatibility_manifest(settings: Settings) -> dict:
     # a future incompatible version needs a deliberate migration/version handler.
     root = Path(__file__).parent
     files = (
-        "agents.py",
+        "delivery/__init__.py",
+        "delivery/_crewai.py",
+        "delivery/errors.py",
+        "delivery/flow.py",
+        "delivery/schemas.py",
+        "delivery/stages.py",
+        "delivery/tools.py",
+        "delivery/workspace.py",
         "model_stream.py",
         "prompts.py",
         "project.py",

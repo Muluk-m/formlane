@@ -1,7 +1,7 @@
 """Stage contracts for the code-orchestrated delivery Flow (ADR-0015).
 
 The Flow decides which stage runs next. These contracts only describe each stage's
-work; they never grant tools or replace the acceptance gate enforced in agents.py.
+work; they never grant tools or replace the acceptance gate in delivery/workspace.py.
 """
 
 TEAM_INSTRUCTIONS = """You are part of a team delivering a real runnable application.

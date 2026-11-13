@@ -1,12 +1,14 @@
 """Retained candidates are owned draft artifacts, never accepted versions."""
 
 import copy
+from functools import wraps
 from uuid import uuid4
 
 import pytest
 from test_agents import Checkpoints, runtime
 from test_storage import complete, start
 
+from formlane.delivery.tools import BuildProject, DeleteFile, EditFile, WriteFile
 from formlane.models import Project, Run, RunCheckpoint
 from formlane.project import artifact_hash, source_hash
 from formlane.storage import EXECUTION_VERSION, Store, StoreError
@@ -188,15 +190,15 @@ def test_candidate_operations_replay_snapshots_without_repeating_tools(monkeypat
         compiled_sources.append(copy.deepcopy(source))
         return {"sourceHash": source_hash(source), "html": result["html"]}
 
-    monkeypatch.setattr("formlane.agents.compile_project", compile_source)
+    monkeypatch.setattr("formlane.delivery.workspace.compile_project", compile_source)
     operations = [
-        ("write_file", {"path": "draft.js", "content": "const draft = 1"}),
-        ("build_project", {}),
-        ("edit_file", {"path": "draft.js", "edits": [{"find": "1", "replacement": "2"}]}),
-        ("delete_file", {"path": "draft.js"}),
+        (WriteFile, {"path": "draft.js", "content": "const draft = 1"}),
+        (BuildProject, {}),
+        (EditFile, {"path": "draft.js", "edits": [{"find": "1", "replacement": "2"}]}),
+        (DeleteFile, {"path": "draft.js"}),
     ]
-    for name, args in operations:
-        assert "error" not in rt.invoke(name, args)
+    for tool, args in operations:
+        assert "error" not in tool(rt).run(**args)
     candidates = [value for key, value in journal.values.items() if "/candidate/" in key]
     assert len(candidates) == 4
     assert candidates[0]["source"]["files"]["draft.js"] == "const draft = 1"
@@ -211,12 +213,17 @@ def test_candidate_operations_replay_snapshots_without_repeating_tools(monkeypat
     replay.durable = journal
     replay.scope = replay.new_scope("flow-v1/build", "alex")
 
-    def repeated_operation(*_):
-        pytest.fail("A committed tool must restore its snapshot during replay")
+    def forbid_repetition(operation):
+        @wraps(operation)
+        def repeated_operation(*_):
+            pytest.fail("A committed tool must restore its snapshot during replay")
 
-    monkeypatch.setattr(replay, "operation", repeated_operation)
-    for name, args in operations:
-        replay.invoke(name, args)
+        monkeypatch.setattr(replay, operation.__name__, repeated_operation)
+
+    for operation in (replay.write_file, replay.build_project, replay.edit_file, replay.delete_file):
+        forbid_repetition(operation)
+    for tool, args in operations:
+        tool(replay).run(**args)
     assert journal.values == saved
     assert replay.workspace == rt.workspace
     assert len(compiled_sources) == 1

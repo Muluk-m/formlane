@@ -193,7 +193,7 @@ def _child(settings_data: dict, job: dict, connection: Any, cancellation: Any) -
     store = Store(settings.database_url)
     durable = Durable(store, job, cancellation.is_set)
     try:
-        from .agents import execute_harness
+        from .delivery import execute_harness
 
         context = store.harness_context(job["id"], job["lease_token"])
         result = execute_durable(
