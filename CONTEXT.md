@@ -15,6 +15,11 @@
 | Stream            | Owned SSE subscription                | Replayable observation of persisted events; never execution ownership                                |
 | Cursor            | `run_events` sequence                 | Last observed sequence for reconnect replay                                                          |
 | Candidate         | Worker workspace                      | Unaccepted source and checks; writing or compiling it does not save a successful version             |
+| Plan              | `submit_plan`                         | Brief, criteria, architecture and checks written before code; rules, not simulated end states        |
+| Quick edit        | Router route `quick_edit`             | Follow-up applied directly to saved source with its saved checks as regression baseline              |
+| Check defect      | `check_defects`                       | Failing check the builder shows is wrong; the reviewer decides, the app is not bent to it            |
+| Smoke check       | Harness-added check                   | 375px render without runtime errors or horizontal overflow, prepended to every check set             |
+| Clock / seed      | Check `clock`, `seed`                 | Pinned date/timezone and seeded randomness that make time-relative and random apps testable          |
 | Validation        | Native Playwright                     | Sandboxed browser checks bound to current source, artifact and check-set evidence                    |
 | Review            | David's scoped tools                  | Independent validation and explicit acceptance or repair findings                                    |
 | Cancel            | Run/lease fence                       | Invalidates producer writes; closing a tab only stops observation                                    |
