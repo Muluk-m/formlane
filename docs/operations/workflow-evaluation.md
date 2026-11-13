@@ -207,6 +207,10 @@ The baseline already has zero committed repair stages. The [complete first-candi
 
 The complete private collection remains under `/Users/mac/formlane-evaluation/baseline-20261113` on macmini2. Its `report.json` contains sanitized operation evidence; `private-state.json` contains owner capabilities and must remain private. Structured token usage and billed cost were absent and remain null.
 
+The [targeted corrected-policy regression](../research/2026-11-13-review-regression.md) used fresh `expense`, `dice`, `game-2048` and `cart` generations on `followups-2712131-20261113`: 4/4 saved and passed independent browser checks, 59 committed model calls, one failed validation report and zero repair stages. The same four baseline cases had 82 calls and five failed validation reports; the first candidate had 88 calls, five failed reports and one repair stage. The remaining 2048 check error was corrected against the unchanged artifact within David's review.
+
+Staging now runs `followups-2712131-20261113` through `/etc/formlane/backend-followups-2712131.env` and the `60-followups-2712131.conf` drop-ins for the two staging services. Earlier release directories and the original environment are retained; production services and Pages were not changed by this follow-up branch. Backend, JavaScript and GitGuardian CI passed on `2712131` ([backend](https://github.com/Muluk-m/formlane/actions/runs/43393400407), [JavaScript](https://github.com/Muluk-m/formlane/actions/runs/43393400402)).
+
 ## Assertion-only artifact rechecks
 
 A corrected assertion may be rechecked without generating new applications only when every request, case identity, category, dependency and action remains unchanged. Preserve the exact original corpus and completed collection. `recheck.py` rejects changed request metadata, verifies every saved HTML hash, uses only GET requests, and writes a new directory. It retains `originalSemantic` and the original corpus hash; run timing and DBOS evidence remain unchanged. Undo's original restore evidence is retained, while the saved restored artifact's interactions are checked again.

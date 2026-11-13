@@ -15,7 +15,7 @@ These semantic results come from a complete read-only recheck of both collection
 | Acknowledged review check-set updates     |       14 |              11 |
 | Failed validation reports                 |        5 |               5 |
 
-The median paired first-file change was -0.727 s; 10/19 cases were faster. This does not establish a reliable latency improvement. Fewer committed calls did not guarantee lower total time: the candidate 2048 run entered an additional repair stage after David added incorrect seeded-state assertions. The shared check contract is being refined for that observed failure, disabled controls and numeric-input restrictions; its targeted regression is separate from this complete first-candidate cohort.
+The median paired first-file change was -0.727 s; 10/19 cases were faster. This does not establish a reliable latency improvement. Fewer committed calls did not guarantee lower total time: the candidate 2048 run entered an additional repair stage after David added incorrect seeded-state assertions. The shared check contract was subsequently refined for that observed failure, disabled controls and numeric-input restrictions. Its [separate four-case regression](2026-11-13-review-regression.md) passed 4/4 with one failed validation corrected within review and zero implementation repair stages; it does not replace this complete first-candidate cohort.
 
 Median paired total-time delta among 19 generation cases saved in both evaluations: 6.40 seconds. Negative deltas are faster. Failure/status changes remain visible below; a fast failure is not a performance improvement.
 
