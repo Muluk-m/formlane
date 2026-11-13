@@ -32,6 +32,7 @@ export function Stage({
   versionControl,
   toolbarAction,
   changes,
+  candidateNotice,
   onRestore,
   restoreDisabled,
 }: {
@@ -52,6 +53,7 @@ export function Stage({
   versionControl: ReactNode
   toolbarAction?: ReactNode
   changes: ReactNode
+  candidateNotice?: ReactNode
   onRestore?: () => void
   restoreDisabled?: boolean
 }) {
@@ -104,6 +106,7 @@ export function Stage({
           {toolbarAction}
         </div>
       </div>
+      {candidateNotice}
       {tab === 'preview' && (
         <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3">
           <Button

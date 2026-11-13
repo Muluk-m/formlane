@@ -2,7 +2,7 @@
 
 TEST_DATABASE_URL must be the dedicated PostgreSQL test database. Business and
 DBOS tables each use disposable, independently named schemas. Only provider
-transport is synthetic; native CrewAI delegation/executor/tool execution is real.
+transport is synthetic; the native CrewAI stage executor and tool execution are real.
 """
 
 import copy
@@ -40,7 +40,7 @@ TOOL_CALL = [
         "function": {"name": "write_file", "arguments": json.dumps(WRITE_ARGS)},
     }
 ]
-DELEGATION = "crew-v1/delegate-0-alex"
+DELEGATION = "flow-v1/build"
 
 
 @pytest.fixture
@@ -82,10 +82,9 @@ def _block(connection, state):
 
 
 def _native_child(settings_data, job, connection, mode):
-    from crewai import Crew, Process, Task
     from crewai.llms.providers.openai.completion import OpenAICompletion
 
-    from formlane.agents import DurableAgent, Runtime, SourceExecutor
+    from formlane.agents import Delivery, Runtime
     from formlane.model_stream import ObservedOpenAI
 
     settings = Settings.model_validate(settings_data)
@@ -117,53 +116,38 @@ def _native_child(settings_data, job, connection, mode):
                 return "Saved source."
 
             OpenAICompletion.call = provider
-            llm = ObservedOpenAI(
-                model="test",
-                api_key=settings.openai_api_key,
-                base_url=settings.endpoint,
-                api="completions",
-                stream=True,
-                max_retries=0,
-            ).bind(runtime)
-            agent = DurableAgent(
-                role="Alex",
-                goal="Save the source",
-                backstory="Implement source",
-                llm=llm,
-                tools=runtime.tools("alex"),
-                allow_delegation=False,
-                max_iter=4,
-                max_retry_limit=0,
-                cache=False,
-                checkpoint=False,
-                verbose=False,
-                executor_class=SourceExecutor,
-            ).bind(runtime, "alex")
-            task = Task(description="Save src/main.js", expected_output="Source saved", agent=agent)
-            crew = Crew(
-                agents=[agent],
-                tasks=[task],
-                process=Process.sequential,
-                cache=False,
-                memory=False,
-                tracing=False,
-                verbose=False,
-                checkpoint=False,
-            )
+            llms = []
+
+            def model(effort=None):
+                llm = ObservedOpenAI(
+                    model="test",
+                    api_key=settings.openai_api_key,
+                    base_url=settings.endpoint,
+                    api="completions",
+                    stream=True,
+                    max_retries=0,
+                ).bind(runtime)
+                llms.append(llm)
+                return llm
+
             try:
-                output = crew.kickoff()
-                if mode == "kill-after-delegation":
-                    _block(connection, "completed-delegation")
+                output = Delivery(runtime, model).stage(
+                    "build",
+                    "builder",
+                    "Save src/main.js",
+                    {"request": "Save src/main.js"},
+                    lambda text: text,
+                )
                 return {
                     "source": runtime.workspace["source"],
                     "html": "<!doctype html><html><body>Durably saved</body></html>",
-                    "summary": output.raw,
+                    "summary": output,
                     "revision": runtime.workspace["revision"],
-                    "implementationPasses": runtime.workspace["implementationPasses"],
                 }
             finally:
-                if llm._client is not None:
-                    llm._client.close()
+                for llm in llms:
+                    if llm._client is not None:
+                        llm._client.close()
 
         if mode == "kill-after-enqueue":
             enqueue = DBOS.enqueue_workflow
@@ -220,65 +204,15 @@ def _reclaim(store, job):
     return replacement
 
 
-def _seed_legacy(store, job, completed_delegation=False, completed_result=False):
-    from formlane.agents import Runtime
-
-    with store.sessions.begin() as session:
-        session.get(Run, job["id"]).execution_version = "crew-v1"
-    job["execution_version"] = "crew-v1"
-    context = store.harness_context(job["id"], job["lease_token"])
-    context["previousSource"] = create_source("vanilla")
-    runtime = Runtime(None, context, None, lambda *_: None, lambda: False)
-    runtime.scope = runtime.new_scope(DELEGATION, "alex")
-    runtime.operation("write_file", WRITE_ARGS)
-    saved = {
-        "output": {"path": "src/main.js", "revision": 1},
-        "workspace": copy.deepcopy(runtime.workspace),
-        "mutated": True,
-        "args": WRITE_ARGS,
-    }
-    store.put_checkpoint(job["id"], job["lease_token"], f"{DELEGATION}/llm-0", TOOL_CALL)
-    store.put_checkpoint(job["id"], job["lease_token"], f"{DELEGATION}/tool-0-write_file", saved)
-    result = {
-        "source": runtime.workspace["source"],
-        "html": "<!doctype html><html><body>Legacy saved</body></html>",
-        "summary": "Legacy source saved.",
-        "revision": 1,
-        "implementationPasses": 1,
-    }
-    if completed_delegation:
-        store.put_checkpoint(
-            job["id"],
-            job["lease_token"],
-            DELEGATION,
-            {
-                "workspace": runtime.workspace,
-                "result": json.dumps(
-                    {"result": "Legacy source saved.", "workspace": runtime.workspace_info()}
-                ),
-            },
-        )
-    if completed_result:
-        store.put_checkpoint(job["id"], job["lease_token"], "crew-v1/result", result)
-    return result
-
-
-@pytest.mark.parametrize("legacy", [False, True])
 def test_process_death_replays_native_model_and_tool_without_repeating_saved_effects(
-    pg_store, project, owner, durable_database, legacy
+    pg_store, project, owner, durable_database
 ):
     job = start(pg_store, project, owner)
-    if legacy:
-        _seed_legacy(pg_store, job)
     with _producer(durable_database, job, "kill-model") as (process, receive):
         assert _receive(receive) == {"state": "unfinished-model"}
         process.kill()
         process.join(timeout=10)
-    assert _effect_counts(pg_store) == (
-        Counter({"model-1": 1})
-        if legacy
-        else Counter({"model-0": 1, "write_file": 1, "model-1": 1})
-    )
+    assert _effect_counts(pg_store) == Counter({"model-0": 1, "write_file": 1, "model-1": 1})
     replacement = _reclaim(pg_store, job)
     with pytest.raises(LeaseLost):
         pg_store.check_authority(job["id"], job["lease_token"])
@@ -287,9 +221,9 @@ def test_process_death_replays_native_model_and_tool_without_repeating_saved_eff
     assert receipt["state"] == "result", receipt
     result = receipt["result"]
     assert result["source"]["files"]["src/main.js"] == SOURCE_TEXT
-    assert result["revision"] == result["implementationPasses"] == 1
+    assert result["revision"] == 1
     counts = _effect_counts(pg_store)
-    assert counts["write_file"] == counts["model-0"] == (0 if legacy else 1)
+    assert counts["write_file"] == counts["model-0"] == 1
     # An interrupted, uncommitted provider request can execute and be billed again.
     assert counts["model-1"] == 2
     schema = durable_database.dbos_system_schema
@@ -304,7 +238,7 @@ def test_process_death_replays_native_model_and_tool_without_repeating_saved_eff
     assert f"{DELEGATION}/llm-0" in names
     assert f"{DELEGATION}/tool-0-write_file" in names
     assert f"{DELEGATION}/llm-1" in names
-    assert "crew-v1/result" not in names and DELEGATION not in names
+    assert DELEGATION not in names
     assert all(row.error is None for row in rows)
 
 
@@ -369,26 +303,20 @@ def test_lost_scheduling_connection_cannot_overwrite_replacement_queue(
         client.destroy()
 
 
-@pytest.mark.parametrize("completed_result", [False, True])
-def test_completed_legacy_aggregate_survives_importer_process_death(
-    pg_store, project, owner, durable_database, completed_result
+@pytest.mark.parametrize("retired", ["crew-v1", "dbos-v1"])
+def test_retired_execution_versions_fail_closed_before_running_work(
+    pg_store, project, owner, durable_database, retired
 ):
     job = start(pg_store, project, owner)
-    saved = _seed_legacy(
-        pg_store, job, completed_delegation=True, completed_result=completed_result
-    )
-    mode = "kill-after-result" if completed_result else "kill-after-delegation"
-    with _producer(durable_database, job, mode) as (process, receive):
-        receipt = _receive(receive)
-        assert receipt["state"] == ("result" if completed_result else "completed-delegation")
-        process.kill()
-        process.join(timeout=10)
-    replacement = _reclaim(pg_store, job)
-    with _producer(durable_database, replacement, "finish") as (_, receive):
-        receipt = _receive(receive)
-    assert receipt["state"] == "result", receipt
-    assert receipt["result"]["source"] == saved["source"]
-    assert _effect_counts(pg_store) == Counter()
+    with pg_store.sessions.begin() as session:
+        session.get(Run, job["id"]).execution_version = retired
+    job["execution_version"] = retired
+    with pytest.raises(ExecutionVersionMismatch):
+        execute_durable(
+            durable_database, Durable(pg_store, job, lambda: False), lambda: pytest.fail("Ran")
+        )
+    assert pg_store.fail_incompatible_run(job["id"], job["lease_token"])
+    assert not pg_store.get_run(project["id"], owner, job["id"])["resumable"]
 
 
 def test_failed_provider_retries_only_unfinished_operation_on_same_run_resume(

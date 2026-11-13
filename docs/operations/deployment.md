@@ -107,6 +107,17 @@ Focused verification covered 89 backend tests and five catalog tests, including 
 
 Integration with PR #17 passed another 50 PostgreSQL storage, worker and process-recovery tests and 41 frontend message tests. The migration dry run accepted both live workflow manifests. Queue/resume waiting, checkpoint rollback, cached replay cancellation and stale-producer rejection remain covered without a whole-run watchdog.
 
+### Flow-first delivery (`flow-v1`)
+
+[ADR-0015](../adr/0015-flow-first-delivery.md) replaces the hierarchical Crew. Its durable history is not interchangeable with `crew-v1`/`dbos-v1`: on the new worker those runs fail closed as incompatible and are not resumable. Not yet released. Activation sequence:
+
+1. Stop new run creation and let active runs finish, or record each unfinished run that will be failed as incompatible. Retain a complete PostgreSQL backup and the previous release.
+2. With API and worker stopped, apply `0004_version_acceptance_checks`. Readiness requires this revision. The `migrate_execution_budget.py` manifest script is pinned to the previous release and does not apply.
+3. Activate API and worker from the same release with pinned `PYTHONPATH`. New runs record `execution_version = flow-v1`.
+4. Verify with the real provider: an initial build, a quick-edit follow-up that reuses saved checks, a plan follow-up, cancellation, and a worker restart during build. Record run IDs, model-call counts, time to first file event, wall time and repair rounds.
+
+Rollback restores the database backup and previous release together. The previous API's readiness requires revision `0003_remove_run_deadline`, so restore or downgrade before switching executables.
+
 ## Historical releases — Worker/D1 and Node executor
 
 The following is predecessor evidence, **not Python rollout acceptance**. The prior topology used Pages Functions/service binding `API`, Hono Worker `formlane-api`, D1 `atoms-demo` and a non-root Node/OpenAI Agents SDK executor on the same approved GCP VM. Its old instructions and source are retained at [historical revision b8af77af1bb2](https://github.com/Muluk-m/formlane/tree/b8af77af1bb2); the [historical deployment guide](https://github.com/Muluk-m/formlane/blob/b8af77af1bb2/docs/operations/deployment.md) records detailed earlier run evidence. Deleted `apps/server` / `apps/executor` paths belong to that Git revision, not current modules.

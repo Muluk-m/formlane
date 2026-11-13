@@ -22,6 +22,8 @@ from .models import Message, Project, Run, RunCheckpoint, RunEvent, Version
 from .project import MAX_PREVIEW_BYTES, validate_source
 
 LEASE_DURATION_MS = 60_000
+# Runs execute only on the worker release that created their durable history.
+EXECUTION_VERSION = "flow-v1"
 TERMINAL = {"completed", "failed", "cancelled"}
 ERRORS = {
     "timeout": "An earlier time limit interrupted this run. Continue from the saved progress.",
@@ -104,7 +106,7 @@ def run_json(row: Run) -> dict:
         "attempt": row.attempt,
         "resumable": (
             row.recovery_eligible
-            and row.execution_version in {"crew-v1", "dbos-v1"}
+            and row.execution_version == EXECUTION_VERSION
             and row.status in {"failed", "cancelled"}
         ),
         "request": row.request,
@@ -320,12 +322,45 @@ class Store:
                 .where(Message.project_id == project_id)
                 .order_by(Message.created_at, Message.position)
             )
+            latest = s.scalar(
+                select(Run)
+                .where(Run.project_id == project_id)
+                .order_by(Run.recovery_eligible.desc(), Run.created_at.desc(), Run.id.desc())
+                .limit(1)
+            )
+            candidate = None
+            if (
+                latest is not None
+                and latest.status != "completed"
+                and latest.previous_version_id == project.current_version_id
+                and latest.recovery_eligible
+            ):
+                checkpoint = s.scalar(
+                    select(RunCheckpoint)
+                    .where(
+                        RunCheckpoint.run_id == latest.id,
+                        RunCheckpoint.name.startswith(f"{EXECUTION_VERSION}/candidate/"),
+                    )
+                    .order_by(RunCheckpoint.created_at.desc(), RunCheckpoint.name.desc())
+                    .limit(1)
+                )
+                if checkpoint is not None:
+                    saved = checkpoint.result
+                    candidate = {
+                        "runId": latest.id,
+                        "source": saved["source"],
+                        "sourceHash": saved["sourceHash"],
+                        "html": saved["html"],
+                        "artifactHash": saved["artifactHash"],
+                        "createdAt": checkpoint.created_at,
+                    }
             return {
                 "project": project_json(project),
                 "versions": [version_json(row) for row in versions],
                 "messages": [message_json(row) for row in messages],
                 "html": current.html if current else None,
                 "source": current.source if current else None,
+                "candidate": candidate,
             }
 
     def get_version(self, project_id: str, owner_id: str, version_id: str | None = None) -> dict:
@@ -450,6 +485,7 @@ class Store:
                         number=row.number,
                         html=row.html,
                         source=row.source,
+                        acceptance_checks=row.acceptance_checks,
                         prompt=row.prompt,
                         created_at=row.created_at,
                         parent_version_id=copied_ids.get(row.parent_version_id),
@@ -511,7 +547,7 @@ class Store:
                 created_at=clock,
                 attempt=1,
                 attempt_started_at=clock,
-                execution_version="dbos-v1",
+                execution_version=EXECUTION_VERSION,
                 recovery_eligible=True,
                 event_cursor=0,
             )
@@ -563,6 +599,7 @@ class Store:
                     .join(Project, Project.id == Run.project_id)
                     .where(
                         Run.status.in_(["queued", "running"]),
+                        Run.execution_version == EXECUTION_VERSION,
                         or_(Run.lease_expires_at.is_(None), Run.lease_expires_at <= clock),
                         Project.run_id == Run.id,
                         Project.status == "generating",
@@ -609,6 +646,7 @@ class Store:
                 "idea": project.idea,
                 "request": run.request,
                 "previousSource": version.source if version else None,
+                "previousChecks": version.acceptance_checks if version else None,
                 "attempt": run.attempt,
                 "executionVersion": run.execution_version,
             }
@@ -712,6 +750,7 @@ class Store:
             or len(result["html"].encode("utf-8")) > MAX_PREVIEW_BYTES
             or not isinstance(result.get("summary"), str)
             or not 1 <= len(result["summary"].encode("utf-16-le")) // 2 <= 20_000
+            or not isinstance(result.get("checks", []), list)
         ):
             raise ValueError("Completion requires bounded compiled HTML and a nonempty summary.")
         with self.sessions.begin() as s:
@@ -738,6 +777,7 @@ class Store:
                 number=number,
                 html=result["html"],
                 source=result["source"],
+                acceptance_checks=result.get("checks"),
                 prompt=run.request,
                 created_at=now,
                 parent_version_id=run.previous_version_id,
@@ -833,7 +873,7 @@ class Store:
                 raise StoreError(404, "Run not found.")
             if (
                 not run.recovery_eligible
-                or run.execution_version not in {"crew-v1", "dbos-v1"}
+                or run.execution_version != EXECUTION_VERSION
                 or project.current_version_id != run.previous_version_id
                 or project.run_id not in {None, run.id}
                 or run.status == "completed"

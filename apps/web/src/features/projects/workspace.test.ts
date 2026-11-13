@@ -1,7 +1,7 @@
 import type { RunEvent } from '@atoms-demo/contracts'
 import { createProjectSource } from '@atoms-demo/core/project'
 import { describe, expect, it } from 'vitest'
-import { projectWorkspace, reduceProjectEvent } from './workspace'
+import { projectWorkspace, reduceProjectEvent, selectProjectCandidate } from './workspace'
 
 function event(type: string, data: RunEvent['data']): RunEvent {
   return {
@@ -116,5 +116,86 @@ describe('project source observation', () => {
         event('file_saved', { path: 'index.html', content: '<html>' }),
       ).source,
     ).toBeNull()
+  })
+})
+
+describe('retained candidate selection', () => {
+  const candidate = {
+    runId: 'candidate-run',
+    source: createProjectSource('react-ts'),
+    sourceHash: 'candidate-source',
+    html: '<!doctype html><html><body>Draft</body></html>',
+    artifactHash: 'candidate-artifact',
+    createdAt: 10,
+  }
+  const current: Parameters<typeof selectProjectCandidate>[0] = {
+    candidate,
+    run: { id: candidate.runId, status: 'failed' },
+    currentVersionId: 'accepted-version',
+    detailVersionId: 'accepted-version',
+    viewingVersionId: null,
+    selectedRunId: null,
+  }
+
+  it('keeps the accepted version selected until inspection and supports returning to it', () => {
+    expect(selectProjectCandidate(current)).toEqual({ candidate, selected: false })
+    expect(selectProjectCandidate({ ...current, selectedRunId: candidate.runId })).toEqual({
+      candidate,
+      selected: true,
+    })
+    expect(selectProjectCandidate({ ...current, selectedRunId: null }).selected).toBe(false)
+  })
+
+  it.each(['running', 'failed', 'cancelled'] as const)(
+    'automatically exposes the draft without accepted versions for a %s run',
+    (status) => {
+      expect(
+        selectProjectCandidate({
+          ...current,
+          run: { id: candidate.runId, status },
+          currentVersionId: null,
+          detailVersionId: null,
+        }),
+      ).toEqual({ candidate, selected: true })
+    },
+  )
+
+  it('recovers source-only candidates from detail without inventing a preview', () => {
+    const sourceOnly = { ...candidate, html: null, artifactHash: null }
+    expect(
+      selectProjectCandidate({
+        ...current,
+        candidate: sourceOnly,
+        run: null,
+        currentVersionId: null,
+        detailVersionId: null,
+      }),
+    ).toEqual({ candidate: sourceOnly, selected: true })
+  })
+
+  it('ignores cached candidates after a new run, acceptance, or current-version change', () => {
+    for (const update of [
+      { run: { id: 'next-run', status: 'running' as const } },
+      { run: { id: candidate.runId, status: 'completed' as const } },
+      { currentVersionId: 'restored-version' },
+      { candidate: null },
+    ]) {
+      expect(
+        selectProjectCandidate({ ...current, selectedRunId: candidate.runId, ...update }),
+      ).toEqual({ candidate: null, selected: false })
+    }
+  })
+
+  it('honors history selection and does not carry draft inspection to a later run', () => {
+    expect(
+      selectProjectCandidate({
+        ...current,
+        selectedRunId: candidate.runId,
+        viewingVersionId: 'historical-version',
+      }),
+    ).toEqual({ candidate, selected: false })
+    expect(selectProjectCandidate({ ...current, selectedRunId: 'previous-run' }).selected).toBe(
+      false,
+    )
   })
 })

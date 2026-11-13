@@ -9,7 +9,7 @@ One integration owner runs authorized checks after shared edits land. Select exp
 | Boundary             | Required coverage                                                                                                                                                                          |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | API/ownership        | Contract-compatible JSON/errors; preserved owner header; private project/chat/version/download isolation; explicit allowed/denied CORS origins                                             |
-| Provider/CrewAI      | Native manager/specialist delegation, role-scoped tools, streaming, missing-key/provider failures and no mock fallback                                                                     |
+| Provider/CrewAI      | Flow stage order and halting, bounded repair loops, role-scoped tools, streaming, missing-key/provider failures and no mock fallback                                                       |
 | PostgreSQL           | Explicit empty-database Alembic migration, constraints, atomic pointer/run transitions and concurrent lease fencing                                                                        |
 | Import               | All six tables; IDs/timestamps/pointers, source/HTML hashes, message order, event cursors, checkpoints, pre-0006 ancestry policy, exact repeat and divergent-target rejection, verify-only |
 | Generation           | Current-source build and check-set evidence; implementation and independent validation/review; repair, safe failure categories and prior-version preservation                              |
@@ -28,7 +28,7 @@ Browser tests require a sandbox-capable Chromium/Chrome compatible with Python P
 
 ## End-to-end evidence
 
-A real-provider acceptance pass covers idea → native delegation → validated saved preview → follow-up → history/restore/Undo → remix/download → publish/republish/unpublish → reload. Separately exercise reconnect, cancellation, deadline and restart/reclaim with the current deployed backend. Record release, run/version identity and observed result; a successful tool probe is narrower evidence.
+A real-provider acceptance pass covers idea → plan/build/verify/review Flow → validated saved preview → follow-up → history/restore/Undo → remix/download → publish/republish/unpublish → reload. Separately exercise reconnect, cancellation, deadline and restart/reclaim with the current deployed backend. Record release, run/version identity and observed result; a successful tool probe is narrower evidence.
 
 UI evidence checks actual rendering, both locales, dialogs/focus, status treatment, source comparisons, 375px layouts and unsent drafts. Generated apps may use their requested visual style; the shell retains Skyline.
 

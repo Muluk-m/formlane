@@ -443,7 +443,7 @@ def test_resume_preserves_checkpoint_source_history_and_fences_old_attempt(
     assert claimed["previous_version_id"] == baseline["id"]
     assert claimed["attempt_started_at"] == clock
 
-    assert claimed["execution_version"] == run["execution_version"] == "dbos-v1"
+    assert claimed["execution_version"] == run["execution_version"] == "flow-v1"
     assert (
         pg_store.get_checkpoint(run["id"], claimed["lease_token"], "source:committed") == checkpoint
     )
@@ -608,13 +608,11 @@ def test_recovery_migration_preserves_legacy_run_and_event_history(owner):
             command.upgrade(config, "head")
         assert not store.get_run(project_id, owner, old_run)["resumable"]
         migrated = store.get_run(project_id, owner, latest_run)
-        assert migrated["attempt"] == 1 and migrated["resumable"]
+        # History migrates intact; crew-v1 work cannot replay on the flow-v1 worker.
+        assert migrated["attempt"] == 1 and not migrated["resumable"]
         event = store.list_run_events(project_id, owner, latest_run, 0)[0]
         assert event["attempt"] == 1 and event["data"] == {"status": "failed"}
-        resumed = store.resume_run(project_id, owner, latest_run)
-        assert resumed["cursor"] == 2 and resumed["attempt"] == 2
-        claimed = store.claim_run("legacy-recovery")
-        assert claimed["execution_version"] == "crew-v1"
-        assert store.get_checkpoint(latest_run, claimed["lease_token"], "legacy:source")[
-            "value"
-        ] == {"source": "retained"}
+        with store.engine.connect() as connection:
+            assert connection.execute(
+                text("SELECT result FROM run_checkpoints WHERE run_id=:id"), {"id": latest_run}
+            ).scalar() == {"source": "retained"}

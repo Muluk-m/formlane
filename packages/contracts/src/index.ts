@@ -47,6 +47,15 @@ export const versionSchema = z.object({
   html: z.string().optional(),
   source: projectSourceSchema.optional(),
 })
+export const projectCandidateSchema = z.object({
+  runId: z.uuid(),
+  source: projectSourceSchema,
+  sourceHash: z.string(),
+  html: z.string().nullable(),
+  artifactHash: z.string().nullable(),
+  createdAt: z.number(),
+})
+export type ProjectCandidate = z.infer<typeof projectCandidateSchema>
 export const ideaSchema = z.string().trim().min(1).max(4000)
 export const createProjectSchema = z.object({ idea: ideaSchema })
 export const followupSchema = z.object({ content: ideaSchema })
@@ -134,6 +143,7 @@ export const contract = {
           versions: z.array(versionSchema),
           html: z.string().nullable(),
           source: projectSourceSchema.nullable(),
+          candidate: projectCandidateSchema.nullable(),
         }),
       ),
     delete: api.route({ method: 'DELETE', path: '/projects/{id}' }).input(id).output(ok),
