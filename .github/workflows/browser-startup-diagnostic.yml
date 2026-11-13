@@ -1,0 +1,93 @@
+name: Browser startup diagnosis
+on:
+  pull_request:
+    paths: [".github/workflows/browser-startup-diagnostic.yml"]
+permissions:
+  contents: read
+jobs:
+  startup:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [baseline, explicit-bus, private-home]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: uv sync --frozen --project apps/backend
+      - name: Instrument first sandboxed Chrome startup
+        env:
+          STARTUP_VARIANT: ${{ matrix.environment }}
+          DEBUG: pw:browser,pw:protocol
+        run: |
+          /opt/google/chrome/chrome --version
+          uv run --project apps/backend python - <<'PY' > "$RUNNER_TEMP/startup.json" 2> "$RUNNER_TEMP/browser.log"
+          import asyncio, importlib.metadata, json, os, tempfile, threading, time
+          from pathlib import Path
+          from playwright.async_api import async_playwright
+          from formlane.compiler import safe_environment
+          started = time.monotonic()
+          samples = []
+          stop = threading.Event()
+          def sample():
+              while not stop.wait(.2):
+                  rows = {}
+                  for proc in Path('/proc').glob('[0-9]*'):
+                      try:
+                          stat = (proc/'stat').read_text()
+                          end = stat.rfind(')')
+                          fields = stat[end+2:].split()
+                          rows[int(proc.name)] = {'ppid':int(fields[1]), 'state':fields[0], 'cpuTicks':int(fields[11])+int(fields[12]), 'rssPages':int(fields[21]), 'name':stat[stat.find('(')+1:end], 'wait':(proc/'wchan').read_text()}
+                      except (OSError, ValueError):
+                          pass
+                  own = {os.getpid()}
+                  while True:
+                      children = {pid for pid,row in rows.items() if row['ppid'] in own}
+                      if children <= own: break
+                      own |= children
+                  pressure={p.name:p.read_text().strip() for p in Path('/proc/pressure').glob('*')}
+                  samples.append({'seconds':round(time.monotonic()-started,3),'load':Path('/proc/loadavg').read_text().strip(),'pressure':pressure,'processes':{pid:rows[pid] for pid in own if pid in rows}})
+          thread=threading.Thread(target=sample,daemon=True); thread.start()
+          result={'variant':os.environ['STARTUP_VARIANT'],'playwright':importlib.metadata.version('playwright')}
+          async def probe():
+              environment=safe_environment()
+              with tempfile.TemporaryDirectory(prefix='formlane-browser-home-') as home:
+                  if result['variant']=='explicit-bus':
+                      environment['DBUS_SESSION_BUS_ADDRESS']='unix:path=/dev/null'
+                      environment['DBUS_SYSTEM_BUS_ADDRESS']='unix:path=/dev/null'
+                  elif result['variant']=='private-home':
+                      environment['HOME']=home
+                  async with async_playwright() as pw:
+                      result['driverReadySeconds']=time.monotonic()-started
+                      browser=await pw.chromium.launch(executable_path='/opt/google/chrome/chrome',chromium_sandbox=True,headless=True,args=['--force-webrtc-ip-handling-policy=disable_non_proxied_udp'],timeout=15000,env=environment)
+                      try:
+                          result['browserReadySeconds']=time.monotonic()-started
+                          page=await browser.new_page()
+                          await page.set_content('<button onclick="this.textContent=1">0</button>')
+                          await page.locator('button').click()
+                          assert await page.locator('button').inner_text()=='1'
+                          result['interaction']='passed'
+                      finally:
+                          await browser.close()
+          try:
+              asyncio.run(probe())
+          except BaseException as error:
+              result['error']=str(error)
+              raise
+          finally:
+              stop.set(); thread.join()
+              result['seconds']=time.monotonic()-started
+              result['samples']=samples
+              print(json.dumps(result,indent=2))
+          PY
+      - name: Retain external diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-startup-${{ matrix.environment }}
+          path: |
+            ${{ runner.temp }}/startup.json
+            ${{ runner.temp }}/browser.log

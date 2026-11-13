@@ -15,6 +15,7 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "check:changed": "node scripts/check-changed.mjs",
+    "check:evidence": "node scripts/check-evidence.mjs",
     "db:migrate": "uv run --directory apps/backend alembic upgrade head",
     "db:generate": "uv run --directory apps/backend alembic revision --autogenerate",
     "test:help": "node scripts/vitest-guard.mjs --print-help",
