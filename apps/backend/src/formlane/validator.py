@@ -73,6 +73,7 @@ SEEDED_RANDOM = """(() => {
   }
 })();"""
 DEFAULT_SEED = 1
+WARM_DOCUMENT = "<!doctype html><title>warm</title>"
 
 
 def _seed(value) -> int:
@@ -311,14 +312,17 @@ async def _open(browser, html: str, viewport, clock, seed: int = DEFAULT_SEED):
     if frame is None:
         raise ValueError("Candidate iframe was not attached.")
 
-    async def load():
+    async def load(document: str = html):
         async with frame.expect_navigation(
             url="about:srcdoc", wait_until="domcontentloaded", timeout=5000
         ):
             await page.locator("iframe").evaluate(
-                "(element, source) => element.setAttribute('srcdoc', source)", html
+                "(element, source) => element.setAttribute('srcdoc', source)", document
             )
 
+    # The first srcdoc document runs before clock, timezone and init-script overrides
+    # reach the isolated iframe; only a later navigation sees them from its first script.
+    await load(WARM_DOCUMENT)
     await load()
     return SimpleNamespace(
         context=context, page=page, frame=frame, load=load, errors=errors, console=console

@@ -560,7 +560,9 @@ def test_inspection_observes_tree_console_and_errors_without_judging():
 
 
 RANDOM_HTML = """<!doctype html><html><body><output id="tile"></output><button id="spawn">Spawn</button>
+<output id="initial"></output>
 <script>const tile = document.querySelector('#tile');
+document.querySelector('#initial').textContent = String(Math.random());
 document.querySelector('#spawn').onclick = () => {
   const bytes = crypto.getRandomValues(new Uint8Array(1));
   tile.textContent = Math.floor(Math.random() * 16) + ':' + (bytes[0] % 2 ? 4 : 2);
@@ -586,3 +588,16 @@ def test_seeded_randomness_makes_random_apps_reproducible():
     ]
     assert validate(RANDOM_HTML, seeded)["valid"]
     assert not validate(RANDOM_HTML, [dict(item, seed=2) for item in seeded])["valid"]
+
+
+def test_randomness_is_seeded_from_the_first_script_at_load():
+    def initial():
+        probe = check(
+            "load",
+            actions=[{"kind": "click", "selector": "#spawn", "value": None}],
+            assertions=[assertion(selector="#initial", expected="none")],
+        )
+        return validate(RANDOM_HTML, [probe, dict(probe, name="again")])["checks"]
+
+    first, second = initial(), initial()
+    assert first[0]["actual"] == first[1]["actual"] == second[0]["actual"]
