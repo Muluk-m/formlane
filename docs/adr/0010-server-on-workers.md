@@ -1,8 +1,8 @@
 # ADR 0010: Worker with Drizzle D1 rather than PostgreSQL
 
-Status: superseded by the Python/FastAPI/CrewAI/PostgreSQL cutover; see the [ADR index](README.md) and [current architecture](../internals/architecture.md).
+Status: superseded by [ADR-0013](0013-python-postgres-services.md) (FastAPI/PostgreSQL services), [ADR-0014](0014-dbos-node-recovery.md) (DBOS recovery) and [ADR-0015](0015-flow-first-delivery.md) (CrewAI Flow orchestration).
 
-This is the historical 2026-11-10 decision, retained to explain the predecessor. Its D1-only requirements do not govern the replacement backend. Current business authority is the six-table PostgreSQL schema, migrated explicitly with Alembic; Pages is static. Old implementation paths are available at [historical revision b8af77af1bb2](https://github.com/Muluk-m/formlane/tree/b8af77af1bb2/apps/server). [Deployment](../operations/deployment.md) distinguishes staged replacement from final production activation.
+This is the historical 2026-11-10 decision, retained to explain the predecessor. Its D1-only requirements do not govern the current backend. Current business authority is the six-table PostgreSQL schema, migrated explicitly with Alembic; Pages is static. Old implementation paths are available at [historical revision c108ea0](https://github.com/Muluk-m/formlane/tree/c108ea0/apps/server). See [current architecture](../internals/architecture.md) and [deployment](../operations/deployment.md) for runtime boundaries and release evidence. The remaining sections describe the historical decision.
 
 ## Context
 

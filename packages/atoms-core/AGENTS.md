@@ -1,13 +1,15 @@
 # @atoms-demo/core
 
-Runtime-independent Atoms behavior shared by the browser and Worker. The directory name remains `atoms-core`; consumers use the `@atoms-demo/core` package name and explicit subpath exports.
+Runtime-independent Atoms behavior shared by the TypeScript browser and compiler. The directory name remains `atoms-core`; consumers use `@atoms-demo/core` and its explicit exports.
 
-- `/types`: project, message, version, and agent identities.
-- `/html`, `/text`, `/alex-stream`: document extraction, text handling, and incremental separation of Alex's note from HTML.
-- `/prompts`: provider prompt context. `apps/executor` owns SDK agents and role-scoped tool orchestration; there is no supported mock generator.
+- `/types`: project, chat message, version and agent identities.
+- `/project`: source/template types, source limits and normalization, templates, and canonical source serialization/hashing.
+- `/html`: UUID and slug helpers.
+- `/text`: language detection and project-title helpers.
+- The root export re-exports these four modules.
 
-Keep this package independent of React, Hono, Wrangler bindings, database access and application imports. Provider transport belongs in `apps/executor`; D1 persistence belongs in `apps/server`. UI copy belongs in the shared i18n catalog rather than a second bilingual agent dictionary.
+Keep this package independent of React, database access and application imports. Python provider orchestration and PostgreSQL persistence belong in `apps/backend`; Node compilation belongs in `apps/compiler`. UI copy belongs in the shared i18n catalog.
 
-Parser changes must preserve chunk-boundary behavior: incomplete fences, split delimiters and revised note/code prefixes cannot leak HTML into chat. Parsing complete HTML alone does not authorize publication or completion: the executor requires current-artifact browser validation and independent acceptance, and the API fences persistence. Follow-up context preserves the existing app rather than replacing the requested edit with a canned page.
+Source normalization and hashing must stay compatible with the Python project representation. Current-source build, validation and independent acceptance are enforced by the backend before persistence; parsing or hashing alone cannot establish completion.
 
-Read [architecture](../../docs/internals/architecture.md) for dependency direction, [ADR-0012](../../docs/adr/0012-durable-agent-harness.md) for harness boundaries, and [testing](../../docs/internals/testing.md) when choosing parser regression cases. The integration owner runs checks after shared edits settle.
+Read [architecture](../../docs/internals/architecture.md) for dependency direction and [testing](../../docs/internals/testing.md) when choosing source/hash regression coverage. The integration owner runs checks after shared edits settle.

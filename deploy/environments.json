@@ -3,14 +3,6 @@
     "accountName": "Maqiqian0316@gmail.com's Account",
     "accountId": "252fba810f75c0370e5aa7200abc8f80"
   },
-  "test": {
-    "branch": "test",
-    "pagesProject": "atoms-demo-web-test",
-    "frontendOrigin": null,
-    "apiOrigin": null,
-    "apiPublicOrigin": null,
-    "backendReady": false
-  },
   "production": {
     "branch": "main",
     "pagesProject": "formlane",

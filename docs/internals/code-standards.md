@@ -14,9 +14,9 @@ For every behavior change, trace the user action through contract, server owners
 
 Routes parse, authorize, invoke a domain operation, and map errors. Ownership checks precede private reads and writes. Contract schemas and stable errors define the external boundary; frontend visibility is never authorization.
 
-Use Drizzle for ordinary D1 access. Parameterize any necessary SQL; never interpolate untrusted strings. Let constraints and conditional writes enforce uniqueness/current-run ownership where relevant. D1 transaction semantics differ from PostgreSQL: use supported operations/batches and recheck predicates rather than assuming row locks exist.
+Use SQLAlchemy for ordinary PostgreSQL access and parameterize necessary SQL. Let constraints, transactions, row locks and conditional writes enforce uniqueness and current-run ownership. Apply schema changes through explicit Alembic migrations; requests and runtime startup never bootstrap schema.
 
-Provider/browser execution belongs in `apps/executor`, outside the API Worker and database write batches. Draft artifacts require current-hash validation and independent review before commit. Stale, cancelled, lease-lost or deadline-expired work cannot overwrite state. SSE disconnect closes observation only; cancellation fences writes before the executor observes heartbeat rejection. Follow [ADR-0012](../adr/0012-durable-agent-harness.md) for immutable checkpoint and role-scoped tool boundaries. Migrations are explicit; requests do not bootstrap schema. Preserve rollback compatibility where releases overlap.
+Provider/browser execution belongs in the Python worker in `apps/backend`, separate from FastAPI requests. CrewAI Flow owns stage order and bounded repairs; DBOS records individual model/tool operations. Draft artifacts require current-source/artifact/check-set validation and independent review before commit. Stale, cancelled or lease-lost work cannot overwrite state. Enforce individual operation limits and renewable leases; runs have no fixed wall-clock deadline. SSE disconnect closes observation only; cancellation fences writes before the worker observes heartbeat rejection. Follow [ADR-0014](../adr/0014-dbos-node-recovery.md) for recovery and [ADR-0015](../adr/0015-flow-first-delivery.md) for orchestration. Preserve rollback compatibility where releases overlap.
 
 ## Browser
 

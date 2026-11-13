@@ -125,7 +125,7 @@ if (pythonFiles.length > 0) {
         if (/^tests\/test_[^/]+\.py$/.test(file)) return [file]
         const module = file.match(/^src\/formlane\/([^/]+)\.py$/)
         if (!module) return []
-        const testName = { app: 'api', import_d1: 'import' }[module[1]] ?? module[1]
+        const testName = { app: 'api' }[module[1]] ?? module[1]
         const test = `tests/test_${testName}.py`
         return existsSync(join(backendDir, test)) ? [test] : []
       }),
