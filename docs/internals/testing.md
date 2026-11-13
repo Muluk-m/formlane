@@ -31,4 +31,4 @@ A real-provider acceptance pass covers idea â†’ plan/build/verify/review Flow â†
 
 UI evidence checks actual rendering, both locales, dialogs/focus, status treatment, source comparisons, 375px layouts and unsent drafts. Generated apps may use their requested visual style; the shell retains Skyline.
 
-[Deployment](../operations/deployment.md) owns current evidence: the initial targeted Python run reported 139/144 passing, then an affected set reported 76 passing. A real-model check-hash gate regression was subsequently found and is being fixed. Those observations do not establish a complete suite or final production cutover; the integration owner must record the final result against the final code and migrated target.
+[Deployment](../operations/deployment.md) owns current release identities, completed Python/PostgreSQL cutover evidence and cleanup verification. Record results against the exact candidate and database; historical targeted test counts do not establish acceptance of a later release. Distinguish an eventual green CI run from a fix for intermittent browser failures.
