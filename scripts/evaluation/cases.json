@@ -265,10 +265,10 @@
           ["fill", "#start", "2028-02-28"],
           ["fill", "#end", "2028-03-01"],
           ["click", "#calculate"],
-          ["contains", "#result", "2天"],
+          ["matches", "#result", "(?<![\\d.-])2\\s*天"],
           ["fill", "#end", "2028-02-28"],
           ["click", "#calculate"],
-          ["contains", "#result", "0天"],
+          ["matches", "#result", "(?<![\\d.-])0\\s*天"],
           ["fill", "#end", "2028-02-27"],
           ["click", "#calculate"],
           ["contains", "#result", "结束日期不能早于开始日期"]

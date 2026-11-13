@@ -2,7 +2,7 @@
 
 The evaluation runs twenty fixed Chinese requests in sequence on macmini2, records saved outcomes separately from independent browser results, and merges persisted application events with DBOS operation metadata. Nineteen cases invoke generation; the twentieth exercises Undo by selecting the immediate saved parent through the existing restore API. Every evaluation creates its own private projects and owner capabilities. Follow-ups use only versions produced by that evaluation.
 
-The artifacts are [the corpus](../../scripts/evaluation/cases.json), [runner](../../scripts/evaluation/run.py), [browser assertions](../../scripts/evaluation/browser_checks.py), [read-only exporter](../../scripts/evaluation/export_metrics.py), [stage SQL](../../scripts/evaluation/stages.sql), and [report command](../../scripts/evaluation/report.py). They do not change the backend, Flow, replay policy, acceptance gates or package manifests.
+The artifacts are [the corpus](../../scripts/evaluation/cases.json), [runner](../../scripts/evaluation/run.py), [browser assertions](../../scripts/evaluation/browser_checks.py), [read-only exporter](../../scripts/evaluation/export_metrics.py), [stage SQL](../../scripts/evaluation/stages.sql), [report command](../../scripts/evaluation/report.py), and [saved-artifact rechecker](../../scripts/evaluation/recheck.py). They do not change the backend, Flow, replay policy, acceptance gates or package manifests.
 
 ## Target and prerequisites
 
@@ -203,9 +203,27 @@ macmini2 completed the full corpus against staging release `flow-release-2026111
 
 The dice case passed seed 7 but raised `ValueError` when reading the first numeric result at seed 29. Eight subsequent isolated replays of the same saved HTML passed both seeds without changing the evaluator or application. The original failure remains in the baseline; its cause is unresolved and is not counted as a confirmed application defect. No retry result replaces first-pass evidence.
 
-The baseline already has zero committed repair stages, so this corpus cannot demonstrate a reduction below that baseline. Candidate measurements must report any regression and distinguish check corrections within review from separate repair stages. Candidate release `followups-cce3c4a-20261113` is running the same corpus and evaluator on macmini2; no latency improvement is claimed before that comparison completes.
+The baseline already has zero committed repair stages. The [complete first-candidate comparison](../research/2026-11-13-workflow-comparison.md) records a median paired first-file change of -0.727 s, 325 to 297 committed calls, and an additional 2048 repair stage; it does not establish a reliable latency improvement. Four baseline applications had check defects despite zero repair stages. Shared stage guidance now forbids impossible native-control actions and unobserved seeded-state assumptions, and tells David to correct a mistaken check before requesting implementation repair. Targeted real-model verification of that refinement is recorded separately from the first full candidate cohort.
 
 The complete private collection remains under `/Users/mac/formlane-evaluation/baseline-20261113` on macmini2. Its `report.json` contains sanitized operation evidence; `private-state.json` contains owner capabilities and must remain private. Structured token usage and billed cost were absent and remain null.
+
+## Assertion-only artifact rechecks
+
+A corrected assertion may be rechecked without generating new applications only when every request, case identity, category, dependency and action remains unchanged. Preserve the exact original corpus and completed collection. `recheck.py` rejects changed request metadata, verifies every saved HTML hash, uses only GET requests, and writes a new directory. It retains `originalSemantic` and the original corpus hash; run timing and DBOS evidence remain unchanged. Undo's original restore evidence is retained, while the saved restored artifact's interactions are checked again.
+
+For the recorded collection on macmini2:
+
+```bash
+cd "$HOME/rmake/formlane-followups"
+.evaluation-venv/bin/python scripts/evaluation/recheck.py \
+  --input /Users/mac/formlane-evaluation/baseline-20261113 \
+  --original-corpus /Users/mac/formlane-evaluation/original-cases.json \
+  --corpus scripts/evaluation/cases.json \
+  --output /Users/mac/formlane-evaluation/baseline-rechecked-new \
+  --browser-executable '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+```
+
+Recheck the complete candidate collection with the same revised corpus into another new directory. Merge each new `runs.json` with its original `metrics.json`, then compare those new reports. Label these as artifact-only rechecks, not fresh model evaluations, and retain both first-pass reports. The date-range correction accepts `2天` and `2 天` while rejecting `12天`, `-2 天` and `2.2天`; forty artifact rechecks passed, and the changed-request refusal was exercised independently.
 
 ## Interruption and troubleshooting
 
@@ -213,10 +231,10 @@ The complete private collection remains under `/Users/mac/formlane-evaluation/ba
 - **Mutation response was lost:** phases `create-pending`, `start-pending` and `undo-pending` fail closed on restart. Use the retained owner capability privately to inspect `/api/projects`, `/api/projects/{id}/runs/latest`, or the current version as appropriate. Reconcile the journal to the observed project/run/version before resuming. Never blindly retry the POST, replace the owner capability or start a duplicate baseline. Keep the interrupted journal as evidence.
 - **Transport failure:** repair the IAP/SSH listener, then use `--resume`. Redirects are rejected rather than following an accidentally selected public endpoint. Request errors print a safe status/type only.
 - **Browser infrastructure error:** verify the explicit executable, Playwright version, sandbox capability and Chinese font availability. The report distinguishes this from a semantic failure. Do not relabel an unobserved check as passed. A fresh complete evaluation is appropriate after changing the browser environment.
-- **Generated app assertion failed:** inspect the recorded case, saved version/hash, assertion step and application through its private owner. The fixed corpus is evaluation evidence; do not weaken it to fit the candidate. A corrected corpus requires rerunning both baseline and candidate because the hash changes.
+- **Generated app assertion failed:** inspect the recorded case, saved version/hash, assertion step and application through its private owner. Do not weaken a correct criterion. An assertion-only correction requires complete artifact rechecks of both collections under the same revised corpus, as above. A changed request, action or dependency requires fresh generation evaluations.
 - **Export failed:** check private file permissions, staging environment selection, installed package version and actual schema without printing secrets. Never point it at production to obtain missing rows. Export errors intentionally omit driver exception text because it can contain credentials.
 - **Report merge failed:** use the full retained inputs to identify missing/stale IDs or mismatched event cursors. Export again to a new file once the intended run snapshots are consistent. Missing evidence is a failed collection step, not a zero-valued metric.
 
-The integration owner performs verification and the real baseline. Narrow offline checks are Python syntax compilation of the four scripts and JSON parsing of `cases.json`; the operational checks are the read-only staging probe, full sequential corpus, DBOS export, report merge and comparison. No successful baseline, semantic result or timing is claimed merely because these scripts exist.
+The integration owner performs verification and the real baseline. Narrow offline checks are Python syntax compilation of the five scripts and JSON parsing of `cases.json`; the operational checks are the read-only staging probe, full sequential corpus, DBOS export, report merge and comparison. No successful baseline, semantic result or timing is claimed merely because these scripts exist.
 
 Related guidance: [deployment](deployment.md), [testing strategy](../internals/testing.md), [Flow-first delivery](../adr/0015-flow-first-delivery.md), and [LESSONS](../../LESSONS.md).
