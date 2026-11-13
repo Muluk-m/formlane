@@ -187,6 +187,26 @@ The exporter successfully queried two existing staging runs in a verified read-o
 
 The creation's planner used two committed calls over 93868 ms; its two review stages used 31 and 11 calls. One repair stage was recorded. The follow-up used one routing call, twelve quick-edit calls and five review calls. Structured provider usage and billed costs were absent and remained null. Creation recorded 344 events, matching its terminal cursor of 344; no provider-output body was read.
 
+## First complete baseline (2026-11-13)
+
+macmini2 completed the full corpus against staging release `flow-release-20261113d` using `grok-4.7`. All nineteen generation runs saved, and Undo restored the exact accepted parent. The read-only DBOS export matched the API terminal snapshots and event counts. The [complete baseline report](../research/2026-11-13-workflow-baseline.md) preserves run IDs, saved-artifact hashes, stage timing and independent browser outcomes.
+
+| Observed metric                       |  Baseline |
+| ------------------------------------- | --------: |
+| Saved generation runs                 |     19/19 |
+| Saved-parent Undo                     |       1/1 |
+| Independent browser cases passed      |     19/20 |
+| Median first file, 19 generation runs |  58.947 s |
+| Median total time, 19 generation runs | 134.940 s |
+| Committed model calls                 |       325 |
+| Committed repair stages               |         0 |
+
+The dice case passed seed 7 but raised `ValueError` when reading the first numeric result at seed 29. Eight subsequent isolated replays of the same saved HTML passed both seeds without changing the evaluator or application. The original failure remains in the baseline; its cause is unresolved and is not counted as a confirmed application defect. No retry result replaces first-pass evidence.
+
+The baseline already has zero committed repair stages, so this corpus cannot demonstrate a reduction below that baseline. Candidate measurements must report any regression and distinguish check corrections within review from separate repair stages. Candidate release `followups-cce3c4a-20261113` is running the same corpus and evaluator on macmini2; no latency improvement is claimed before that comparison completes.
+
+The complete private collection remains under `/Users/mac/formlane-evaluation/baseline-20261113` on macmini2. Its `report.json` contains sanitized operation evidence; `private-state.json` contains owner capabilities and must remain private. Structured token usage and billed cost were absent and remain null.
+
 ## Interruption and troubleshooting
 
 - **Observation interrupted:** stop only observation if needed. Accepted generation continues independently. Re-run the baseline or candidate command with `--resume`, the same output directory, corpus and release label. The runner polls the recorded run ID instead of starting another run. Refresh an expired target proof first. There is no automatic cancel or resume API mutation.
