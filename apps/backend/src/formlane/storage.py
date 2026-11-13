@@ -322,12 +322,45 @@ class Store:
                 .where(Message.project_id == project_id)
                 .order_by(Message.created_at, Message.position)
             )
+            latest = s.scalar(
+                select(Run)
+                .where(Run.project_id == project_id)
+                .order_by(Run.recovery_eligible.desc(), Run.created_at.desc(), Run.id.desc())
+                .limit(1)
+            )
+            candidate = None
+            if (
+                latest is not None
+                and latest.status != "completed"
+                and latest.previous_version_id == project.current_version_id
+                and latest.recovery_eligible
+            ):
+                checkpoint = s.scalar(
+                    select(RunCheckpoint)
+                    .where(
+                        RunCheckpoint.run_id == latest.id,
+                        RunCheckpoint.name.startswith(f"{EXECUTION_VERSION}/candidate/"),
+                    )
+                    .order_by(RunCheckpoint.created_at.desc(), RunCheckpoint.name.desc())
+                    .limit(1)
+                )
+                if checkpoint is not None:
+                    saved = checkpoint.result
+                    candidate = {
+                        "runId": latest.id,
+                        "source": saved["source"],
+                        "sourceHash": saved["sourceHash"],
+                        "html": saved["html"],
+                        "artifactHash": saved["artifactHash"],
+                        "createdAt": checkpoint.created_at,
+                    }
             return {
                 "project": project_json(project),
                 "versions": [version_json(row) for row in versions],
                 "messages": [message_json(row) for row in messages],
                 "html": current.html if current else None,
                 "source": current.source if current else None,
+                "candidate": candidate,
             }
 
     def get_version(self, project_id: str, owner_id: str, version_id: str | None = None) -> dict:
@@ -566,6 +599,7 @@ class Store:
                     .join(Project, Project.id == Run.project_id)
                     .where(
                         Run.status.in_(["queued", "running"]),
+                        Run.execution_version == EXECUTION_VERSION,
                         or_(Run.lease_expires_at.is_(None), Run.lease_expires_at <= clock),
                         Project.run_id == Run.id,
                         Project.status == "generating",

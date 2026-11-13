@@ -1,8 +1,10 @@
+import { createProjectSource } from '@atoms-demo/core/project'
 import { describe, expect, it } from 'vitest'
 import {
   createProjectSchema,
   followupSchema,
   generateSchema,
+  projectCandidateSchema,
   projectSchema,
   runEventSchema,
   runSchema,
@@ -26,6 +28,35 @@ describe('Atoms DTO validation', () => {
       content: 'Build a calendar instead',
     })
     expect(generateSchema.safeParse({ content: '' }).success).toBe(false)
+  })
+  it('retains candidate source with an optional compiled artifact independently of versions', () => {
+    const candidate = {
+      runId: crypto.randomUUID(),
+      source: createProjectSource('react-ts'),
+      sourceHash: 'candidate-source',
+      html: null,
+      artifactHash: null,
+      createdAt: 10,
+    }
+    expect(projectCandidateSchema.parse(candidate)).toEqual(candidate)
+    const compiled = {
+      ...candidate,
+      html: '<!doctype html><html><body>Draft</body></html>',
+      artifactHash: 'candidate-artifact',
+    }
+    expect(projectCandidateSchema.parse(compiled)).toEqual(compiled)
+    expect(projectCandidateSchema.nullable().parse(null)).toBeNull()
+    expect(projectCandidateSchema.safeParse({ ...candidate, runId: 'invalid' }).success).toBe(false)
+    expect(
+      projectCandidateSchema.safeParse({
+        ...candidate,
+        source: { template: 'react-ts', files: {} },
+      }).success,
+    ).toBe(false)
+    expect(projectCandidateSchema.safeParse({ ...candidate, html: undefined }).success).toBe(false)
+    expect(
+      projectCandidateSchema.safeParse({ ...candidate, artifactHash: undefined }).success,
+    ).toBe(false)
   })
   it('keeps run failure categories distinct from project presentation status', () => {
     const run = {
