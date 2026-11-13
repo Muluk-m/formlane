@@ -934,6 +934,8 @@ class Delivery:
 
 
 class DeliveryState(BaseModel):
+    # CrewAI requires a state id; this Flow is never persisted (DBOS owns recovery).
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     route: str = "plan"
 
 
