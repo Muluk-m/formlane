@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:17
@@ -71,6 +71,11 @@ jobs:
           uv run --project apps/backend pytest
           apps/backend/tests/test_durable_execution.py
           apps/backend/tests/test_execution_compatibility.py
+      - name: Prepare runner Chrome files
+        run: |
+          # Materialize cold image pages before the existing bounded browser launch.
+          find /opt/google/chrome -type f -exec cat {} + > /dev/null
+          "$BROWSER_EXECUTABLE_PATH" --version
       - name: Complete remaining backend regressions
         run: >-
           uv run --project apps/backend pytest apps/backend/tests

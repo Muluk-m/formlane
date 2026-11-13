@@ -1,4 +1,7 @@
 import { readFileSync } from 'node:fs'
+import { checkEvidence } from './check-evidence.mjs'
+
+checkEvidence()
 
 const message = readFileSync(process.argv[2], 'utf8').split('\n')[0]
 if (

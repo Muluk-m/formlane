@@ -25,6 +25,8 @@ Backend tests live in [apps/backend/tests](../../apps/backend/tests/); compiler 
 
 Browser tests require a sandbox-capable Chromium/Chrome compatible with Python Playwright. Select it through `BROWSER_EXECUTABLE_PATH` when needed. Preserve non-root execution and the sandbox; on Ubuntu, account for the host's AppArmor/user-namespace policy instead of adding `--no-sandbox`. Compiler and browser descendants must lose provider/database credentials and terminate on cancellation.
 
+Python CI pins Ubuntu 24.04 and prepares its installed Chrome files immediately before the remaining regressions, which contain browser acceptance checks. Reading the browser bundle materializes cold runner-image pages: measured first launches otherwise spent seconds blocked on executable-page disk reads. The step records the Chrome version and preserves the installed browser's existing AppArmor profile, non-root sandbox and executable selection. It does not launch a warm-up browser, retry a failed launch, increase a timeout or change acceptance assertions. Browser/Playwright upgrades still require the full browser regression suite; a successful launch alone does not establish iframe-validation compatibility.
+
 ## Flow equivalence and library upgrade gates
 
 The two approved seams are the public [delivery.execute_harness](../../apps/backend/src/formlane/delivery/__init__.py) entry point and the installed CrewAI/DBOS runtime. Use the prepared backend environment, a built compiler, sandboxed Chrome and an isolated PostgreSQL database through `TEST_DATABASE_URL`. From the repository root, the owner can run each gate explicitly:

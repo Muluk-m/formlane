@@ -6,10 +6,7 @@ The architecture is **FastAPI + native CrewAI + DBOS + PostgreSQL on the existin
 
 Open [formlane.nainma.online](https://formlane.nainma.online). The original [Pages hostname](https://formlane-9dp.pages.dev) remains available; anonymous ownership is local to each browser origin. Published examples include the [React counter](https://formlane.nainma.online/p/8tq3mrv54j) and [market app](https://formlane.nainma.online/p/7e2g3qqnnd), shown in an isolated full-screen viewer without navigating to the backend IP.
 
-![Production workspace and history](docs/screenshots/python-cutover-desktop.png)
-![Production mobile preview](docs/screenshots/python-cutover-mobile.png)
-
-These production screenshots show release `dea6d12`, with saved v2 retained after the cancellation acceptance check.
+Historical production screenshots are retained in the private [acceptance evidence archive](docs/operations/deployment.md#acceptance-evidence-retention). They show release `dea6d12`, with saved v2 retained after the cancellation acceptance check; the deployment record preserves run IDs, results and file hashes.
 
 ## Features
 

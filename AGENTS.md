@@ -22,6 +22,7 @@ A browser-based AI product team: describe an app, watch specialists build source
 - API changes update `@atoms-demo/contracts`, Python request/response models and web consumers together. Shared packages never import applications.
 - Read [LESSONS.md](LESSONS.md) before implementation. Preserve unrelated work. One integration owner coordinates authorized checks and coherent English Conventional Commits after shared edits land; delegated editors do not independently install, verify, commit or deploy.
 - Remote mutations follow the existing authorization and exact cloud identity boundary in [deployment](docs/operations/deployment.md). A staged HTTPS endpoint is not evidence of production cutover.
+- Keep acceptance screenshots, videos, traces and run logs in a private archive outside every source checkout. Record its location, build/run IDs, SHA-256 manifest and observed results in documentation; legitimate product assets and deterministic test fixtures remain source. Follow [evidence retention](docs/operations/deployment.md#acceptance-evidence-retention).
 
 ## Read when
 
