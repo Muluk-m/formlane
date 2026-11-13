@@ -16,7 +16,7 @@ The only permitted API origin is `http://127.0.0.1:8094`, forwarded to the exist
 | Authorized GCP identity           | `maqiqian@roibest.com`                                                                       |
 | Staging environment on VM         | `/etc/formlane/backend-workflow-stage.env`                                                   |
 | Installed exporter Python         | `/opt/formlane/python-backend/releases/flow-release-20261113d/apps/backend/.venv/bin/python` |
-| Exporter working directory / user | `/tmp` / `formlane`                                                                          |
+| Exporter working directory / user | `/tmp` / `root` (the staging environment is root-owned, mode 0600)                           |
 | DBOS package / schema             | `3.5.0` / `dbos`                                                                             |
 | Browser                           | Sandboxed Chrome or Chromium, with Chinese fonts installed                                   |
 
@@ -43,18 +43,18 @@ gcloud compute ssh formlane-agent \
 
 Keep the tunnel process alive throughout observation. No total evaluation or generation timeout should wrap this command or the runner. An existing reverse tunnel from the authorized operator workstation is also suitable when it maps macmini2 port 8094 to the same VM staging port. Do not open two listeners on the same local port.
 
-Copy `scripts/evaluation/` to `/tmp/workflow-evaluation/` on the VM, preserving the directory's readable script files. On the VM, run the following with the service user and working directory shown:
+Copy `scripts/evaluation/` to `/tmp/workflow-evaluation/` on the VM, preserving the directory's readable script files. The observed staging environment is root-owned with mode 0600; use sudo for the exporter without relaxing those permissions. Database access remains a read-only transaction enforced by the exporter.
 
 ```bash
 cd /tmp
-sudo -u formlane \
+sudo \
   /opt/formlane/python-backend/releases/flow-release-20261113d/apps/backend/.venv/bin/python \
   /tmp/workflow-evaluation/export_metrics.py \
   --env-file /etc/formlane/backend-workflow-stage.env \
   --probe --output /tmp/workflow-stage-target.json
 ```
 
-Transfer this sanitized proof to `~/workflow-evidence/workflow-stage-target.json` on macmini2 using the authorized SSH connection. The proof contains only database name, loopback origin, timestamp, pinned DBOS version and read-only status. It expires after one day; refresh it to a new output path if needed. The exporter refuses to overwrite existing evidence. Use a service-user-readable input path and an output directory writable by `formlane`; do not print the environment file or connection URL.
+Transfer this sanitized proof to `~/workflow-evidence/workflow-stage-target.json` on macmini2 using the authorized SSH connection. The proof contains only database name, loopback origin, timestamp, pinned DBOS version and read-only status. It expires after one day; refresh it to a new output path if needed. The exporter refuses to overwrite existing evidence. Transfer a separate copy of the output if SSH ownership requires it; do not change the private environment's permissions or print its contents or connection URL.
 
 ## Run the complete baseline
 
@@ -98,11 +98,11 @@ The runner writes:
 
 Directories are mode 0700 and files mode 0600. Console output contains case IDs, statuses and semantic outcomes, not owner capabilities, API responses, provider keys or connection strings.
 
-Transfer `baseline/run-ids.json` to `/tmp/workflow-baseline-run-ids.json` on the VM. Ensure `formlane` can read this sanitized file. Run:
+Transfer `baseline/run-ids.json` to `/tmp/workflow-baseline-run-ids.json` on the VM. Run:
 
 ```bash
 cd /tmp
-sudo -u formlane \
+sudo \
   /opt/formlane/python-backend/releases/flow-release-20261113d/apps/backend/.venv/bin/python \
   /tmp/workflow-evaluation/export_metrics.py \
   --env-file /etc/formlane/backend-workflow-stage.env \
