@@ -1,0 +1,358 @@
+{
+  "provenance": {
+    "baseline": "af5e54f",
+    "entrySourceSha256": "4a6aaa36c79ff394264c54ff6069cf9bf0a8e0fe5452f4952a9ebf109eee8069",
+    "inputSha256": "f433e43bc356abbdec48a443704641a308cabe2f947b72e54751c1efa8d1a000"
+  },
+  "observed": {
+    "context": {
+      "runId": "687bda5a-a6cc-4ee7-8bb9-3b3f37a62408",
+      "request": "Build a counter with today's date. Preserve the counter on follow-ups.",
+      "idea": "Build a dated counter.",
+      "previousSource": null,
+      "previousChecks": []
+    },
+    "attempts": [
+      {
+        "events": [
+          {
+            "scope": "flow-v1/run",
+            "type": "agent_start",
+            "data": {
+              "id": "mike",
+              "name": "Mike"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0",
+            "type": "tool_start",
+            "data": {
+              "id": "flow-v1/plan-0",
+              "name": "delegate_emma",
+              "agent": "mike",
+              "childAgent": "emma",
+              "input": "Define the brief, architecture and acceptance checks"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0",
+            "type": "agent_start",
+            "data": {
+              "id": "emma",
+              "name": "Emma",
+              "task": "Define the brief, architecture and acceptance checks"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0/llm-0",
+            "type": "project_reset",
+            "data": {
+              "source": null
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0/llm-0",
+            "type": "message_start",
+            "data": {
+              "id": "56964838-d7e3-596c-9b3d-425123d183a3",
+              "role": "agent",
+              "agent": "emma"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0/llm-0",
+            "type": "token",
+            "data": {
+              "id": "56964838-d7e3-596c-9b3d-425123d183a3",
+              "text": "The checks bind the plan."
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0/tool-0-submit_plan",
+            "type": "tool_start",
+            "data": {
+              "id": "flow-v1/plan-0/tool-0-submit_plan",
+              "name": "submit_plan",
+              "agent": "emma"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0/tool-0-submit_plan",
+            "type": "project_initialized",
+            "data": {
+              "source": {
+                "template": "vanilla",
+                "files": {
+                  "package.json": "{\n  \"name\": \"generated-app\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite --host 127.0.0.1\",\n    \"build\": \"vite build\",\n    \"preview\": \"vite preview --host 127.0.0.1\"\n  },\n  \"devDependencies\": {\n    \"vite\": \"8.3.7\"\n  }\n}\n",
+                  "index.html": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>Application</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.js\"></script>\n  </body>\n</html>\n",
+                  "src/styles.css": ":root { font-family: system-ui, sans-serif; color: #171717; background: #fff; --muted: #525252; --line: #e5e5e5; --surface: #fafafa; --accent: #0284c7; --radius: 0.75rem; }\n* { box-sizing: border-box; }\nbody { margin: 0; line-height: 1.5; }\nmain { max-width: 64rem; margin: 0 auto; padding: 2rem; }\nh1, h2, h3, p { margin: 0; }\nbutton, input, select, textarea { font: inherit; }\nbutton { cursor: pointer; }\n:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }\n.stack { display: flex; flex-direction: column; gap: 1rem; }\n.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }\n.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }\n.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }\n.muted { color: var(--muted); }\n.btn { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: inherit; padding: 0.5rem 1rem; }\n.btn-primary { border-color: #171717; background: #171717; color: #fff; }\n.btn:disabled { cursor: not-allowed; opacity: 0.5; }\n.field { display: flex; flex-direction: column; gap: 0.25rem; }\n.field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; background: #fff; }\n.badge { display: inline-block; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); padding: 0.125rem 0.5rem; font-size: 0.875rem; }\n.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n@media (max-width: 640px) { main { padding: 1rem; } }\n",
+                  "src/main.js": "import './styles.css'\n\nconst root = document.getElementById('root')\nif (!root) throw new Error('Application root is missing.')\nconst heading = document.createElement('h1')\nheading.textContent = 'Application'\nconst main = document.createElement('main')\nmain.append(heading)\nroot.append(main)\n"
+                }
+              },
+              "reason": "Vanilla JavaScript, semantic HTML and the shared stylesheet."
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0/tool-0-submit_plan",
+            "type": "tool_end",
+            "data": {
+              "id": "flow-v1/plan-0/tool-0-submit_plan",
+              "name": "submit_plan",
+              "agent": "emma",
+              "output": {
+                "template": "vanilla",
+                "files": ["index.html", "package.json", "src/main.js", "src/styles.css"],
+                "checks": 3
+              }
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0",
+            "type": "message_start",
+            "data": {
+              "id": "56964838-d7e3-596c-9b3d-425123d183a3",
+              "role": "agent",
+              "agent": "emma"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0",
+            "type": "message_done",
+            "data": {
+              "id": "56964838-d7e3-596c-9b3d-425123d183a3",
+              "role": "agent",
+              "agent": "emma",
+              "content": "A counter showing the current date.\n\nC1. Show today's date at either pinned clock.\nC2. Add increases the counter by one.\n\n- Counter state lasts for the page session.",
+              "createdAt": 1774137600000
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0",
+            "type": "agent_end",
+            "data": {
+              "id": "emma",
+              "name": "Emma"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-0",
+            "type": "tool_end",
+            "data": {
+              "id": "flow-v1/plan-0",
+              "name": "delegate_emma",
+              "agent": "mike",
+              "childAgent": "emma",
+              "output": "A counter showing the current date.\n\nC1. Show today's date at either pinned clock.\nC2. Add increases the counter by one.\n\n- Counter state lasts for the page session."
+            }
+          },
+          {
+            "scope": "flow-v1/plan-architecture",
+            "type": "agent_start",
+            "data": {
+              "id": "bob",
+              "name": "Bob",
+              "task": "Architecture"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-architecture",
+            "type": "message_start",
+            "data": {
+              "id": "ffb9be98-05f7-552b-9963-386326ba42d5",
+              "role": "agent",
+              "agent": "bob"
+            }
+          },
+          {
+            "scope": "flow-v1/plan-architecture",
+            "type": "message_done",
+            "data": {
+              "id": "ffb9be98-05f7-552b-9963-386326ba42d5",
+              "role": "agent",
+              "agent": "bob",
+              "content": "Vanilla JavaScript, semantic HTML and the shared stylesheet.",
+              "createdAt": 1774137600000
+            }
+          },
+          {
+            "scope": "flow-v1/plan-architecture",
+            "type": "agent_end",
+            "data": {
+              "id": "bob",
+              "name": "Bob"
+            }
+          },
+          {
+            "scope": "flow-v1/build",
+            "type": "tool_start",
+            "data": {
+              "id": "flow-v1/build",
+              "name": "delegate_alex",
+              "agent": "mike",
+              "childAgent": "alex",
+              "input": "Implement the plan"
+            }
+          },
+          {
+            "scope": "flow-v1/build",
+            "type": "agent_start",
+            "data": {
+              "id": "alex",
+              "name": "Alex",
+              "task": "Implement the plan"
+            }
+          },
+          {
+            "scope": "flow-v1/build/llm-0",
+            "type": "project_reset",
+            "data": {
+              "source": {
+                "template": "vanilla",
+                "files": {
+                  "package.json": "{\n  \"name\": \"generated-app\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite --host 127.0.0.1\",\n    \"build\": \"vite build\",\n    \"preview\": \"vite preview --host 127.0.0.1\"\n  },\n  \"devDependencies\": {\n    \"vite\": \"8.3.7\"\n  }\n}\n",
+                  "index.html": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>Application</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.js\"></script>\n  </body>\n</html>\n",
+                  "src/styles.css": ":root { font-family: system-ui, sans-serif; color: #171717; background: #fff; --muted: #525252; --line: #e5e5e5; --surface: #fafafa; --accent: #0284c7; --radius: 0.75rem; }\n* { box-sizing: border-box; }\nbody { margin: 0; line-height: 1.5; }\nmain { max-width: 64rem; margin: 0 auto; padding: 2rem; }\nh1, h2, h3, p { margin: 0; }\nbutton, input, select, textarea { font: inherit; }\nbutton { cursor: pointer; }\n:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }\n.stack { display: flex; flex-direction: column; gap: 1rem; }\n.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }\n.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }\n.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }\n.muted { color: var(--muted); }\n.btn { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: inherit; padding: 0.5rem 1rem; }\n.btn-primary { border-color: #171717; background: #171717; color: #fff; }\n.btn:disabled { cursor: not-allowed; opacity: 0.5; }\n.field { display: flex; flex-direction: column; gap: 0.25rem; }\n.field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; background: #fff; }\n.badge { display: inline-block; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); padding: 0.125rem 0.5rem; font-size: 0.875rem; }\n.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n@media (max-width: 640px) { main { padding: 1rem; } }\n",
+                  "src/main.js": "import './styles.css'\n\nconst root = document.getElementById('root')\nif (!root) throw new Error('Application root is missing.')\nconst heading = document.createElement('h1')\nheading.textContent = 'Application'\nconst main = document.createElement('main')\nmain.append(heading)\nroot.append(main)\n"
+                }
+              }
+            }
+          },
+          {
+            "scope": "flow-v1/build/llm-0",
+            "type": "message_start",
+            "data": {
+              "id": "04e1230b-8e5c-5c6b-9546-7502a211ce6a",
+              "role": "agent",
+              "agent": "alex"
+            }
+          },
+          {
+            "scope": "flow-v1/build/llm-0",
+            "type": "file_start",
+            "data": {
+              "path": "src/main.js",
+              "agent": "alex"
+            }
+          },
+          {
+            "scope": "flow-v1/build/llm-0",
+            "type": "file_delta",
+            "data": {
+              "path": "src/main.js",
+              "text": "im"
+            }
+          }
+        ],
+        "steps": [
+          {
+            "name": "flow-v1/plan-0/llm-0",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/plan-0/tool-0-submit_plan",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/candidate/000000",
+            "cached": false
+          },
+          {
+            "name": "flow-v1/build/llm-0",
+            "cached": false
+          }
+        ],
+        "scopes": [
+          {
+            "enter": "flow-v1/run"
+          },
+          {
+            "exit": "flow-v1/run"
+          },
+          {
+            "enter": "flow-v1/plan-0"
+          },
+          {
+            "enter": "flow-v1/plan-0/llm-0"
+          },
+          {
+            "exit": "flow-v1/plan-0/llm-0"
+          },
+          {
+            "enter": "flow-v1/plan-0/tool-0-submit_plan"
+          },
+          {
+            "exit": "flow-v1/plan-0/tool-0-submit_plan"
+          },
+          {
+            "enter": "flow-v1/candidate/000000"
+          },
+          {
+            "exit": "flow-v1/candidate/000000"
+          },
+          {
+            "exit": "flow-v1/plan-0"
+          },
+          {
+            "enter": "flow-v1/plan-architecture"
+          },
+          {
+            "exit": "flow-v1/plan-architecture"
+          },
+          {
+            "enter": "flow-v1/build"
+          },
+          {
+            "enter": "flow-v1/build/llm-0"
+          },
+          {
+            "exit": "flow-v1/build/llm-0"
+          },
+          {
+            "exit": "flow-v1/build"
+          }
+        ],
+        "committed": [
+          "flow-v1/plan-0/llm-0",
+          "flow-v1/plan-0/tool-0-submit_plan",
+          "flow-v1/candidate/000000"
+        ],
+        "result": null,
+        "failure": {
+          "code": "cancelled"
+        },
+        "providerRequestsConsumed": 2,
+        "externalOutcomesConsumed": 0
+      }
+    ],
+    "provider_requests": [
+      {
+        "model": "gpt-5.4",
+        "reasoning_effort": "low",
+        "stream": true,
+        "parallel_tool_calls": false,
+        "tools": ["read_workspace", "submit_plan"],
+        "tool_results": []
+      },
+      {
+        "model": "gpt-5.4",
+        "reasoning_effort": "medium",
+        "stream": true,
+        "parallel_tool_calls": false,
+        "tools": [
+          "read_workspace",
+          "read_file",
+          "search_files",
+          "write_file",
+          "edit_file",
+          "delete_file",
+          "build_project",
+          "inspect_preview",
+          "validate_preview",
+          "submit_candidate"
+        ],
+        "tool_results": []
+      }
+    ],
+    "external_outcomes": []
+  }
+}

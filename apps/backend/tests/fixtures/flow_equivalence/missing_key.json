@@ -1,0 +1,32 @@
+{
+  "provenance": {
+    "baseline": "af5e54f",
+    "entrySourceSha256": "4a6aaa36c79ff394264c54ff6069cf9bf0a8e0fe5452f4952a9ebf109eee8069",
+    "inputSha256": "f433e43bc356abbdec48a443704641a308cabe2f947b72e54751c1efa8d1a000"
+  },
+  "observed": {
+    "context": {
+      "runId": "687bda5a-a6cc-4ee7-8bb9-3b3f37a62408",
+      "request": "Build a counter with today's date. Preserve the counter on follow-ups.",
+      "idea": "Build a dated counter.",
+      "previousSource": null,
+      "previousChecks": []
+    },
+    "attempts": [
+      {
+        "events": [],
+        "steps": [],
+        "scopes": [],
+        "committed": [],
+        "result": null,
+        "failure": {
+          "code": "provider"
+        },
+        "providerRequestsConsumed": 0,
+        "externalOutcomesConsumed": 0
+      }
+    ],
+    "provider_requests": [],
+    "external_outcomes": []
+  }
+}
