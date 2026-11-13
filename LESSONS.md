@@ -4,6 +4,7 @@ Read before changing a related area. Entries distinguish observed migration mist
 
 ## This migration
 
+- **2026-11-13 — Fixed routing rules lived in the manager prompt.** The hierarchical Crew spent a model turn per delegation and still violated "Emma/Bob once", "Alex before David" and completion-evidence rules. Deterministic policy belongs in code: [ADR-0015](docs/adr/0015-flow-first-delivery.md) moves stage order and repair bounds into a CrewAI Flow, writes checks before code, and keeps one source writer. When a rule can be stated as an if-statement, do not ask a model to follow it.
 - **2026-11-13 — A fixed task deadline interrupted healthy agent work.** Remove the whole-run deadline; distinguish bounded individual operations from renewable worker ownership. Prove long-running completion, cancellation and reclaim independently.
 - **2026-11-13 — Replay consumed the specialist allowance.** Eight historical delegations blocked independent acceptance even after the compiler recovered. Charge the bounded allowance only when a specialist makes fresh provider calls; committed replay must not spend it again.
 - **2026-11-13 — A copied Python environment imported the previous release.** Editable-install paths survive a directory copy. Pin service and verification `PYTHONPATH` to the active candidate source, and check the actual imported module path before activation.

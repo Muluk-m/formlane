@@ -6,7 +6,7 @@
 | ----------------- | -------------------------------------------------------------------------------------------------- |
 | `projects`        | Anonymous owner, idea, current/published pointers, public slug and active-run fence                |
 | `messages`        | Conversation, including stable ordering for equal timestamps                                       |
-| `versions`        | Immutable source/HTML snapshots, project-local numbers and generation ancestry                     |
+| `versions`        | Immutable source/HTML snapshots, accepted check sets, project-local numbers and ancestry           |
 | `runs`            | Request/baseline, status, attempt/deadline, execution compatibility, eligibility, lease and cursor |
 | `run_events`      | Sequence-addressed observations tagged with execution attempt and idempotent event identity        |
 | `run_checkpoints` | Retained legacy completed-step results consumed during DBOS migration                              |
@@ -27,7 +27,7 @@ DBOS records completed model/tool operations, not interrupted provider token str
 - **Viewed** is local historical inspection and does not mutate persisted pointers.
 - **Published** (`publishedVersionId`) pins the public slug to one explicitly chosen saved result.
 
-Completion atomically saves source, compiled HTML and recorded parent and updates current. Restore selects an existing version without deleting later versions or publishing it. Undo directly selects the current version's recorded generation parent: generating v4 after restoring v1 makes v1 its parent, regardless of version numbering. Republish updates the frozen public selection; unpublish revokes it without deleting history.
+Completion atomically saves source, compiled HTML, the accepted check set and recorded parent and updates current. The check set (`acceptance_checks`, null before `flow-v1`) is the next follow-up's regression baseline; remix copies it. Restore selects an existing version without deleting later versions or publishing it. Undo directly selects the current version's recorded generation parent: generating v4 after restoring v1 makes v1 its parent, regardless of version numbering. Republish updates the frozen public selection; unpublish revokes it without deleting history.
 
 Remix creates independent project/message/version identities, maps ancestry within its copied history and selects the requested historical/current version. It does not inherit public ownership. Downloads contain the authorized selected version's complete runnable source. Generated applications' interactive state remains in-memory preview state, separate from persisted project history.
 
