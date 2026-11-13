@@ -51,6 +51,8 @@ CI uses a per-run password only for its isolated loopback PostgreSQL container. 
 
 ## Static Pages Python API cutover
 
+Production Pages releases run through the manual [Deploy Pages workflow](../../.github/workflows/deploy-pages.yml): choose the commit whose backend is already active, and the workflow builds with the pinned pnpm, sets `BUILD_COMMIT` to that SHA, runs the deploy script with repository secret `CLOUDFLARE_API_TOKEN` (Pages edit on the designated account only), and fails unless both frontend origins serve that commit. It is deliberately not triggered by merges, because backend activation on the VM is separate.
+
 The root [deploy script](../../scripts/deploy.mjs) builds and uploads **static Pages assets only**. It does not deploy a business Worker, migrate a database, change services or upload Functions. No `API` service binding or runtime API-origin binding is needed. Target settings live in [deploy/environments.json](../../deploy/environments.json).
 
 Keep both the custom frontend and original Pages hostname available: anonymous `atoms_uid` capabilities are local to each browser origin and do not transfer between domains. Clients send that capability as `x-owner-id`, omit cookies and reject bootstrap identity replacement. Backend `ALLOWED_ORIGINS` must include `https://formlane.nainma.online`, the original Pages hostname and approved preview/local origins, including preflight for `Content-Type`, `X-Owner-ID` and `Last-Event-ID`. Public viewers fetch anonymously without owner bootstrap.
