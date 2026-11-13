@@ -91,6 +91,8 @@ class Version(Base):
     prompt: Mapped[str] = mapped_column(Text)
     created_at: Mapped[int] = mapped_column(BigInteger)
     source: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    # Accepted check set: the regression baseline for follow-ups; null before flow-v1.
+    acceptance_checks: Mapped[list[Any] | None] = mapped_column(JSONB)
     parent_version_id: Mapped[str | None] = mapped_column(Text)
     __table_args__ = (
         UniqueConstraint("project_id", "number", name="idx_versions_number"),

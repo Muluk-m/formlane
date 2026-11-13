@@ -1,4 +1,8 @@
-"""Native CrewAI hierarchical team with granular DBOS model/tool replay."""
+"""Code-orchestrated CrewAI Flow with granular DBOS model/tool replay (ADR-0015).
+
+The Flow owns stage order and repair bounds; models own content; the sandboxed
+browser and the source/artifact/check-bound completion gate own acceptance.
+"""
 
 from __future__ import annotations
 
@@ -17,8 +21,9 @@ os.environ["CREWAI_DISABLE_TELEMETRY"] = "true"
 os.environ["OTEL_SDK_DISABLED"] = "true"
 os.environ["CREWAI_TRACING_ENABLED"] = "false"
 
-from crewai import Agent, Crew, Process, Task
+from crewai import Agent, Task
 from crewai.agents.agent_executor import AgentExecutor
+from crewai.flow.flow import Flow, listen, or_, router, start
 from crewai.flow.flow_definition import FlowDefinition
 from crewai.tools.base_tool import Tool
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
@@ -27,13 +32,35 @@ from .compiler import compile_project
 from .model_stream import ObservedOpenAI, RuntimeAbort
 from .project import artifact_hash, create_source, is_project_path, source_hash, validate_source
 from .prompts import (
+    BUILDER_INSTRUCTIONS,
     ITERATION_INSTRUCTIONS,
-    MANAGER_INSTRUCTIONS,
-    ROLE_GOALS,
-    ROLE_INSTRUCTIONS,
+    PLANNER_INSTRUCTIONS,
+    QUICK_EDIT_ADDENDUM,
+    REPAIR_ADDENDUM,
+    REVIEWER_INSTRUCTIONS,
+    ROUTER_INSTRUCTIONS,
     TEAM_INSTRUCTIONS,
 )
 from .validator import validate_artifact, validate_checks
+
+FLOW_VERSION = "flow-v1"
+# Deterministic verification is free; model repair rounds are bounded per phase.
+MAX_VERIFY_REPAIRS = 2
+MAX_REVIEW_REPAIRS = 1
+SMOKE_CHECK_NAME = "smoke: 375px render without runtime errors"
+SMOKE_CHECK = {
+    "name": SMOKE_CHECK_NAME,
+    "viewport": {"width": 375, "height": 812},
+    "actions": [],
+    "assertions": [
+        {
+            "kind": "no-horizontal-overflow",
+            "selector": "body",
+            "expected": "true",
+            "attribute": None,
+        }
+    ],
+}
 
 
 class HarnessFailure(BaseException):
@@ -68,11 +95,6 @@ class Edit(NoArgs):
 
 class EditArgs(PathArgs):
     edits: list[Edit] = Field(min_length=1, max_length=8)
-
-
-class InitializeArgs(NoArgs):
-    template: Literal["vanilla", "react-ts"]
-    reason: str = Field(min_length=1, max_length=2000)
 
 
 class ReviewFilesArgs(NoArgs):
@@ -119,12 +141,37 @@ class BrowserCheck(NoArgs):
 
 
 class ChecksArgs(NoArgs):
-    checks: list[BrowserCheck] = Field(min_length=2, max_length=16)
+    # One slot is reserved for the harness smoke check.
+    checks: list[BrowserCheck] = Field(min_length=2, max_length=15)
 
 
 class ReviewArgs(NoArgs):
     accepted: bool
     findings: str = Field(min_length=1, max_length=6000)
+
+
+class Criterion(NoArgs):
+    id: str = Field(min_length=1, max_length=8)
+    outcome: str = Field(min_length=1, max_length=600)
+
+
+class PlanArgs(NoArgs):
+    brief: str = Field(min_length=1, max_length=2000)
+    criteria: list[Criterion] = Field(min_length=2, max_length=8)
+    assumptions: list[str] = Field(default_factory=list, max_length=8)
+    gaps: list[str] = Field(default_factory=list, max_length=8)
+    template: Literal["vanilla", "react-ts"] | None
+    architecture: str = Field(min_length=1, max_length=6000)
+    checks: list[BrowserCheck] = Field(min_length=2, max_length=12)
+
+
+class RouteArgs(NoArgs):
+    route: Literal["quick_edit", "plan"]
+    reason: str = Field(min_length=1, max_length=600)
+
+
+class SubmitArgs(NoArgs):
+    summary: str = Field(min_length=1, max_length=2000)
 
 
 def apply_file_edits(content: str, edits: list[dict | Edit]) -> str:
@@ -160,50 +207,6 @@ def current_build(workspace: dict) -> dict | None:
     return build
 
 
-def completion_status(workspace: dict) -> dict:
-    build = current_build(workspace)
-    missing = []
-    if not build:
-        missing.append("current_build")
-    implementation = workspace["implementationValidation"]
-    check_hash = checks_hash(workspace["checks"])
-    if (
-        not build
-        or not implementation
-        or any(implementation.get(key) != build[key] for key in ("sourceHash", "artifactHash"))
-    ):
-        missing.append("alex_validation")
-    report = workspace["report"]
-    if (
-        not build
-        or not report
-        or not report["valid"]
-        or report["artifactHash"] != build["artifactHash"]
-        or workspace["validatedBy"] != "david"
-    ):
-        missing.append("david_validation")
-    review = workspace["review"]
-    if (
-        not build
-        or not review
-        or not review["accepted"]
-        or any(review.get(key) != build[key] for key in ("sourceHash", "artifactHash"))
-        or review.get("checksHash") != check_hash
-    ):
-        missing.append("david_acceptance")
-    return {
-        "ready": not missing,
-        "missing": missing,
-        "nextRole": "bob"
-        if not workspace["source"]
-        else "alex"
-        if "alex_validation" in missing
-        else "david"
-        if missing
-        else "complete",
-    }
-
-
 def source_changes(source: dict | None, previous: Any) -> list[dict]:
     files = source["files"] if source else {}
     baseline = previous["files"] if previous else {}
@@ -222,20 +225,57 @@ def source_changes(source: dict | None, previous: Any) -> list[dict]:
     ]
 
 
-CHECK_INSTRUCTIONS = """Use 2–8 meaningful browser checks, at most 12 actions and 8 assertions per check.
-Each starts in a fresh isolated page; optional viewport is width 375–1440, height 640–1200.
-Example: {"name":"increment", "actions":[{"kind":"click","selector":"button","value":null}],
-"assertions":[{"kind":"text","selector":"output","expected":"2","attribute":null}]}.
-Actions: click, fill (input/textarea text, string value), select (native <select>, string option value), press (Enter/Tab/Escape/ArrowUp/ArrowDown/ArrowLeft/ArrowRight/Space/Backspace/Delete/Home/End), reload (body, null).
-Use select for a native dropdown, with the option's value (not its label). Never fill a <select>.
-Assertions: text containment; value/count/attribute exact equality; no-horizontal-overflow (body, expected "true").
-Expected is a string. Boolean attributes use selector counts on :disabled/:enabled. Quote CSS attribute values.
-Commit filled controls by moving focus before keyboard assertions. Reload resets in-memory state.
-Combine related assertions; verify calculations and correct wrong expectations without changing valid app behavior.
-"""
+def with_smoke(checks: list[dict]) -> list[dict]:
+    """Every check set starts with the fixed render/runtime-error smoke check."""
+    return [SMOKE_CHECK, *(check for check in checks if check.get("name") != SMOKE_CHECK_NAME)]
+
+
+def completion_status(workspace: dict) -> dict:
+    build = current_build(workspace)
+    missing = []
+    if not build:
+        missing.append("current_build")
+    implementation = workspace["implementationValidation"]
+    if (
+        not build
+        or not implementation
+        or any(implementation.get(key) != build[key] for key in ("sourceHash", "artifactHash"))
+    ):
+        missing.append("alex_validation")
+    check_hash = checks_hash(workspace["checks"])
+    independent = workspace["independentValidation"]
+    if (
+        not build
+        or not independent
+        or independent.get("artifactHash") != build["artifactHash"]
+        or independent.get("checksHash") != check_hash
+    ):
+        missing.append("david_validation")
+    review = workspace["review"]
+    if (
+        not build
+        or not review
+        or not review["accepted"]
+        or any(review.get(key) != build[key] for key in ("sourceHash", "artifactHash"))
+        or review.get("checksHash") != check_hash
+    ):
+        missing.append("david_acceptance")
+    return {"ready": not missing, "missing": missing}
+
+
+def render_brief(plan: dict) -> str:
+    lines = [plan["brief"], ""]
+    lines += [f"{item['id']}. {item['outcome']}" for item in plan["criteria"]]
+    if plan["assumptions"]:
+        lines += ["", *(f"- {item}" for item in plan["assumptions"])]
+    if plan["gaps"]:
+        lines += ["", *(f"! {item}" for item in plan["gaps"])]
+    return "\n".join(lines)
 
 
 class Runtime:
+    """Workspace, role-scoped tools and durable operation journal for one run."""
+
     def __init__(
         self, settings: Any, context: dict, durable: Any, emit: Callable, cancelled: Callable
     ):
@@ -251,24 +291,31 @@ class Runtime:
             if previous
             else None
         )
+        checks: list[dict] = []
+        if previous and context.get("previousChecks"):
+            try:
+                checks = validate_checks(with_smoke(context["previousChecks"]))
+            except ValueError:
+                checks = []  # Saved before the current check contract; replan instead.
         self.workspace = {
+            "plan": None,
             "brief": "",
             "architecture": "",
+            "route": None,
             "source": copy.deepcopy(previous),
             "html": "",
             "build": None,
-            "checks": [],
+            "checks": checks,
             "report": None,
             "validatedBy": None,
             "implementationValidation": None,
+            "independentValidation": None,
             "review": None,
+            "candidate": None,
             "revision": 0,
             "reviewedPaths": [],
-            "implementationPasses": 0,
         }
-        self.delegations = 0
-        self.live_delegations: set[str] = set()
-        self.scope = self.new_scope("crew-v1/manager", "mike")
+        self.scope = self.new_scope(f"{FLOW_VERSION}/mike", "mike")
 
     def new_scope(self, path: str, role: str) -> dict:
         return {
@@ -277,16 +324,10 @@ class Runtime:
             "message_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"{self.context['runId']}:{path}")),
             "llm_index": 0,
             "tool_index": 0,
-            "mutated": False,
         }
 
     def begin_model_call(self, scope: dict) -> None:
         self.check()
-        if scope["role"] == "mike" or scope["path"] in self.live_delegations:
-            return
-        if len(self.live_delegations) >= 8:
-            raise HarnessFailure("step_limit")
-        self.live_delegations.add(scope["path"])
 
     def check(self) -> None:
         if self.cancelled():
@@ -299,19 +340,14 @@ class Runtime:
             report=None,
             validatedBy=None,
             implementationValidation=None,
+            independentValidation=None,
             review=None,
+            candidate=None,
             reviewedPaths=[],
         )
 
     def invalidate(self, source: dict) -> None:
         validate_source(source)
-        if self.scope["role"] == "alex" and not self.scope["mutated"]:
-            if self.workspace["implementationPasses"] >= 2:
-                raise ValueError(
-                    "Implementation/repair limit reached. Only unchanged-source validation remains available."
-                )
-            self.workspace["implementationPasses"] += 1
-            self.scope["mutated"] = True
         self.workspace["source"] = source
         self.workspace["revision"] += 1
         self.clear_evidence()
@@ -364,21 +400,50 @@ class Runtime:
                     for path in paths
                 ],
             }
-        if name == "initialize_project":
-            if source:
-                raise ValueError("Project already exists. Preserve its template and edit files.")
-            self.invalidate(create_source(args["template"]))
-            self.emit(
-                "project_initialized", {"source": current["source"], "reason": args["reason"]}
+        if name == "choose_route":
+            current["route"] = args["route"]
+            return dict(args)
+        if name == "submit_plan":
+            if current["plan"] is not None:
+                raise ValueError("The plan was already submitted.")
+            checks = validate_checks(with_smoke(args["checks"]))
+            if not source:
+                if not args["template"]:
+                    raise ValueError("Choose vanilla or react-ts for a new project.")
+                self.invalidate(create_source(args["template"]))
+                self.emit(
+                    "project_initialized",
+                    {"source": current["source"], "reason": args["architecture"][:2000]},
+                )
+            plan = {
+                key: args[key]
+                for key in ("brief", "criteria", "assumptions", "gaps", "architecture")
+            }
+            current.update(
+                plan=plan,
+                brief=render_brief(plan),
+                architecture=args["architecture"],
+                checks=checks,
+                report=None,
+                validatedBy=None,
+                independentValidation=None,
+                review=None,
             )
             return {
-                "template": args["template"],
-                "revision": current["revision"],
+                "template": current["source"]["template"],
                 "files": sorted(current["source"]["files"]),
+                "checks": len(checks),
             }
         if name == "set_acceptance_checks":
-            checks = validate_checks(args["checks"])
-            current.update(checks=checks, report=None, validatedBy=None, review=None)
+            checks = validate_checks(with_smoke(args["checks"]))
+            # Implementation evidence is check-independent; independent evidence is not.
+            current.update(
+                checks=checks,
+                report=None,
+                validatedBy=None,
+                independentValidation=None,
+                review=None,
+            )
             return {"checks": len(checks), "revision": current["revision"]}
         if name == "record_review":
             built = current_build(current)
@@ -387,16 +452,16 @@ class Runtime:
                 for item in source_changes(source, self.previous)
                 if item["status"] != "unchanged"
             }
+            independent = current["independentValidation"]
             if args["accepted"] and (
                 not built
-                or not current["report"]
-                or not current["report"]["valid"]
-                or current["validatedBy"] != "david"
-                or current["report"]["artifactHash"] != built["artifactHash"]
+                or not independent
+                or independent["artifactHash"] != built["artifactHash"]
+                or independent["checksHash"] != checks_hash(current["checks"])
                 or not changed.issubset(current["reviewedPaths"])
             ):
                 raise ValueError(
-                    "Acceptance requires independent current-artifact browser validation and inspection of every changed baseline file."
+                    "Acceptance requires your own passing current-artifact browser validation and inspection of every changed baseline file."
                 )
             current["review"] = {
                 **args,
@@ -406,7 +471,7 @@ class Runtime:
             }
             return {**current["review"], "completion": completion_status(current)}
         if not source:
-            raise ValueError("Initialize a project before working with files.")
+            raise ValueError("No project exists yet; the plan initializes it.")
         if name == "read_file":
             if args["path"] not in source["files"]:
                 raise ValueError("File does not exist.")
@@ -428,7 +493,7 @@ class Runtime:
             return {
                 "path": path,
                 "revision": current["revision"],
-                "message": "Source changed. Build and independently validate before acceptance.",
+                "message": "Source changed. Build before submitting.",
             }
         if name == "build_project":
             self.clear_evidence()
@@ -446,6 +511,11 @@ class Runtime:
             output = {"ok": True, "issues": [], "sourceHash": digest}
             self.emit("build_result", output)
             return output
+        if name == "submit_candidate":
+            if not current_build(current):
+                raise ValueError("Build the current source successfully before submitting.")
+            current["candidate"] = {"summary": args["summary"], "revision": current["revision"]}
+            return {"submitted": True, "revision": current["revision"]}
         if name == "validate_preview":
             built = current_build(current)
             if not built:
@@ -455,12 +525,65 @@ class Runtime:
             self.check()
             if report["artifactHash"] != built["artifactHash"]:
                 raise ValueError("Browser report does not match the current artifact.")
-            current.update(report=report, validatedBy=role, review=None)
-            if role == "alex":
+            current.update(report=report, validatedBy=role)
+            if role == "david":
+                current["review"] = None
+                current["independentValidation"] = (
+                    {"artifactHash": built["artifactHash"], "checksHash": checks_hash(checks)}
+                    if report["valid"]
+                    else None
+                )
+            else:
                 current["implementationValidation"] = dict(built) if report["valid"] else None
             self.emit("validation", report)
             return report
         raise ValueError("Unsupported source operation.")
+
+    def invoke(self, name: str, args: dict) -> dict:
+        """Run one operation as a durable step; replay restores its workspace."""
+        self.check()
+        scope = self.scope
+        index = scope["tool_index"]
+        scope["tool_index"] += 1
+        step = f"{scope['path']}/tool-{index}-{name}"
+
+        def perform() -> dict:
+            self.emit("tool_start", {"id": step, "name": name, "agent": scope["role"]})
+            try:
+                output = self.operation(name, args)
+            except ValueError as error:
+                output = {"error": str(error)[:2000]}
+                if name == "build_project":
+                    self.emit("build_result", {"ok": False, "issues": [output["error"]]})
+            self.check()
+            # Read results and source content stay out of the public tool transcript.
+            public = (
+                {"revision": self.workspace["revision"]} if name.startswith("read_") else output
+            )
+            self.emit(
+                "tool_end", {"id": step, "name": name, "agent": scope["role"], "output": public}
+            )
+            return {"output": output, "workspace": copy.deepcopy(self.workspace), "args": args}
+
+        try:
+            saved = self.durable.run(step, perform)
+        except Exception as error:
+            raise RuntimeAbort(error) from None
+        if saved["args"] != args:
+            raise HarnessFailure("internal")
+        self.workspace = copy.deepcopy(saved["workspace"])
+        if "error" not in saved["output"]:
+            if name in ("write_file", "edit_file"):
+                self.emit(
+                    "file_saved",
+                    {
+                        "path": args["path"],
+                        "content": self.workspace["source"]["files"][args["path"]],
+                    },
+                )
+            elif name == "delete_file":
+                self.emit("file_deleted", {"path": args["path"]})
+        return saved["output"]
 
     def tool(
         self, name: str, description: str, schema: type[BaseModel], terminal: bool = False
@@ -468,54 +591,7 @@ class Runtime:
         def execute(**kwargs: Any) -> str:
             self.check()
             args = schema.model_validate(kwargs).model_dump()
-            scope = self.scope
-            index = scope["tool_index"]
-            scope["tool_index"] += 1
-            step = f"{scope['path']}/tool-{index}-{name}"
-
-            def perform() -> dict:
-                self.emit("tool_start", {"id": step, "name": name, "agent": scope["role"]})
-                try:
-                    output = self.operation(name, args)
-                except ValueError as error:
-                    output = {"error": str(error)[:2000]}
-                    if name == "build_project":
-                        self.emit("build_result", {"ok": False, "issues": [output["error"]]})
-                self.check()
-                # Read results and source content stay out of the public tool transcript.
-                public = (
-                    {"revision": self.workspace["revision"]} if name.startswith("read_") else output
-                )
-                self.emit(
-                    "tool_end", {"id": step, "name": name, "agent": scope["role"], "output": public}
-                )
-                return {
-                    "output": output,
-                    "workspace": copy.deepcopy(self.workspace),
-                    "mutated": scope["mutated"],
-                    "args": args,
-                }
-
-            try:
-                saved = self.durable.run(step, perform)
-            except Exception as error:
-                raise RuntimeAbort(error) from None
-            if saved["args"] != args:
-                raise HarnessFailure("internal")
-            self.workspace = copy.deepcopy(saved["workspace"])
-            scope["mutated"] = saved["mutated"]
-            if "error" not in saved["output"]:
-                if name in ("write_file", "edit_file"):
-                    self.emit(
-                        "file_saved",
-                        {
-                            "path": args["path"],
-                            "content": self.workspace["source"]["files"][args["path"]],
-                        },
-                    )
-                elif name == "delete_file":
-                    self.emit("file_deleted", {"path": args["path"]})
-            return json.dumps(saved["output"], ensure_ascii=False)
+            return json.dumps(self.invoke(name, args), ensure_ascii=False)
 
         return Tool(
             name=name,
@@ -526,10 +602,10 @@ class Runtime:
             cache_function=lambda *_: False,
         )
 
-    def tools(self, role: str) -> list[Tool]:
+    def tools(self, kind: str) -> list[Tool]:
         available = {
             "read_workspace": (
-                "Read exact source inventory, baseline changes, request, build and completion requirements.",
+                "Read the plan, checks, source inventory, baseline changes, request and evidence.",
                 NoArgs,
             ),
             "read_previous_file": (
@@ -541,16 +617,18 @@ class Runtime:
                 "Read current and immutable baseline content together for related paths, including deletions.",
                 ReviewFilesArgs,
             ),
-            "initialize_project": (
-                "Choose and create vanilla or react-ts source. Existing projects cannot be reset.",
-                InitializeArgs,
+            "choose_route": ("Route this follow-up to quick_edit or plan.", RouteArgs),
+            "submit_plan": (
+                "Submit the brief, criteria, architecture, template and acceptance checks once. "
+                "Initializes a new project from the template.",
+                PlanArgs,
             ),
             "write_file": (
                 "Create or replace a source file. Supply path before content. package.json is protected.",
                 WriteArgs,
             ),
             "edit_file": (
-                "Atomically apply 1–8 unique literal edits; preserve unrelated source and existing checks.",
+                "Atomically apply 1–8 unique literal edits; preserve unrelated source.",
                 EditArgs,
             ),
             "delete_file": (
@@ -561,136 +639,70 @@ class Runtime:
                 "Compile current source with the trusted compiler; generated scripts/configs never execute.",
                 NoArgs,
             ),
+            "submit_candidate": (
+                "Submit the successfully built current source with a short summary. Ends your turn.",
+                SubmitArgs,
+            ),
             "set_acceptance_checks": (
-                "Replace declarative checks, clearing stale validation and review. "
-                + CHECK_INSTRUCTIONS,
+                "Replace the COMPLETE declarative check set (smoke check is added automatically).",
                 ChecksArgs,
             ),
             "validate_preview": (
-                "Run real isolated browser checks on the current source build; Alex returns immediately.",
+                "Run your own isolated browser checks on the current build.",
                 NoArgs,
             ),
             "record_review": (
-                "Record independent current-source review; acceptance requires your own passing browser evidence.",
+                "Record the independent verdict; acceptance requires your own passing validation. Ends your turn.",
                 ReviewArgs,
             ),
         }
+        editing = ["read_file", "write_file", "edit_file", "delete_file", "build_project"]
         names = {
-            "emma": ["read_workspace", "read_previous_file"],
-            "bob": ["read_workspace", "read_previous_file", "read_file", "initialize_project"],
-            "alex": [
+            "router": ["choose_route"],
+            "planner": ["read_workspace", "read_previous_file", "read_file", "submit_plan"],
+            "builder": ["read_workspace", "read_previous_file", *editing, "submit_candidate"],
+            "quick_edit": [
                 "read_workspace",
                 "read_previous_file",
-                "initialize_project",
-                "read_file",
-                "write_file",
-                "edit_file",
-                "delete_file",
-                "build_project",
+                *editing,
                 "set_acceptance_checks",
-                "validate_preview",
+                "submit_candidate",
             ],
-            "david": [
+            "reviewer": [
                 "read_workspace",
                 "read_review_files",
                 "set_acceptance_checks",
                 "validate_preview",
                 "record_review",
             ],
-        }[role]
+        }[kind]
+        terminal = {"choose_route", "submit_plan", "submit_candidate", "record_review"}
+        baseline_only = {"read_previous_file"} | ({"read_file"} if kind == "planner" else set())
         return [
-            self.tool(
-                name,
-                *available[name],
-                terminal=(role == "alex" and name == "validate_preview")
-                or (role == "david" and name == "record_review"),
-            )
+            self.tool(name, *available[name], terminal=name in terminal)
             for name in names
-            if self.previous or name != "read_previous_file"
+            if self.previous or name not in baseline_only
         ]
 
-    def delegate(self, agent: DurableAgent, task: Task, context: str | None, tools: Any) -> str:
-        self.check()
-        index = self.delegations
-        self.delegations += 1
-        role = agent._role_id
-        step = f"crew-v1/delegate-{index}-{role}"
-        parent_scope = self.scope
-        baseline = copy.deepcopy(self.workspace)
+    def scoped(self, key: str, role: str):
+        runtime = self
 
-        def execute() -> dict:
-            self.workspace = copy.deepcopy(baseline)
-            self.scope = self.new_scope(step, role)
-            message_id = self.scope["message_id"]
-            self.emit("project_reset", {"source": self.workspace["source"]})
-            self.emit(
-                "tool_start",
-                {
-                    "id": step,
-                    "name": f"delegate_{role}",
-                    "agent": "mike",
-                    "childAgent": role,
-                    "input": task.description,
-                },
-            )
-            self.emit("agent_start", {"id": role, "name": role.title(), "task": task.description})
-            self.emit("message_start", {"id": message_id, "role": "agent", "agent": role})
-            if (
-                role == "alex"
-                and self.workspace["report"]
-                and not self.workspace["report"]["valid"]
-            ):
-                self.emit(
-                    "repair",
-                    {
-                        "attempt": self.workspace["revision"] + 1,
-                        "issues": self.workspace["report"]["issues"],
-                    },
-                )
-            try:
-                output = str(super(DurableAgent, agent).execute_task(task, context, tools))
-                self.check()
-                if role == "emma":
-                    self.workspace["brief"] = output
-                elif role == "bob":
-                    self.workspace["architecture"] = output
-                self.emit(
-                    "message_done",
-                    {
-                        "id": message_id,
-                        "role": "agent",
-                        "agent": role,
-                        "content": output,
-                        "createdAt": int(time.time() * 1000),
-                    },
-                )
-                self.emit("agent_end", {"id": role, "name": role.title()})
-                manager_result = json.dumps(
-                    {"result": output, "workspace": self.workspace_info()}, ensure_ascii=False
-                )
-                self.emit(
-                    "tool_end",
-                    {
-                        "id": step,
-                        "name": f"delegate_{role}",
-                        "agent": "mike",
-                        "childAgent": role,
-                        "output": output[:3000],
-                    },
-                )
-                return {"workspace": copy.deepcopy(self.workspace), "result": manager_result}
-            finally:
-                self.scope = parent_scope
+        class Scope:
+            def __enter__(self):
+                runtime.check()
+                self.parent = runtime.scope
+                path = f"{FLOW_VERSION}/{key}"
+                runtime.scope = runtime.new_scope(path, role)
+                self.events = runtime.durable.events(path)
+                self.events.__enter__()
+                return runtime.scope
 
-        try:
-            saved = self.durable.orchestrate(step, execute)
-            self.workspace = copy.deepcopy(saved["workspace"])
-            self.emit("project_reset", {"source": self.workspace["source"]})
-            return saved["result"]
-        except Exception as error:
-            raise RuntimeAbort(error) from None
-        finally:
-            self.scope = parent_scope
+            def __exit__(self, *exc):
+                self.events.__exit__(*exc)
+                runtime.scope = self.parent
+                return False
+
+        return Scope()
 
 
 class SourceExecutor(AgentExecutor):
@@ -706,16 +718,293 @@ class SourceExecutor(AgentExecutor):
         return False
 
 
-class DurableAgent(Agent):
-    _runtime: Any = PrivateAttr(default=None)
-    _role_id: str = PrivateAttr(default="")
+STAGES = {
+    # kind: (persona, instructions, max model iterations)
+    "router": ("mike", ROUTER_INSTRUCTIONS, 3),
+    "planner": ("emma", PLANNER_INSTRUCTIONS, 10),
+    "builder": ("alex", BUILDER_INSTRUCTIONS, 40),
+    "quick_edit": ("alex", f"{BUILDER_INSTRUCTIONS}\n\n{QUICK_EDIT_ADDENDUM}", 32),
+    "repair": ("alex", f"{BUILDER_INSTRUCTIONS}\n\n{REPAIR_ADDENDUM}", 24),
+    "reviewer": ("david", REVIEWER_INSTRUCTIONS, 24),
+}
+NAMES = {"mike": "Mike", "emma": "Emma", "bob": "Bob", "alex": "Alex", "david": "David"}
 
-    def bind(self, runtime: Runtime, role: str) -> DurableAgent:
-        self._runtime, self._role_id = runtime, role
-        return self
 
-    def execute_task(self, task: Task, context: str | None = None, tools: Any = None) -> str:
-        return self._runtime.delegate(self, task, context, tools)
+class Delivery:
+    """Stage implementations; DeliveryFlow decides their order."""
+
+    def __init__(self, runtime: Runtime, model: Callable[[], ObservedOpenAI]):
+        self.rt, self.model = runtime, model
+
+    @property
+    def workspace(self) -> dict:
+        return self.rt.workspace
+
+    def agent(self, kind: str) -> Agent:
+        persona, instructions, iterations = STAGES[kind]
+        baseline = f"{ITERATION_INSTRUCTIONS}\n\n" if self.rt.previous else ""
+        tools = self.rt.tools("builder" if kind == "repair" else kind)
+        return Agent(
+            role=NAMES[persona],
+            goal=instructions.split("\n", 1)[0],
+            backstory=f"{TEAM_INSTRUCTIONS}\n\n{baseline}{instructions}",
+            llm=self.model(),
+            tools=tools,
+            allow_delegation=False,
+            allow_code_execution=False,
+            max_iter=iterations,
+            max_retry_limit=0,
+            cache=False,
+            verbose=False,
+            checkpoint=False,
+            executor_class=SourceExecutor,
+        )
+
+    def say(self, persona: str, message_id: str, content: str) -> None:
+        self.rt.emit("message_start", {"id": message_id, "role": "agent", "agent": persona})
+        self.rt.emit(
+            "message_done",
+            {
+                "id": message_id,
+                "role": "agent",
+                "agent": persona,
+                "content": content,
+                "createdAt": int(time.time() * 1000),
+            },
+        )
+
+    def stage(self, key: str, kind: str, label: str, task: dict, message: Callable[[str], str]):
+        persona = STAGES[kind][0]
+        with self.rt.scoped(key, persona) as scope:
+            visible = persona != "mike"
+            if visible:
+                self.rt.emit(
+                    "tool_start",
+                    {
+                        "id": scope["path"],
+                        "name": f"delegate_{persona}",
+                        "agent": "mike",
+                        "childAgent": persona,
+                        "input": label,
+                    },
+                )
+                self.rt.emit("agent_start", {"id": persona, "name": NAMES[persona], "task": label})
+            agent = self.agent(kind)
+            native = Task(
+                description=json.dumps({"stage": label, **task}, ensure_ascii=False),
+                expected_output="Call your terminal tool with the stage result.",
+                agent=agent,
+            )
+            try:
+                output = str(agent.execute_task(native, None, agent.tools))
+            except RuntimeAbort:
+                raise
+            except Exception as error:
+                raise RuntimeAbort(error) from None
+            self.rt.check()
+            content = message(output)
+            if visible:
+                self.say(persona, scope["message_id"], content)
+                self.rt.emit("agent_end", {"id": persona, "name": NAMES[persona]})
+                self.rt.emit(
+                    "tool_end",
+                    {
+                        "id": scope["path"],
+                        "name": f"delegate_{persona}",
+                        "agent": "mike",
+                        "childAgent": persona,
+                        "output": content[:3000],
+                    },
+                )
+            elif content:
+                self.say("mike", scope["message_id"], content)
+            return output
+
+    def route(self) -> str:
+        if not self.rt.previous:
+            return "plan"
+        self.stage(
+            "route",
+            "router",
+            "Route follow-up",
+            {
+                "request": self.rt.context["request"],
+                "template": self.rt.previous["template"],
+                "files": sorted(self.rt.previous["files"]),
+                "savedChecks": [check["name"] for check in self.workspace["checks"]],
+            },
+            lambda _: "",
+        )
+        route = self.workspace["route"]
+        # Without saved checks there is no regression baseline for a quick edit.
+        return route if route == "quick_edit" and self.workspace["checks"] else "plan"
+
+    def plan(self) -> None:
+        for attempt in range(2):
+            self.stage(
+                f"plan-{attempt}",
+                "planner",
+                "Define the brief, architecture and acceptance checks",
+                {"request": self.rt.context["request"]},
+                lambda output: self.workspace["brief"] or output,
+            )
+            if self.workspace["plan"]:
+                break
+        else:
+            raise HarnessFailure("step_limit")
+        # Bob's architecture comes from the same structured plan, shown as his handoff.
+        with self.rt.scoped("plan-architecture", "bob") as scope:
+            self.rt.emit("agent_start", {"id": "bob", "name": "Bob", "task": "Architecture"})
+            self.say("bob", scope["message_id"], self.workspace["architecture"])
+            self.rt.emit("agent_end", {"id": "bob", "name": "Bob"})
+
+    def implement(self, kind: str, key: str, label: str, evidence: Any = None) -> None:
+        task = {"request": self.rt.context["request"]}
+        if evidence is not None:
+            task["evidence"] = evidence
+        self.stage(
+            key,
+            kind,
+            label,
+            task,
+            lambda output: (self.workspace["candidate"] or {}).get("summary") or output,
+        )
+
+    def check_candidate(self, key: str) -> dict:
+        """Deterministic build + browser validation attributed to implementation."""
+        with self.rt.scoped(key, "alex"):
+            if not current_build(self.workspace):
+                built = self.rt.invoke("build_project", {})
+                if "error" in built:
+                    return {"valid": False, "issues": [built["error"]]}
+            report = self.rt.invoke("validate_preview", {})
+            if "error" in report:
+                return {"valid": False, "issues": [report["error"]]}
+            return report
+
+    def repair(self, key: str, issues: list) -> None:
+        with self.rt.scoped(f"{key}-notice", "alex"):
+            self.rt.emit("repair", {"attempt": self.workspace["revision"] + 1, "issues": issues})
+        self.implement("repair", key, "Repair the reported defects", {"failures": issues})
+
+    def verify(self) -> None:
+        for round in range(MAX_VERIFY_REPAIRS + 1):
+            report = self.check_candidate(f"verify-{round}")
+            if report["valid"] or round == MAX_VERIFY_REPAIRS:
+                # Remaining failures may be check defects, which the reviewer owns.
+                return
+            self.repair(f"repair-{round}", report["issues"])
+
+    def review(self) -> None:
+        for round in range(MAX_REVIEW_REPAIRS + 1):
+            plan = self.workspace["plan"] or {}
+            self.stage(
+                f"review-{round}",
+                "reviewer",
+                "Independently validate and review the current build",
+                {"request": self.rt.context["request"], "criteria": plan.get("criteria", [])},
+                lambda output: (self.workspace["review"] or {}).get("findings") or output,
+            )
+            status = completion_status(self.workspace)
+            if "alex_validation" in status["missing"] and current_build(self.workspace):
+                # The reviewer may have corrected checks; re-run implementation evidence.
+                self.check_candidate(f"revalidate-{round}")
+                status = completion_status(self.workspace)
+            if status["ready"]:
+                return
+            if round == MAX_REVIEW_REPAIRS:
+                raise HarnessFailure("validation")
+            review = self.workspace["review"]
+            if review and not review["accepted"]:
+                self.repair(f"review-repair-{round}", [review["findings"]])
+                self.check_candidate(f"review-verify-{round}")
+
+    def deliver(self) -> dict:
+        if not completion_status(self.workspace)["ready"]:
+            raise HarnessFailure("validation")
+        candidate = (self.workspace["candidate"] or {}).get("summary", "")
+        findings = (self.workspace["review"] or {}).get("findings", "")
+        summary = "\n\n".join(part for part in (candidate, findings) if part)[:20_000]
+        return {
+            "source": self.workspace["source"],
+            "html": self.workspace["html"],
+            "checks": self.workspace["checks"],
+            "summary": summary or "Accepted.",
+        }
+
+
+class DeliveryState(BaseModel):
+    route: str = "plan"
+
+
+class DeliveryFlow(Flow[DeliveryState]):
+    """Native CrewAI Flow: code-owned routing, bounded loops, single artifact writer."""
+
+    _skip_auto_memory: bool = True
+    initial_state: type[DeliveryState] = DeliveryState
+    _delivery: Any = PrivateAttr(default=None)
+    _failure: Any = PrivateAttr(default=None)
+    _result: Any = PrivateAttr(default=None)
+
+    def __init__(self, delivery: Delivery):
+        super().__init__(suppress_flow_events=True, tracing=False)
+        self._delivery = delivery
+
+    def _guard(self, operation: Callable[[], Any]) -> Any:
+        # Failures must not cross the Flow's asyncio/thread boundary as cancellations;
+        # they are re-raised unchanged on the caller's thread after kickoff.
+        if self._failure is not None:
+            return None
+        try:
+            return operation()
+        except BaseException as error:
+            self._failure = error
+            return None
+
+    @start()
+    def coordinate(self) -> None:
+        self.state.route = self._guard(self._delivery.route) or "plan"
+
+    @router(coordinate)
+    def dispatch(self) -> Literal["route_plan", "route_quick_edit", "halt"]:
+        # Labels differ from method names: a string trigger also matches a method.
+        if self._failure is not None:
+            return "halt"
+        return "route_quick_edit" if self.state.route == "quick_edit" else "route_plan"
+
+    @listen("route_plan")
+    def plan(self) -> None:
+        self._guard(self._delivery.plan)
+
+    @listen(plan)
+    def build(self) -> None:
+        self._guard(lambda: self._delivery.implement("builder", "build", "Implement the plan"))
+
+    @listen("route_quick_edit")
+    def quick_edit(self) -> None:
+        self._guard(
+            lambda: self._delivery.implement("quick_edit", "quick-edit", "Apply the quick edit")
+        )
+
+    @listen(or_(build, quick_edit))
+    def verify(self) -> None:
+        self._guard(self._delivery.verify)
+
+    @listen(verify)
+    def review(self) -> None:
+        self._guard(self._delivery.review)
+
+    @listen(review)
+    def deliver(self) -> None:
+        self._result = self._guard(self._delivery.deliver)
+
+    def execute(self) -> dict:
+        self.kickoff()
+        if self._failure is not None:
+            raise self._failure
+        if self._result is None:
+            raise HarnessFailure("internal")
+        return self._result
 
 
 def execute_harness(
@@ -745,92 +1034,15 @@ def execute_harness(
         llms.append(llm)
         return llm
 
-    baseline_instructions = f"{ITERATION_INSTRUCTIONS}\n\n" if runtime.previous else ""
-    agents = [
-        DurableAgent(
-            role=role.title(),
-            goal=ROLE_GOALS[role],
-            backstory=f"{TEAM_INSTRUCTIONS}\n\n{baseline_instructions}{ROLE_INSTRUCTIONS[role]}",
-            llm=model(),
-            tools=runtime.tools(role),
-            allow_delegation=False,
-            allow_code_execution=False,
-            max_iter=48 if role == "alex" else 80 if role == "david" else 10,
-            max_retry_limit=0,
-            cache=False,
-            verbose=False,
-            checkpoint=False,
-            executor_class=SourceExecutor,
-        ).bind(runtime, role)
-        for role in ROLE_INSTRUCTIONS
-    ]
-    manager = Agent(
-        role="Mike",
-        goal="Deliver the requested app only with current-source implementation validation and independent acceptance.",
-        backstory=f"{TEAM_INSTRUCTIONS}\n\n{baseline_instructions}{MANAGER_INSTRUCTIONS}",
-        llm=model(),
-        allow_delegation=True,
-        allow_code_execution=False,
-        max_iter=24,
-        max_retry_limit=0,
-        cache=False,
-        verbose=False,
-        checkpoint=False,
-        executor_class=SourceExecutor,
-    )
-
-    def acceptance(output):
-        runtime.check()
-        status = completion_status(runtime.workspace)
-        return (True, output.raw) if status["ready"] else (False, json.dumps(status))
-
-    task = Task(
-        description=json.dumps(
-            {
-                "request": context["request"],
-                "hasPreviousApp": bool(runtime.previous),
-                "workspace": runtime.workspace_info(),
-            },
-            ensure_ascii=False,
-        ),
-        expected_output="A concise user-language summary of the accepted application. Current-source build, Alex browser validation, independent David browser validation and explicit review must all pass.",
-        guardrail=acceptance,
-        guardrail_max_retries=2,
-    )
-    crew = Crew(
-        agents=agents,
-        tasks=[task],
-        manager_agent=manager,
-        process=Process.hierarchical,
-        cache=False,
-        memory=False,
-        planning=False,
-        verbose=False,
-        tracing=False,
-        share_crew=False,
-        checkpoint=False,
-    )
-
-    def execute() -> dict:
-        emit("agent_start", {"id": "mike", "name": "Mike"})
-        try:
-            result = crew.kickoff()
-        except Exception as error:
-            if str(error).startswith("Task failed guardrail validation"):
-                raise HarnessFailure("validation") from None
-            raise
-        runtime.check()
-        if not completion_status(runtime.workspace)["ready"]:
-            raise HarnessFailure("validation")
-        emit("agent_end", {"id": "mike", "name": "Mike"})
-        return {
-            "source": runtime.workspace["source"],
-            "html": runtime.workspace["html"],
-            "summary": result.raw,
-        }
-
+    flow = DeliveryFlow(Delivery(runtime, model))
     try:
-        return execute()
+        with runtime.scoped("run", "mike"):
+            emit("agent_start", {"id": "mike", "name": "Mike"})
+        result = flow.execute()
+        runtime.check()
+        with runtime.scoped("run-end", "mike"):
+            emit("agent_end", {"id": "mike", "name": "Mike"})
+        return result
     finally:
         for llm in llms:
             if llm._client is not None:
