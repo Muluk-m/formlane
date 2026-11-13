@@ -316,6 +316,7 @@ class Runtime:
             "reviewedPaths": [],
         }
         self.scope = self.new_scope(f"{FLOW_VERSION}/mike", "mike")
+        self.candidate_index = 0
 
     def new_scope(self, path: str, role: str) -> dict:
         return {
@@ -572,6 +573,14 @@ class Runtime:
         if saved["args"] != args:
             raise HarnessFailure("internal")
         self.workspace = copy.deepcopy(saved["workspace"])
+        if "error" not in saved["output"] and name in (
+            "submit_plan",
+            "write_file",
+            "edit_file",
+            "delete_file",
+            "build_project",
+        ):
+            self.persist_candidate()
         if "error" not in saved["output"]:
             if name in ("write_file", "edit_file"):
                 self.emit(
@@ -584,6 +593,30 @@ class Runtime:
             elif name == "delete_file":
                 self.emit("file_deleted", {"path": args["path"]})
         return saved["output"]
+
+    def persist_candidate(self) -> None:
+        """Journal a private draft after its tool step, never inside another step."""
+        self.check()
+        source = self.workspace["source"]
+        if not source:
+            return
+        validate_source(source)
+        built = current_build(self.workspace)
+        candidate = {
+            "source": copy.deepcopy(source),
+            "sourceHash": source_hash(source),
+            "html": self.workspace["html"] if built else None,
+            "artifactHash": built["artifactHash"] if built else None,
+        }
+        key = f"{FLOW_VERSION}/candidate/{self.candidate_index:06d}"
+        self.candidate_index += 1
+        try:
+            saved = self.durable.run(key, lambda: candidate)
+        except Exception as error:
+            raise RuntimeAbort(error) from None
+        self.check()
+        if saved != candidate:
+            raise HarnessFailure("internal")
 
     def tool(
         self, name: str, description: str, schema: type[BaseModel], terminal: bool = False

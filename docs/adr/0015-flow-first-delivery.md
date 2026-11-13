@@ -21,6 +21,10 @@ Evidence semantics change in one respect: independent validation is recorded sep
 
 Templates now ship a small base stylesheet (layout, card, button, field, badge, screen-reader utilities). Plans and builds reuse it, so generated CSS stays proportional to scope. TypeScript and Python template snapshots and hash fixtures change together.
 
+The integration keeps this native Flow and its three acceptance gates as the only execution path. The alternative `flow-v2` implementation remains a research comparison, not a second production worker. Its [v0 research](../research/2026-11-13-v0-workflow.md) and [CrewAI research](../research/2026-11-13-crewai-workflow.md) are retained as supporting sources.
+
+Private candidates are checkpointed after committed source/build operations, outside nested DBOS steps. Failed or cancelled work can be inspected without becoming an accepted version. The owner API exposes only the latest eligible run's candidate while its baseline still matches the current version; completion, a replacement request or a changed baseline hides it. Downloads, history and publication continue to use accepted versions only.
+
 ## Consequences
 
 - Happy path model calls drop from a manager turn per delegation plus four specialists to: route (follow-ups only), plan, build, review. Verification and its repair routing cost no model calls.
