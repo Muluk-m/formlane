@@ -1,10 +1,10 @@
 # ADR-0012: Durable multi-agent execution
 
-Status: durable execution/acceptance invariants retained; Worker/D1 and Node/OpenAI Agents SDK implementation superseded by the Python cutover decision in the [ADR index](README.md).
+Status: superseded by [ADR-0013](0013-python-postgres-services.md) (FastAPI/PostgreSQL services), [ADR-0014](0014-dbos-node-recovery.md) (DBOS recovery) and [ADR-0015](0015-flow-first-delivery.md) (CrewAI Flow orchestration). Durable execution and independent acceptance invariants remain required.
 
 ## Current implementation
 
-FastAPI and a native hierarchical CrewAI worker now implement the replacement in `apps/backend`, with PostgreSQL authoritative for all six business tables, leases, events and checkpoints. Mike delegates through CrewAI's manager/specialist machinery; completed work is persisted by the durable runner. Node remains only in `apps/compiler` as an isolated trusted source compiler. Explicit Alembic replaces D1 runtime migrations. See [architecture](../internals/architecture.md) and [data model](../internals/data-model.md).
+FastAPI and the code-orchestrated CrewAI Flow worker implement the current runtime in `apps/backend`, with PostgreSQL authoritative for all six business tables, leases and events. The Flow owns stage order and bounded repairs; DBOS records individual model/tool operations for recovery. Node remains only in `apps/compiler` as an isolated trusted source compiler. Explicit Alembic replaces D1 runtime migrations. See [architecture](../internals/architecture.md) and [data model](../internals/data-model.md).
 
 Preserve cancellation fences, replay semantics, immutable baseline, role-scoped tools, sandboxed browser, current-source build, implementation validation and independent acceptance below. The historical task deadline is superseded by [ADR-0014](0014-dbos-node-recovery.md): runs have no fixed wall-clock deadline; per-operation timeouts and renewable leases remain enforced. [Deployment](../operations/deployment.md) owns final acceptance and cutover status.
 

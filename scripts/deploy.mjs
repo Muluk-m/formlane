@@ -8,10 +8,10 @@ import { apiOrigin } from './api-origin.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const config = JSON.parse(readFileSync(join(root, 'deploy/environments.json'), 'utf8'))
 const [target, ...flags] = process.argv.slice(2)
-if ((target !== 'test' && target !== 'production') || flags.some((flag) => flag !== '--apply')) {
-  throw new Error('Usage: pnpm run deploy <test|production> [--apply]')
+if (target !== 'production' || flags.some((flag) => flag !== '--apply')) {
+  throw new Error('Usage: pnpm run deploy production [--apply]')
 }
-const settings = config[target]
+const settings = config.production
 if (
   !config.cloudflare.accountId ||
   !config.cloudflare.accountName ||
