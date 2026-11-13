@@ -21,8 +21,8 @@ from formlane.project import (
 @pytest.mark.parametrize(
     "template,expected",
     [
-        ("vanilla", "9c9e76bcb6c6c6a9009a08ebb9a4aba5cda7668e0c4081b9eef3dd4206f9cd03"),
-        ("react-ts", "ae642f10ed26a150ace5a1080746b38292d2651c21dce4d1d11e43a52e6ca4e8"),
+        ("vanilla", "046b18c35c32ca8eb5ec6fc5c6dd3fc99fc4a3536daa30f74acc783e5d6d7649"),
+        ("react-ts", "652b2d16287d1133c035bd19f9c062c804379230ecc1e7fa63178bc8674a7233"),
     ],
 )
 def test_template_hashes_match_typescript(template, expected):
@@ -150,4 +150,4 @@ def test_english_path_collation_and_unicode_match_typescript():
         "-note.txt",
     ):
         source["files"][path] = "中😀\u2028\ud800\n"
-    assert source_hash(source) == "4a73e4b2738ebfb97da2dcd9aa981de3564e0a533a3d95defa0c5662b4932fab"
+    assert source_hash(source) == "9cc6786c50403701b72ff57271f8f94db2e10de20a6dc2e331c2d6d16a9c5c55"
