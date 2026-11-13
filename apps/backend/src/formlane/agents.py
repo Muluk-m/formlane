@@ -10,6 +10,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import time
 import uuid
 from concurrent.futures import CancelledError
@@ -41,7 +42,7 @@ from .prompts import (
     ROUTER_INSTRUCTIONS,
     TEAM_INSTRUCTIONS,
 )
-from .validator import validate_artifact, validate_checks
+from .validator import inspect_artifact, validate_artifact, validate_checks
 
 FLOW_VERSION = "flow-v1"
 # Deterministic verification is free; model repair rounds are bounded per phase.
@@ -132,9 +133,16 @@ class Viewport(NoArgs):
     height: int = Field(ge=640, le=1200)
 
 
+class Clock(NoArgs):
+    now: str = Field(min_length=10, max_length=40)
+    timezone: str | None = None
+
+
 class BrowserCheck(NoArgs):
     name: str = Field(min_length=1, max_length=160)
     viewport: Viewport | None = None
+    clock: Clock | None = None
+    seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
     actions: list[BrowserAction] = Field(max_length=16)
     assertion: BrowserAssertion | None = None
     assertions: list[BrowserAssertion] = Field(default_factory=list, max_length=12)
@@ -172,6 +180,21 @@ class RouteArgs(NoArgs):
 
 class SubmitArgs(NoArgs):
     summary: str = Field(min_length=1, max_length=2000)
+    # Failing checks the builder believes are wrong; the reviewer owns their correction.
+    check_defects: list[str] = Field(default_factory=list, max_length=16)
+
+
+class InspectArgs(NoArgs):
+    selector: str = Field(default="body", min_length=1, max_length=300)
+    viewport: Viewport | None = None
+    clock: Clock | None = None
+    seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    actions: list[BrowserAction] = Field(default_factory=list, max_length=16)
+
+
+class SearchArgs(NoArgs):
+    query: str = Field(min_length=1, max_length=200)
+    ignore_case: bool = True
 
 
 def apply_file_edits(content: str, edits: list[dict | Edit]) -> str:
@@ -223,6 +246,47 @@ def source_changes(source: dict | None, previous: Any) -> list[dict]:
         }
         for path in sorted(files.keys() | baseline.keys())
     ]
+
+
+DATE_LITERAL = re.compile(
+    r"\d{4}\s*[-/.年]\s*\d{1,2}\s*[-/.月]\s*\d{1,2}|\d{1,2}\s*月\s*\d{1,2}\s*[日号]"
+)
+
+
+def require_clock_coverage(checks: list[dict]) -> None:
+    """Calendar expectations need a pinned clock at two moments, or hardcoding passes."""
+    dated = [
+        check
+        for check in checks
+        if any(
+            DATE_LITERAL.search(item["expected"])
+            for item in ([check["assertion"]] if check.get("assertion") else [])
+            + check["assertions"]
+        )
+    ]
+    if not dated:
+        return
+    if any(not check.get("clock") for check in dated):
+        raise ValueError(
+            "Checks that assert calendar dates must set clock.now so 'today' is deterministic."
+        )
+    if len({check["clock"]["now"] for check in checks if check.get("clock")}) < 2:
+        raise ValueError(
+            "Time-relative behavior needs checks at two different clock.now values; "
+            "a single moment cannot distinguish computed dates from hardcoded ones."
+        )
+
+
+def search_source(source: dict, query: str, ignore_case: bool) -> dict:
+    needle = query.lower() if ignore_case else query
+    matches = []
+    for path, content in sorted(source["files"].items()):
+        for number, line in enumerate(content.splitlines(), 1):
+            if needle in (line.lower() if ignore_case else line):
+                matches.append({"path": path, "line": number, "text": line.strip()[:240]})
+                if len(matches) >= 80:
+                    return {"matches": matches, "truncated": True}
+    return {"matches": matches, "truncated": False}
 
 
 def with_smoke(checks: list[dict]) -> list[dict]:
@@ -408,6 +472,7 @@ class Runtime:
             if current["plan"] is not None:
                 raise ValueError("The plan was already submitted.")
             checks = validate_checks(with_smoke(args["checks"]))
+            require_clock_coverage(checks)
             if not source:
                 if not args["template"]:
                     raise ValueError("Choose vanilla or react-ts for a new project.")
@@ -437,6 +502,7 @@ class Runtime:
             }
         if name == "set_acceptance_checks":
             checks = validate_checks(with_smoke(args["checks"]))
+            require_clock_coverage(checks)
             # Implementation evidence is check-independent; independent evidence is not.
             current.update(
                 checks=checks,
@@ -512,10 +578,40 @@ class Runtime:
             output = {"ok": True, "issues": [], "sourceHash": digest}
             self.emit("build_result", output)
             return output
-        if name == "submit_candidate":
+        if name == "search_files":
+            return search_source(source, args["query"], args["ignore_case"])
+        if name == "inspect_preview":
             if not current_build(current):
+                raise ValueError("Build current source successfully before inspecting it.")
+            return inspect_artifact(current["html"], args, self.settings, self.cancelled)
+        if name == "submit_candidate":
+            built = current_build(current)
+            if not built:
                 raise ValueError("Build the current source successfully before submitting.")
-            current["candidate"] = {"summary": args["summary"], "revision": current["revision"]}
+            implementation = current["implementationValidation"]
+            passed = implementation and all(
+                implementation.get(key) == built[key] for key in ("sourceHash", "artifactHash")
+            )
+            report = current["report"]
+            failing = (
+                {item["name"] for item in report["checks"] if not item["passed"]}
+                if report and report["artifactHash"] == built["artifactHash"]
+                else None
+            )
+            if not passed:
+                if failing is None:
+                    raise ValueError("Run validate_preview on the current build before submitting.")
+                if not args["check_defects"] or not failing.issubset(args["check_defects"]):
+                    raise ValueError(
+                        "Validation is failing. Fix the application, or list every failing check "
+                        "you can show is itself wrong in check_defects: "
+                        + ", ".join(sorted(failing))
+                    )
+            current["candidate"] = {
+                "summary": args["summary"],
+                "revision": current["revision"],
+                "checkDefects": [] if passed else sorted(args["check_defects"]),
+            }
             return {"submitted": True, "revision": current["revision"]}
         if name == "validate_preview":
             built = current_build(current)
@@ -673,15 +769,27 @@ class Runtime:
                 NoArgs,
             ),
             "submit_candidate": (
-                "Submit the successfully built current source with a short summary. Ends your turn.",
+                "Submit the current build after validate_preview passes; if it fails only because "
+                "checks are wrong, name them in check_defects. Ends your turn.",
                 SubmitArgs,
+            ),
+            "inspect_preview": (
+                "Observe the current build in the sandboxed browser: accessibility tree, console, "
+                "page errors and document width, optionally after actions, viewport and clock. "
+                "Debugging only; not acceptance evidence.",
+                InspectArgs,
+            ),
+            "search_files": (
+                "Find a literal text in current source files; returns path, line and text.",
+                SearchArgs,
             ),
             "set_acceptance_checks": (
                 "Replace the COMPLETE declarative check set (smoke check is added automatically).",
                 ChecksArgs,
             ),
             "validate_preview": (
-                "Run your own isolated browser checks on the current build.",
+                "Run the acceptance checks in the sandboxed browser against the current build. "
+                "Failures return actual values; fix and rerun.",
                 NoArgs,
             ),
             "record_review": (
@@ -689,7 +797,16 @@ class Runtime:
                 ReviewArgs,
             ),
         }
-        editing = ["read_file", "write_file", "edit_file", "delete_file", "build_project"]
+        editing = [
+            "read_file",
+            "search_files",
+            "write_file",
+            "edit_file",
+            "delete_file",
+            "build_project",
+            "inspect_preview",
+            "validate_preview",
+        ]
         names = {
             "router": ["choose_route"],
             "planner": ["read_workspace", "read_previous_file", "read_file", "submit_plan"],
@@ -704,6 +821,8 @@ class Runtime:
             "reviewer": [
                 "read_workspace",
                 "read_review_files",
+                "search_files",
+                "inspect_preview",
                 "set_acceptance_checks",
                 "validate_preview",
                 "record_review",
@@ -752,13 +871,14 @@ class SourceExecutor(AgentExecutor):
 
 
 STAGES = {
-    # kind: (persona, instructions, max model iterations)
-    "router": ("mike", ROUTER_INSTRUCTIONS, 3),
-    "planner": ("emma", PLANNER_INSTRUCTIONS, 10),
-    "builder": ("alex", BUILDER_INSTRUCTIONS, 40),
-    "quick_edit": ("alex", f"{BUILDER_INSTRUCTIONS}\n\n{QUICK_EDIT_ADDENDUM}", 32),
-    "repair": ("alex", f"{BUILDER_INSTRUCTIONS}\n\n{REPAIR_ADDENDUM}", 24),
-    "reviewer": ("david", REVIEWER_INSTRUCTIONS, 24),
+    # kind: (persona, instructions, max model iterations, reasoning effort)
+    # Unset effort defaults to deep reasoning on the provider: a single plan call took 306 s.
+    "router": ("mike", ROUTER_INSTRUCTIONS, 3, "low"),
+    "planner": ("emma", PLANNER_INSTRUCTIONS, 10, "medium"),
+    "builder": ("alex", BUILDER_INSTRUCTIONS, 50, "medium"),
+    "quick_edit": ("alex", f"{BUILDER_INSTRUCTIONS}\n\n{QUICK_EDIT_ADDENDUM}", 40, "medium"),
+    "repair": ("alex", f"{BUILDER_INSTRUCTIONS}\n\n{REPAIR_ADDENDUM}", 30, "medium"),
+    "reviewer": ("david", REVIEWER_INSTRUCTIONS, 30, "medium"),
 }
 NAMES = {"mike": "Mike", "emma": "Emma", "bob": "Bob", "alex": "Alex", "david": "David"}
 
@@ -766,7 +886,7 @@ NAMES = {"mike": "Mike", "emma": "Emma", "bob": "Bob", "alex": "Alex", "david": 
 class Delivery:
     """Stage implementations; DeliveryFlow decides their order."""
 
-    def __init__(self, runtime: Runtime, model: Callable[[], ObservedOpenAI]):
+    def __init__(self, runtime: Runtime, model: Callable[[str | None], ObservedOpenAI]):
         self.rt, self.model = runtime, model
 
     @property
@@ -774,14 +894,14 @@ class Delivery:
         return self.rt.workspace
 
     def agent(self, kind: str) -> Agent:
-        persona, instructions, iterations = STAGES[kind]
+        persona, instructions, iterations, effort = STAGES[kind]
         baseline = f"{ITERATION_INSTRUCTIONS}\n\n" if self.rt.previous else ""
         tools = self.rt.tools("builder" if kind == "repair" else kind)
         return Agent(
             role=NAMES[persona],
             goal=instructions.split("\n", 1)[0],
             backstory=f"{TEAM_INSTRUCTIONS}\n\n{baseline}{instructions}",
-            llm=self.model(),
+            llm=self.model(effort),
             tools=tools,
             allow_delegation=False,
             allow_code_execution=False,
@@ -921,10 +1041,24 @@ class Delivery:
         self.implement("repair", key, "Repair the reported defects", {"failures": issues})
 
     def verify(self) -> None:
+        """Gate the builder's own evidence; browser work only repeats when it is stale."""
         for round in range(MAX_VERIFY_REPAIRS + 1):
+            built = current_build(self.workspace)
+            implementation = self.workspace["implementationValidation"]
+            if (
+                built
+                and implementation
+                and all(
+                    implementation.get(key) == built[key] for key in ("sourceHash", "artifactHash")
+                )
+            ):
+                return
             report = self.check_candidate(f"verify-{round}")
-            if report["valid"] or round == MAX_VERIFY_REPAIRS:
-                # Remaining failures may be check defects, which the reviewer owns.
+            candidate = self.workspace["candidate"] or {}
+            failing = {item["name"] for item in report.get("checks", []) if not item["passed"]}
+            disputed = failing and failing.issubset(candidate.get("checkDefects", []))
+            if report["valid"] or disputed or round == MAX_VERIFY_REPAIRS:
+                # Disputed or remaining failures may be check defects, which the reviewer owns.
                 return
             self.repair(f"repair-{round}", report["issues"])
 
@@ -1054,9 +1188,10 @@ def execute_harness(
     runtime.check()
     llms: list[ObservedOpenAI] = []
 
-    def model() -> ObservedOpenAI:
+    def model(effort: str | None = None) -> ObservedOpenAI:
         llm = ObservedOpenAI(
             model=settings.model,
+            reasoning_effort=effort,
             api_key=key,
             base_url=settings.endpoint,
             custom_openai=bool(settings.endpoint),

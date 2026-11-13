@@ -23,6 +23,8 @@ from formlane.agents import (
     completion_status,
     current_build,
     execute_harness,
+    require_clock_coverage,
+    search_source,
     source_changes,
 )
 from formlane.project import artifact_hash, create_source, source_hash
@@ -163,7 +165,8 @@ def test_tools_are_role_scoped_and_never_execute_arbitrary_code():
         "submit_plan",
     }
     builder = {tool.name for tool in rt.tools("builder")}
-    assert "set_acceptance_checks" not in builder and "validate_preview" not in builder
+    assert "set_acceptance_checks" not in builder
+    assert {"validate_preview", "inspect_preview", "search_files"} <= builder
     assert "set_acceptance_checks" in {tool.name for tool in rt.tools("quick_edit")}
     assert not any(
         "shell" in tool.name
@@ -432,3 +435,87 @@ def test_browser_checks_have_structured_native_function_schema():
     assert "BrowserAction" in schema["$defs"]
     assert "BrowserAssertion" in schema["$defs"]
     assert schema["$defs"]["BrowserCheck"]["additionalProperties"] is False
+
+
+def dated_check(name, now=None, expected="本周日 2026-03-22"):
+    check = {
+        "name": name,
+        "actions": [{"kind": "click", "selector": "button", "value": None}],
+        "assertions": [{"kind": "text", "selector": "output", "expected": expected}],
+    }
+    if now:
+        check["clock"] = {"now": now, "timezone": "Asia/Shanghai"}
+    return check
+
+
+def test_calendar_expectations_require_two_pinned_clocks():
+    from formlane.validator import validate_checks
+
+    with pytest.raises(ValueError, match="clock.now"):
+        require_clock_coverage(validate_checks([dated_check("a"), dated_check("b")]))
+    one_moment = [dated_check("a", "2026-03-18T10:00:00+08:00")] * 2
+    with pytest.raises(ValueError, match="two different"):
+        require_clock_coverage(validate_checks(one_moment))
+    require_clock_coverage(
+        validate_checks(
+            [
+                dated_check("wed", "2026-03-18T10:00:00+08:00"),
+                dated_check("fri", "2026-03-20T10:00:00+08:00", "本周日 3月22日"),
+            ]
+        )
+    )
+    # Undated checks need no clock.
+    require_clock_coverage(validate_checks([dated_check("a", expected="2 件")] * 2))
+
+
+def built_runtime():
+    rt = accepted_workspace()
+    rt.scope = rt.new_scope("build", "alex")
+    rt.workspace["review"] = rt.workspace["independentValidation"] = None
+    return rt
+
+
+def test_builder_submits_only_after_passing_validation_or_named_check_defects():
+    rt = built_runtime()
+    assert rt.operation("submit_candidate", {"summary": "Done", "check_defects": []})["submitted"]
+    rt = built_runtime()
+    rt.workspace["implementationValidation"] = rt.workspace["report"] = None
+    with pytest.raises(ValueError, match="validate_preview"):
+        rt.operation("submit_candidate", {"summary": "Done", "check_defects": []})
+    rt.workspace["report"] = {
+        "valid": False,
+        "artifactHash": rt.workspace["build"]["artifactHash"],
+        "issues": ["wrong"],
+        "checks": [{"name": "one", "passed": True}, {"name": "two", "passed": False}],
+    }
+    with pytest.raises(ValueError, match="two"):
+        rt.operation("submit_candidate", {"summary": "Done", "check_defects": []})
+    rt.operation("submit_candidate", {"summary": "Check two is wrong", "check_defects": ["two"]})
+    assert rt.workspace["candidate"]["checkDefects"] == ["two"]
+
+
+def test_verify_trusts_current_builder_evidence_and_routes_disputes_to_review():
+    rt = built_runtime()
+    delivery = Delivery(rt, None)
+    delivery.check_candidate = lambda key: pytest.fail("Fresh evidence must not be re-run")
+    delivery.verify()
+
+    rt.workspace["implementationValidation"] = None
+    rt.workspace["candidate"] = {"summary": "x", "revision": 0, "checkDefects": ["two"]}
+    repairs = []
+    delivery.check_candidate = lambda key: {
+        "valid": False,
+        "issues": ["two failed"],
+        "checks": [{"name": "two", "passed": False}],
+    }
+    delivery.repair = lambda key, issues: repairs.append(key)
+    delivery.verify()
+    assert repairs == []
+
+
+def test_search_files_returns_literal_matches_with_lines():
+    source = {"template": "vanilla", "files": {"src/a.js": "const Total = 1\nlet x = total()\n"}}
+    found = search_source(source, "total", True)
+    assert [match["line"] for match in found["matches"]] == [1, 2]
+    assert search_source(source, "total", False)["matches"][0]["line"] == 2
+    assert search_source(source, "(.*)*", False) == {"matches": [], "truncated": False}

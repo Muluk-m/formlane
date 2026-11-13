@@ -297,7 +297,8 @@ def test_resumed_stage_replays_saved_model_calls_without_new_provider_requests(m
             lambda: False,
         )
         return Delivery(
-            runtime, lambda: ObservedOpenAI(model="test", api_key="test-key").bind(runtime)
+            runtime,
+            lambda effort=None: ObservedOpenAI(model="test", api_key="test-key").bind(runtime),
         ).stage("plan-0", "planner", "Plan", {"request": "Counter"}, lambda text: text)
 
     first = run_stage()

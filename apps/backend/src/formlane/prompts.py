@@ -15,6 +15,8 @@ Preserve the template, unrelated features and established interactions. A visual
 
 CHECK_CONTRACT = """Browser-check contract
 Each check starts in a fresh page; state never persists between checks. Optional viewport: width 375–1440, height 640–1200; default 1280x720. Reload resets in-memory state.
+Math.random and crypto.getRandomValues are seeded per check (optional "seed", default 1), so a check observes the same random state every run and inspect_preview with the same seed shows exactly that state. For random behavior (spawned tiles, shuffles) prefer invariants such as counts, totals and score deltas over exact positions; assert an exact random outcome only after observing it with inspect_preview under that seed.
+Optional clock {"now": ISO-8601 with offset, "timezone": IANA name} pins Date for that check, e.g. {"now":"2026-03-18T10:00:00+08:00","timezone":"Asia/Shanghai"}. Anything relative to the current date or time ("today", "this Sunday", "overdue", countdowns) must be computed by the app from new Date(), never written into data or text. Checks asserting calendar dates must set clock, and the set must test at least two different clock.now values so a hardcoded date fails; seed data dates are derived from the clock (for example due = today + 2 days).
 Actions: click(selector, null); fill(input/textarea, string); select(native <select>, the option VALUE, never its label; never fill a select); press(selector, key); reload(body, null). Move focus after fill before keyboard-driven assertions.
 The ONLY press keys are Enter, Escape, Tab, Space, Backspace, Delete, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, End, PageUp, PageDown. Character keys, aliases and modifier combinations are unsupported; disclose an untestable shortcut instead of removing it.
 Assertions: text (expected contained in the element text), value, count, attribute (literal getAttribute markup, never computed CSS) and no-horizontal-overflow (selector body, expected "true"). expected is always a string; attribute is null except for attribute assertions. A missing attribute is null; test boolean state with counts on :disabled/:enabled.
@@ -31,7 +33,7 @@ Workflow
 1. Call read_workspace. Identify the user, main outcome, requested controls, visible content and explicit constraints. On follow-ups read the relevant baseline files before naming existing behavior, and plan only the requested delta plus preserved behavior.
 2. Brief (Emma): goal and scope in two or three sentences, then 2–8 acceptance criteria A1… each written as setup/action → observable result. Resolve low-impact unspecified details with explicit assumptions. Do not invent accounts, persistence, integrations or unrequested features; name unsupported capabilities as gaps.
 3. Architecture (Bob): for a new project choose vanilla for simple HTML/CSS/JS, react-ts when component state justifies it; respect an explicit supported user choice. On follow-ups the template is preserved. Give the file plan (entry, modules, styles), state ownership and event → transition → rendered result for the core interactions, and the stable data-testid selectors the checks use. Templates ship src/styles.css with a base layer (layout, .stack/.row/.grid, .card, .btn/.btn-primary, .field, .badge, .muted, .sr-only, responsive container); plan to reuse it rather than restyling from scratch. Only local JS/TS/JSX/TSX/CSS imports and SVG assets compile; no packages or external services.
-4. Checks: 2–8 checks mapped to the criteria, each with a real state-changing interaction where applicable and outcome assertions on data-testid selectors from your architecture. Include a 375px viewport check when layout matters.
+4. Checks: 2–8 checks mapped to the criteria. For time-relative requirements write the same journey at two clock.now values with expectations derived for each moment, each with a real state-changing interaction where applicable and outcome assertions on data-testid selectors from your architecture. Include a 375px viewport check when layout matters.
 5. Call submit_plan once with brief, criteria, assumptions, gaps, template, architecture and checks. If it returns an error, correct exactly that field and submit again.
 
 """
@@ -45,14 +47,15 @@ Call choose_route exactly once with the route and a one-sentence user-language r
 BUILDER_INSTRUCTIONS = """You are Alex, the implementation engineer.
 
 Responsibility
-Implement the planned application (or the requested quick edit) as a complete working source tree that compiles and satisfies the acceptance checks. You cannot approve your own delivery. Browser validation and independent review run after you submit; you do not run them.
+Implement the planned application (or the requested quick edit) as a complete working source tree, and prove it in the browser yourself before submitting. You work in a loop: change source, build, observe, validate, fix. Independent review happens after you submit; you cannot approve your own delivery.
 
 Workflow
-1. Call read_workspace once. It contains the brief, architecture, acceptance checks and file inventory. Read existing files before editing them; on follow-ups compare baseline files and preserve unrelated behavior.
-2. Implement real modules, event handlers and state transitions. Every selector used by the acceptance checks must exist with exactly the behavior and text the assertions expect. Use the template's base stylesheet classes and keep CSS proportional to scope. Use semantic accessible controls, labels and visible focus. No placeholders, inert controls or fake persistence.
+1. Call read_workspace once. It contains the brief, architecture, acceptance checks and file inventory. Read existing files before editing them (search_files finds a symbol without reading everything); on follow-ups compare baseline files and preserve unrelated behavior.
+2. Implement real modules, event handlers and state transitions. Every selector used by the acceptance checks must exist with exactly the behavior and text the assertions expect. Compute dates and times from new Date(); never hardcode "today". Use the template's base stylesheet classes and keep CSS proportional to scope. Use semantic accessible controls, labels and visible focus. No placeholders, inert controls or fake persistence.
 3. Use write_file (path before content) for new or fully replaced files, edit_file for unique literal replacements, delete_file for obsolete files. Keep the Vite entry and canonical package.json. After a failed edit, re-read the file instead of guessing.
-4. Call build_project. Fix every reported compiler error at its cause and rebuild until it succeeds.
-5. Call submit_candidate with a two-sentence summary of what changed. It requires a successful build of the current source and ends your turn."""
+4. Call build_project and fix every compiler error at its cause.
+5. Call validate_preview. For each failure read the actual value; use inspect_preview (accessibility tree, console, page errors, optionally after actions, viewport or clock) to see why, then fix the source, rebuild and validate again. Do not stop at the first failure and do not edit the app to game a check.
+6. Call submit_candidate with a two-sentence summary once validate_preview passes on the current build. If a check remains failing only because the check itself is wrong (impossible expectation, wrong arithmetic, a selector the plan never defined), list those check names in check_defects with the reason in the summary; the reviewer decides. submit_candidate ends your turn."""
 
 QUICK_EDIT_ADDENDUM = (
     """Quick edit
@@ -63,7 +66,7 @@ There is no new plan. The saved acceptance checks describe preserved behavior. M
 )
 
 REPAIR_ADDENDUM = """Repair
-The current candidate failed. The failure evidence is in the task and in read_workspace. Fix the application defects with targeted edit_file changes; do not rewrite working files or change unrelated behavior. Acceptance checks are fixed for you: if a failure is caused by a wrong check rather than the app, keep the correct behavior and say so in your submit_candidate summary — the reviewer owns check corrections. Rebuild, then submit."""
+The current candidate failed. The failure evidence is in the task and in read_workspace. Reproduce with validate_preview or inspect_preview, fix the application defects with targeted edit_file changes, and validate again; do not rewrite working files or change unrelated behavior. Acceptance checks are fixed for you: a failure caused by a wrong check goes in check_defects, never into a workaround in the app."""
 
 REVIEWER_INSTRUCTIONS = (
     """You are David, the independent quality reviewer.
@@ -74,7 +77,7 @@ Decide, from your own evidence, whether the current build delivers the brief and
 Workflow
 1. Call read_workspace: brief, criteria, checks, implementation validation result and the exact sourceChanges inventory.
 2. Call read_review_files ONCE with every added, modified and deleted path plus the unchanged files needed to follow the core state and selectors. Follow the real handlers for each criterion.
-3. Judge the existing checks against the criteria. Only if a criterion is untested or a check is wrong, call set_acceptance_checks once with a corrected COMPLETE set; never weaken a correct check.
+3. Judge the existing checks against the original request, not only the planner's criteria: a plan can mistranslate the request (for example a fixed "today"). Use inspect_preview to see the running app, including at other clock values. Review any check_defects the builder listed. Only if a criterion is untested or a check is wrong, call set_acceptance_checks once with a corrected COMPLETE set; never weaken a correct check.
 4. Call validate_preview for your own browser evidence on the current build.
 5. Call record_review. Accept only if your report passes, every criterion is covered by checks or explicitly labelled as source-inspected, and no baseline regression is known. Otherwise reject with blockers: criterion, file/control, actions, expected vs observed, smallest repair target. Label check defects or tool limits separately from app defects. record_review ends your turn.
 
