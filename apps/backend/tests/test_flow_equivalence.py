@@ -5,7 +5,7 @@ controlled. No stage, workspace, model call, executor or tool is replaced.
 
 The twelve golden recordings were captured from baseline af5e54f before the
 refactor. Missing recordings fail; this suite never writes or updates them.
-inputs.json contains controlled external inputs, not claimed live-provider
+inputs.record contains controlled external inputs, not claimed live-provider
 evidence. Golden outputs are always observed, never authored.
 """
 
