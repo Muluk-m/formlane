@@ -194,7 +194,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
             with store.engine.connect() as connection:
                 connection.execute(text("SELECT 1 FROM projects LIMIT 0"))
                 connection.execute(text("SELECT 1 FROM messages LIMIT 0"))
-                connection.execute(text("SELECT source, parent_version_id FROM versions LIMIT 0"))
+                connection.execute(text("SELECT source, parent_version_id, acceptance_checks FROM versions LIMIT 0"))
                 connection.execute(
                     text(
                         "SELECT event_cursor, lease_token, attempt, attempt_started_at, execution_version, recovery_eligible FROM runs LIMIT 0"
@@ -205,7 +205,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
                 revision = connection.execute(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar()
-                if revision != "0003_remove_run_deadline":
+                if revision != "0004_version_acceptance_checks":
                     return JSONResponse({"ok": False}, status_code=503)
             return {"ok": True}
         except Exception:
