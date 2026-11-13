@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:17
@@ -39,7 +39,6 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://postgres:${{ github.run_id }}@127.0.0.1:5432/formlane_test
       TEST_DATABASE_URL: postgresql+psycopg://postgres:${{ github.run_id }}@127.0.0.1:5432/formlane_test
-      BROWSER_EXECUTABLE_PATH: /opt/google/chrome/chrome
       COMPILER_COMMAND: '["node", "${{ github.workspace }}/apps/compiler/dist/index.js"]'
       OTEL_SDK_DISABLED: "true"
       CREWAI_TELEMETRY_ENABLED: "false"
@@ -61,6 +60,20 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @formlane/compiler build
       - run: uv sync --frozen --project apps/backend
+      - name: Install SDK-matched sandboxed Chromium
+        run: |
+          uv run --project apps/backend playwright install chromium --no-shell
+          browser_executable="$(uv run --project apps/backend python -c 'from playwright.sync_api import sync_playwright; p = sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
+          printf '%s\n' "BROWSER_EXECUTABLE_PATH=$browser_executable" >> "$GITHUB_ENV"
+          # Ubuntu restricts user namespaces by executable; retain Chromium's sandbox.
+          sudo tee /etc/apparmor.d/formlane-ci-chromium > /dev/null <<EOF
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile formlane-ci-chromium "$browser_executable" flags=(unconfined) {
+            userns,
+          }
+          EOF
+          sudo apparmor_parser -r /etc/apparmor.d/formlane-ci-chromium
       - run: uv run --project apps/backend ruff check apps/backend
       - name: Frozen Flow behavior equivalence
         run: uv run --project apps/backend pytest apps/backend/tests/test_flow_equivalence.py
