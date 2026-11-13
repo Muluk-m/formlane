@@ -153,6 +153,8 @@ def test_tools_are_role_scoped_and_never_execute_arbitrary_code():
     assert qa == {
         "read_workspace",
         "read_review_files",
+        "search_files",
+        "inspect_preview",
         "set_acceptance_checks",
         "validate_preview",
         "record_review",
