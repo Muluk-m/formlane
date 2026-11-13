@@ -872,9 +872,9 @@ class SourceExecutor(AgentExecutor):
 
 STAGES = {
     # kind: (persona, instructions, max model iterations, reasoning effort)
-    # Unset effort defaults to deep reasoning on the provider: a single plan call took 306 s.
+    # Unset effort defaults to deep reasoning: one plan took 306 s; low planned 2048 in 53 s.
     "router": ("mike", ROUTER_INSTRUCTIONS, 3, "low"),
-    "planner": ("emma", PLANNER_INSTRUCTIONS, 10, "medium"),
+    "planner": ("emma", PLANNER_INSTRUCTIONS, 10, "low"),
     "builder": ("alex", BUILDER_INSTRUCTIONS, 50, "medium"),
     "quick_edit": ("alex", f"{BUILDER_INSTRUCTIONS}\n\n{QUICK_EDIT_ADDENDUM}", 40, "medium"),
     "repair": ("alex", f"{BUILDER_INSTRUCTIONS}\n\n{REPAIR_ADDENDUM}", 30, "medium"),
