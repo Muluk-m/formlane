@@ -9,6 +9,7 @@ os.environ["OTEL_SDK_DISABLED"] = "true"
 os.environ["CREWAI_TRACING_ENABLED"] = "false"
 
 from ._crewai import ObservedOpenAI
+from .configuration import get_persona_config
 from .errors import HarnessFailure
 from .flow import DeliveryFlow
 from .stages import Delivery
@@ -44,13 +45,14 @@ def execute_harness(
         return llm
 
     flow = DeliveryFlow(Delivery(runtime, model))
+    name = get_persona_config("mike").display_name
     try:
         with runtime.scoped("run", "mike"):
-            emit("agent_start", {"id": "mike", "name": "Mike"})
+            emit("agent_start", {"id": "mike", "name": name})
         result = flow.execute()
         runtime.check()
         with runtime.scoped("run-end", "mike"):
-            emit("agent_end", {"id": "mike", "name": "Mike"})
+            emit("agent_end", {"id": "mike", "name": name})
         return result
     finally:
         for llm in llms:

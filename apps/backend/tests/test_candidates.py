@@ -147,7 +147,7 @@ def test_stale_baseline_hides_candidate_without_deleting_history(
     assert blocked.value.status == 409
 
 
-@pytest.mark.parametrize("version", ["crew-v1", "dbos-v1", "flow-v2"])
+@pytest.mark.parametrize("version", ["crew-v1", "dbos-v1", "flow-v1"])
 def test_scheduler_skips_incompatible_queued_runs(pg_store, project, owner, version):
     incompatible = pg_store.create_run(project["id"], owner, "Old queued run")
     with pg_store.sessions.begin() as session:

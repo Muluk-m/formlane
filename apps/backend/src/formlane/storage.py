@@ -339,7 +339,8 @@ class Store:
                     select(RunCheckpoint)
                     .where(
                         RunCheckpoint.run_id == latest.id,
-                        RunCheckpoint.name.startswith(f"{EXECUTION_VERSION}/candidate/"),
+                        # Durable names survive execution compatibility changes.
+                        RunCheckpoint.name.startswith("flow-v1/candidate/"),
                     )
                     .order_by(RunCheckpoint.created_at.desc(), RunCheckpoint.name.desc())
                     .limit(1)

@@ -409,10 +409,8 @@ def assert_scenario(name, observed, provider, external, context):
     assert context == observed["context"], "The immutable input/baseline must not change"
 
 
-@pytest.mark.parametrize("name", INPUTS["scenarios"])
-def test_flow_equivalence(name, monkeypatch):
-    golden = FIXTURES / f"{name}.json"
-    assert golden.exists(), f"Missing frozen baseline recording: {golden.name}"
+def observe_scenario(name, monkeypatch):
+    """Run recorded external inputs through the native harness and retain every output."""
     random_state = random.getstate()
     random.seed(73)
     freeze_inputs(monkeypatch)
@@ -481,13 +479,21 @@ def test_flow_equivalence(name, monkeypatch):
         observed["provider_requests"] = provider.requests
         observed["external_outcomes"] = external.calls
         assert_scenario(name, observed, provider, external, context)
-        expected = json.loads(golden.read_text())
-        assert expected["provenance"]["baseline"] == BASELINE
-        assert expected["provenance"]["inputSha256"] == hashlib.sha256(
-            (FIXTURES / "inputs.record").read_bytes()
-        ).hexdigest()
-        # No payload normalization, timestamp stripping, ID substitution,
-        # event sorting or source/HTML filtering is allowed here.
-        assert observed == expected["observed"]
+        return observed
     finally:
         random.setstate(random_state)
+
+
+@pytest.mark.parametrize("name", INPUTS["scenarios"])
+def test_flow_equivalence(name, monkeypatch):
+    golden = FIXTURES / f"{name}.json"
+    assert golden.exists(), f"Missing frozen baseline recording: {golden.name}"
+    observed = observe_scenario(name, monkeypatch)
+    expected = json.loads(golden.read_text())
+    assert expected["provenance"]["baseline"] == BASELINE
+    assert expected["provenance"]["inputSha256"] == hashlib.sha256(
+        (FIXTURES / "inputs.record").read_bytes()
+    ).hexdigest()
+    # No payload normalization, timestamp stripping, ID substitution,
+    # event sorting or source/HTML filtering is allowed here.
+    assert observed == expected["observed"]

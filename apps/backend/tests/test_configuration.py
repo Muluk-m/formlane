@@ -6,6 +6,7 @@ import pytest
 import yaml
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
+from test_flow_equivalence import observe_scenario
 
 from formlane.delivery import configuration
 from formlane.settings import Settings
@@ -136,3 +137,21 @@ def test_all_packaged_stage_resources_load_before_polling(configuration_resource
 def test_unknown_runtime_references_fail_explicitly(configuration_resources, lookup):
     with pytest.raises(configuration.ConfigurationError, match="Unknown"):
         lookup("unknown")
+
+
+@pytest.mark.parametrize("scenario", ["initial_build", "quick_edit"])
+def test_configured_mike_name_reaches_run_lifecycle(configuration_resources, monkeypatch, scenario):
+    rewrite(
+        configuration_resources,
+        lambda data: data["personas"]["mike"].update(display_name="Morgan"),
+    )
+    observed = observe_scenario(scenario, monkeypatch)
+    attempt = observed["attempts"][0]
+    assert attempt["failure"] is None
+    assert attempt["result"] is not None
+    events = attempt["events"]
+    assert events[0]["type"] == "agent_start"
+    assert events[-1]["type"] == "agent_end"
+    for lifecycle_event in (events[0], events[-1]):
+        assert lifecycle_event["data"]["id"] == "mike"
+        assert lifecycle_event["data"]["name"] == "Morgan"

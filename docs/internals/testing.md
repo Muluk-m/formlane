@@ -49,6 +49,8 @@ The PostgreSQL/DBOS cases exercise actual process death, dormant enqueue before 
 
 Configuration coverage in `test_configuration.py` checks malformed resources fail before worker polling and loaded policy stays immutable/cached. Packaging verification must load all fourteen resources from both wheel and source distribution, including a fresh interpreter loading configuration from the wheel, not only a source checkout. Prompt wording assertions are not a substitute for the frozen gate or real-provider acceptance.
 
+The configuration suite also reuses the native recording observation helper for initial builds and quick edits, checking that a customized Mike display name reaches both entry-point lifecycle events. The frozen equivalence suite still compares complete default observations and verifies recording provenance without normalization.
+
 ## End-to-end evidence
 
 A real-provider acceptance pass covers idea → plan/build/verify/review Flow → validated saved preview → follow-up → history/restore/Undo → remix/download → publish/republish/unpublish → reload. Separately exercise reconnect, cancellation, individual operation timeouts and restart/reclaim with the current deployed backend. Healthy execution and queue waiting have no whole-run deadline; long-running work must retain renewable lease authority. Record release, run/version identity and observed result; a successful tool probe is narrower evidence.
