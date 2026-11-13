@@ -254,6 +254,7 @@ class ObservedOpenAI(OpenAICompletion):
         index = scope["llm_index"]
         scope["llm_index"] += 1
         name = f"{scope['path']}/llm-{index}"
+        provider_messages, visual_evidence = runtime.model_messages(messages)
 
         def invoke() -> Any:
             runtime.begin_model_call(scope)
@@ -269,7 +270,7 @@ class ObservedOpenAI(OpenAICompletion):
             )
             try:
                 result = super(ObservedOpenAI, self).call(
-                    messages,
+                    provider_messages,
                     tools,
                     callbacks,
                     None,
@@ -279,6 +280,8 @@ class ObservedOpenAI(OpenAICompletion):
                 )
                 self._observer.flush()
                 runtime.check()
+                if visual_evidence:
+                    return {"response": result, "visualEvidence": visual_evidence}
                 return result
             finally:
                 self._observer = None
@@ -286,7 +289,17 @@ class ObservedOpenAI(OpenAICompletion):
         try:
             # This is one DBOS step per native provider call; delegation and
             # crew execution remain workflow orchestration, never enclosing steps.
-            return runtime.durable.run(name, invoke)
+            saved = runtime.durable.run(name, invoke)
+            runtime.check()
+            if isinstance(saved, dict) and "visualEvidence" in saved:
+                if saved["visualEvidence"] != visual_evidence:
+                    raise RuntimeError(
+                        "Replayed visual evidence does not match the current inspection."
+                    )
+                runtime.record_visual_delivery(name, saved["visualEvidence"])
+                return saved["response"]
+            # Older text-only model checkpoints cannot establish image delivery.
+            return saved
         except Exception as error:
             raise RuntimeAbort(error) from None
 

@@ -1,7 +1,9 @@
 """Native Playwright acceptance checks in fresh, opaque, offline browser contexts."""
 
 import asyncio
+import base64
 import contextlib
+import hashlib
 import json
 import re
 import subprocess
@@ -42,6 +44,7 @@ ASSERTION_SECONDS = 5
 VALIDATION_TIMEOUT_SECONDS = 180
 INSPECT_TIMEOUT_SECONDS = 60
 INSPECT_TREE_CHARACTERS = 6000
+MAX_SCREENSHOT_BYTES = 2_000_000
 PARENT_DOCUMENT = """<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; frame-src about:; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{display:block;width:100%;height:100%;border:0}</style></head><body><iframe sandbox="allow-scripts allow-forms" title="Candidate"></iframe></body></html>"""
 
 
@@ -419,7 +422,7 @@ async def _run_browser(html: str, checks: list[dict], settings, cancelled, repor
 
 
 async def _inspect_browser(html: str, request: dict, settings) -> dict:
-    """Observation only: accessibility tree, console and errors after optional actions."""
+    """Capture bounded viewport pixels and browser observations after optional actions."""
     async with async_playwright() as playwright:
         browser = await _launch(playwright, settings)
         try:
@@ -444,6 +447,12 @@ async def _inspect_browser(html: str, request: dict, settings) -> dict:
                 width = await session.frame.evaluate(
                     "() => ({document: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth ?? 0), viewport: document.documentElement.clientWidth})"
                 )
+                await session.frame.evaluate("() => document.fonts.ready.then(() => true)")
+                pixels = await session.page.screenshot(
+                    type="jpeg", quality=70, full_page=False, scale="css", timeout=5000
+                )
+                if len(pixels) > MAX_SCREENSHOT_BYTES:
+                    raise ValueError("Viewport screenshot exceeds the image size limit.")
                 return {
                     "actionsPerformed": performed,
                     "actionFailure": failure,
@@ -452,6 +461,13 @@ async def _inspect_browser(html: str, request: dict, settings) -> dict:
                     "console": session.console,
                     "pageErrors": session.errors,
                     "width": width,
+                    "screenshot": {
+                        "mimeType": "image/jpeg",
+                        "sha256": hashlib.sha256(pixels).hexdigest(),
+                        "artifactHash": artifact_hash(html),
+                        "viewport": request["viewport"] or dict(DEFAULT_VIEWPORT),
+                        "data": base64.b64encode(pixels).decode("ascii"),
+                    },
                 }
             finally:
                 await _close(session.context)
@@ -506,7 +522,7 @@ def _subprocess(payload: dict, cancelled, timeout: int) -> dict:
 
 
 def inspect_artifact(html: str, request: dict, settings, cancelled) -> dict:
-    """Debugging observation for agents; never acceptance evidence."""
+    """Private visual observation; behavioral acceptance remains a separate operation."""
     normalized = validate_inspection(request)
     result = _subprocess(
         {
@@ -520,6 +536,23 @@ def inspect_artifact(html: str, request: dict, settings, cancelled) -> dict:
     )
     if not isinstance(result, dict) or "accessibilityTree" not in result:
         raise RuntimeError("Browser inspector returned an invalid report.")
+    image = result.get("screenshot", {})
+    encoded = image.get("data")
+    if not isinstance(encoded, str) or len(encoded) > 4 * ((MAX_SCREENSHOT_BYTES + 2) // 3):
+        raise RuntimeError("Browser inspector returned an invalid screenshot.")
+    try:
+        pixels = base64.b64decode(encoded, validate=True)
+    except ValueError:
+        raise RuntimeError("Browser inspector returned an invalid screenshot.") from None
+    if (
+        not pixels.startswith(b"\xff\xd8\xff")
+        or len(pixels) > MAX_SCREENSHOT_BYTES
+        or image.get("mimeType") != "image/jpeg"
+        or image.get("sha256") != hashlib.sha256(pixels).hexdigest()
+        or image.get("artifactHash") != artifact_hash(html)
+        or image.get("viewport") != (normalized["viewport"] or DEFAULT_VIEWPORT)
+    ):
+        raise RuntimeError("Browser inspector returned an invalid screenshot binding.")
     return result
 
 
