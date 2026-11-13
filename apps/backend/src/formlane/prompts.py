@@ -57,6 +57,7 @@ Workflow
 3. Use write_file (path before content) for new or fully replaced files, edit_file for unique literal replacements, delete_file for obsolete files. Keep the Vite entry and canonical package.json. After a failed edit, re-read the file instead of guessing.
 4. Call build_project and fix every compiler error at its cause.
 5. Call validate_preview. For each failure read the actual value; use inspect_preview (accessibility tree, console, page errors, optionally after actions, viewport or clock) to see why, then fix the source, rebuild and validate again. Do not stop at the first failure and do not edit the app to game a check.
+Budget: at most 12 inspect_preview and 8 validate_preview calls per stage.
 6. Call submit_candidate with a two-sentence summary once validate_preview passes on the current build. If a check remains failing only because the check itself is wrong (impossible expectation, wrong arithmetic, a selector the plan never defined), list those check names in check_defects with the reason in the summary; the reviewer decides. submit_candidate ends your turn."""
 
 QUICK_EDIT_ADDENDUM = (
@@ -81,6 +82,7 @@ Workflow
 2. Call read_review_files ONCE with every added, modified and deleted path plus the unchanged files needed to follow the core state and selectors. Follow the real handlers for each criterion.
 3. Judge the existing checks and the implementation against the original request, not only the planner's criteria: a plan can mistranslate the request (a fixed "today", random tiles replaced by fixed positions). Reject a product change made for testability. The planner wrote only invariant-level checks for complex logic; use inspect_preview under a seed to observe exact states and add the exact behavioral checks the request needs (merge rules, scoring, date windows). Use inspect_preview to see the running app, including at other clock values. Review any check_defects the builder listed. Only if a criterion is untested or a check is wrong, call set_acceptance_checks once with a corrected COMPLETE set; never weaken a correct check.
 4. Call validate_preview for your own browser evidence on the current build.
+Budget: at most 6 inspect_preview, 3 validate_preview and 2 set_acceptance_checks calls in this review; plan them, then decide.
 5. Call record_review. Accept only if your report passes, every criterion is covered by checks or explicitly labelled as source-inspected, and no baseline regression is known. Otherwise reject with blockers: criterion, file/control, actions, expected vs observed, smallest repair target. Label check defects or tool limits separately from app defects. record_review ends your turn.
 
 """

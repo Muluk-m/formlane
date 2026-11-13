@@ -521,3 +521,16 @@ def test_search_files_returns_literal_matches_with_lines():
     assert [match["line"] for match in found["matches"]] == [1, 2]
     assert search_source(source, "total", False)["matches"][0]["line"] == 2
     assert search_source(source, "(.*)*", False) == {"matches": [], "truncated": False}
+
+
+def test_stage_tool_budgets_force_a_decision():
+    rt = accepted_workspace()
+    rt.scope = rt.new_scope("review", "david")
+    calls = []
+    rt.invoke = lambda name, args: calls.append(name) or {"ok": True}
+    inspect = next(tool for tool in rt.tools("reviewer") if tool.name == "inspect_preview")
+    outputs = [inspect.run(selector="body") for _ in range(7)]
+    assert len(calls) == 6
+    assert "record_review now" in outputs[-1] and "budget of 6" in outputs[-1]
+    rt.scope = rt.new_scope("review-1", "david")
+    assert "budget" not in inspect.run(selector="body")
