@@ -4,7 +4,10 @@ Only HTTP, compiler/browser processes, clock/identity and the durable journal ar
 controlled. No stage, workspace, model call, executor or tool is replaced.
 
 The twelve golden recordings were captured from baseline af5e54f before the
-refactor. Missing recordings fail; this suite never writes or updates them.
+refactor. All remain immutable; eight still describe compatible behavior.
+The four bounded-repair paths are superseded by the semantic native-harness
+contracts in test_iteration.py, without regenerating their historical recordings.
+Missing compatible recordings fail; this suite never writes or updates them.
 inputs.record contains controlled external inputs, not claimed live-provider
 evidence. Golden outputs are always observed, never authored.
 """
@@ -33,6 +36,10 @@ from formlane.project import artifact_hash, create_source, source_hash
 FIXTURES = Path(__file__).parent / "fixtures" / "flow_equivalence"
 INPUTS = json.loads((FIXTURES / "inputs.record").read_text())
 BASELINE = "af5e54f"
+SUPERSEDED_SCENARIOS = {
+    "verify_repair", "verify_repair_limit", "review_repair", "review_repair_limit",
+}
+COMPATIBLE_SCENARIOS = [name for name in INPUTS["scenarios"] if name not in SUPERSEDED_SCENARIOS]
 
 
 def clone(value):
@@ -143,29 +150,7 @@ def scenario_tape(name):
             "path": "src/main.js", "content": INPUTS["source"],
         })))
         return responses, []
-    if name in {"verify_repair", "verify_repair_limit"}:
-        implement(validate=False)
-        browser.append("fail")
-        implement(1, validate=False)
-        browser.append("fail")
-        implement(2, validate=False)
-        browser.append("pass" if name == "verify_repair" else "fail")
-        if name == "verify_repair":
-            review()
-        else:
-            # Two exhausted verification repairs still reach independent review.
-            # No verdict prevents an unrelated review repair from hiding the bound.
-            responses.append(turn(text="The failing candidate is not accepted."))
-            browser.append("fail")  # revalidate-0
-            responses.append(turn(text="The candidate still fails independent acceptance."))
-            browser.append("fail")  # revalidate-1
-    elif name in {"review_repair", "review_repair_limit"}:
-        implement()
-        review(accepted=False)
-        implement(1)
-        browser.append("pass")  # review-verify-0 always obtains fresh evidence
-        review(accepted=name == "review_repair")
-    elif name == "check_defect":
+    if name == "check_defect":
         implement(defect=True)
         browser.append("defect")  # deterministic verify routes the named dispute
         review(correct_checks=True)
@@ -345,8 +330,7 @@ def assert_scenario(name, observed, provider, external, context):
     last = observed["attempts"][-1]
     assert provider.index == len(provider.responses), "Unused provider response records"
     assert external.index == len(external.browser), "Unused browser outcome records"
-    failures = {"missing_key": "provider", "cancellation": "cancelled",
-                "verify_repair_limit": "validation", "review_repair_limit": "validation"}
+    failures = {"missing_key": "provider", "cancellation": "cancelled"}
     if name in failures:
         assert last["failure"] == {"code": failures[name]}
         assert last["result"] is None
@@ -368,14 +352,6 @@ def assert_scenario(name, observed, provider, external, context):
     if name == "plan_follow_up":
         assert "flow-v1/route/llm-0" in steps
         assert "flow-v1/plan-0/llm-0" in steps
-    if name.startswith("verify_repair"):
-        assert "flow-v1/repair-0/llm-0" in steps
-        assert "flow-v1/repair-1/llm-0" in steps
-        assert not any(step.startswith("flow-v1/repair-2/") for step in steps)
-        assert "flow-v1/review-0/llm-0" in steps
-    if name.startswith("review_repair"):
-        assert "flow-v1/review-repair-0/llm-0" in steps
-        assert not any(step.startswith("flow-v1/review-repair-1/") for step in steps)
     if name == "check_defect":
         assert "flow-v1/revalidate-0/tool-0-validate_preview" in steps
         assert not any("/repair-" in step for step in steps)
@@ -484,8 +460,9 @@ def observe_scenario(name, monkeypatch):
         random.setstate(random_state)
 
 
-@pytest.mark.parametrize("name", INPUTS["scenarios"])
+@pytest.mark.parametrize("name", COMPATIBLE_SCENARIOS)
 def test_flow_equivalence(name, monkeypatch):
+    assert len(COMPATIBLE_SCENARIOS) == 8
     golden = FIXTURES / f"{name}.json"
     assert golden.exists(), f"Missing frozen baseline recording: {golden.name}"
     observed = observe_scenario(name, monkeypatch)

@@ -12,7 +12,7 @@ from typing import Annotated, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-STAGE_KINDS = frozenset({"router", "planner", "builder", "quick_edit", "repair", "reviewer"})
+STAGE_KINDS = frozenset({"router", "coordinator", "planner", "builder", "quick_edit", "repair", "reviewer"})
 PERSONAS = frozenset({"mike", "emma", "bob", "alex", "david"})
 Text = Annotated[str, Field(min_length=1, pattern=r"\S")]
 PositiveLimit = Annotated[int, Field(gt=0)]

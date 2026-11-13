@@ -17,7 +17,7 @@ class DeliveryState(BaseModel):
 
 
 class DeliveryFlow(Flow[DeliveryState]):
-    """Native CrewAI Flow: code-owned routing, bounded loops, single artifact writer."""
+    """Native CrewAI Flow: code-owned routing, coordinated iterations, single artifact writer."""
 
     _skip_auto_memory: bool = True
     initial_state: type[DeliveryState] = DeliveryState

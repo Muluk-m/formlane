@@ -12,6 +12,7 @@ from .schemas import (
     ChecksArgs,
     EditArgs,
     InspectArgs,
+    IterationArgs,
     NoArgs,
     PathArgs,
     PlanArgs,
@@ -38,7 +39,12 @@ class WorkspaceTool(BaseTool):
         runtime = self._runtime
         runtime.check()
         args = self.args_schema.model_validate(kwargs).model_dump()
-        return json.dumps(runtime.invoke(operation, args), ensure_ascii=False)
+        output = runtime.invoke(operation, args)
+        if self.result_as_answer and "error" in output:
+            # Journal the rejected attempt, but let CrewAI treat it as a failed
+            # tool call so the agent can repair evidence in the same stage.
+            raise ValueError(output["error"])
+        return json.dumps(output, ensure_ascii=False)
 
 
 class ReadWorkspace(WorkspaceTool):
@@ -87,6 +93,19 @@ class ChooseRoute(WorkspaceTool):
 
     def _run(self, **kwargs: Any) -> str:
         return self.execute(self._runtime.choose_route, kwargs)
+
+
+class ScheduleIteration(WorkspaceTool):
+    name: str = "schedule_iteration"
+    description: str = (
+        "Assign the next iteration: repair source with Alex or correct review evidence with David. "
+        "Provide concrete instructions based on unmet goals. Ends your turn, not the Run."
+    )
+    args_schema: type[BaseModel] = IterationArgs
+    result_as_answer: bool = True
+
+    def _run(self, **kwargs: Any) -> str:
+        return self.execute(self._runtime.schedule_iteration, kwargs)
 
 
 class SubmitPlan(WorkspaceTool):
@@ -215,6 +234,7 @@ class RecordReview(WorkspaceTool):
 # Tuple order is the provider-visible order. Baseline-dependent permissions have
 # explicit initial/follow-up variants rather than filtering tools by operation name.
 ROUTER_TOOLS = (ChooseRoute,)
+COORDINATOR_TOOLS = (ReadWorkspace, ScheduleIteration)
 PLANNER_TOOLS = (ReadWorkspace, SubmitPlan)
 FOLLOW_UP_PLANNER_TOOLS = (ReadWorkspace, ReadPreviousFile, ReadFile, SubmitPlan)
 EDITING_TOOLS = (
@@ -248,6 +268,7 @@ REVIEWER_TOOLS = (
 )
 STAGE_TOOLSETS = {
     "router": (ROUTER_TOOLS, ROUTER_TOOLS),
+    "coordinator": (COORDINATOR_TOOLS, COORDINATOR_TOOLS),
     "planner": (PLANNER_TOOLS, FOLLOW_UP_PLANNER_TOOLS),
     "builder": (BUILDER_TOOLS, FOLLOW_UP_BUILDER_TOOLS),
     "quick_edit": (QUICK_EDIT_TOOLS, FOLLOW_UP_QUICK_EDIT_TOOLS),

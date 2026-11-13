@@ -1,4 +1,4 @@
-"""Stage orchestration and bounded repair policy."""
+"""Stage orchestration and coordinator-directed delivery iterations."""
 
 from __future__ import annotations
 
@@ -13,11 +13,7 @@ from .configuration import get_persona_config, get_stage_config
 from .errors import HarnessFailure, RuntimeAbort
 from .hooks import stage_tool_hooks
 from .tools import tools_for_stage
-from .workspace import Runtime, completion_status, current_build
-
-# Deterministic verification is free; model repair rounds are bounded per phase.
-MAX_VERIFY_REPAIRS = 2
-MAX_REVIEW_REPAIRS = 1
+from .workspace import FLOW_VERSION, Runtime, completion_status, current_build
 
 
 class Delivery:
@@ -182,35 +178,65 @@ class Delivery:
         self.implement("repair", key, "Repair the reported defects", {"failures": issues})
 
     def verify(self) -> None:
-        """Gate the builder's own evidence; browser work only repeats when it is stale."""
-        for round in range(MAX_VERIFY_REPAIRS + 1):
-            built = current_build(self.workspace)
-            implementation = self.workspace["implementationValidation"]
-            if (
-                built
-                and implementation
-                and all(
-                    implementation.get(key) == built[key] for key in ("sourceHash", "artifactHash")
-                )
-            ):
-                return
-            report = self.check_candidate(f"verify-{round}")
-            candidate = self.workspace["candidate"] or {}
-            failing = {item["name"] for item in report.get("checks", []) if not item["passed"]}
-            disputed = failing and failing.issubset(candidate.get("checkDefects", []))
-            if report["valid"] or disputed or round == MAX_VERIFY_REPAIRS:
-                # Disputed or remaining failures may be check defects, which the reviewer owns.
-                return
-            self.repair(f"repair-{round}", report["issues"])
+        """Collect missing implementation evidence for David's independent assessment."""
+        self.rt.check()
+        built = current_build(self.workspace)
+        implementation = self.workspace["implementationValidation"]
+        if (
+            built
+            and implementation
+            and all(
+                implementation.get(key) == built[key] for key in ("sourceHash", "artifactHash")
+            )
+        ):
+            return
+        self.check_candidate("verify-0")
+
+    def coordinate_iteration(self, round: int) -> dict:
+        """Ask Mike for a fresh next step without imposing a delivery-round limit."""
+        attempt = 0
+        while True:
+            self.rt.check()
+            key = f"iteration-{round}-{attempt}"
+            path = f"{FLOW_VERSION}/{key}"
+            self.stage(
+                key,
+                "coordinator",
+                "Arrange the next implementation or review iteration",
+                {
+                    "request": self.rt.context["request"],
+                    "review": self.workspace["review"],
+                    "report": self.workspace["report"],
+                    "completion": completion_status(self.workspace),
+                    "candidate": self.workspace["candidate"],
+                },
+                lambda _: (
+                    self.workspace["iteration"]["instructions"]
+                    if (self.workspace.get("iteration") or {}).get("stage") == path
+                    else ""
+                ),
+            )
+            decision = self.workspace.get("iteration")
+            if decision and decision.get("stage") == path:
+                return decision
+            attempt += 1
 
     def review(self) -> None:
-        for round in range(MAX_REVIEW_REPAIRS + 1):
+        round = 0
+        instructions = None
+        while True:
+            self.rt.check()
             plan = self.workspace["plan"] or {}
+            task = {"request": self.rt.context["request"], "criteria": plan.get("criteria", [])}
+            if instructions is not None:
+                task["instructions"] = instructions
+            # A stage that exhausts its allowance must not inherit an earlier verdict.
+            self.workspace["review"] = None
             self.stage(
                 f"review-{round}",
                 "reviewer",
                 "Independently validate and review the current build",
-                {"request": self.rt.context["request"], "criteria": plan.get("criteria", [])},
+                task,
                 lambda output: (self.workspace["review"] or {}).get("findings") or output,
             )
             status = completion_status(self.workspace)
@@ -220,12 +246,12 @@ class Delivery:
                 status = completion_status(self.workspace)
             if status["ready"]:
                 return
-            if round == MAX_REVIEW_REPAIRS:
-                raise HarnessFailure("validation")
-            review = self.workspace["review"]
-            if review and not review["accepted"]:
-                self.repair(f"review-repair-{round}", [review["findings"]])
+            decision = self.coordinate_iteration(round)
+            instructions = decision["instructions"]
+            if decision["next_step"] == "repair":
+                self.repair(f"review-repair-{round}", [instructions])
                 self.check_candidate(f"review-verify-{round}")
+            round += 1
 
     def deliver(self) -> dict:
         if not completion_status(self.workspace)["ready"]:
