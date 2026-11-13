@@ -118,7 +118,7 @@ def _native_child(settings_data, job, connection, mode):
             OpenAICompletion.call = provider
             llms = []
 
-            def model():
+            def model(effort=None):
                 llm = ObservedOpenAI(
                     model="test",
                     api_key=settings.openai_api_key,
