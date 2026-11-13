@@ -10,7 +10,7 @@ Preserve cancellation fences, replay semantics, immutable baseline, role-scoped 
 
 ## Historical decision and evidence
 
-The remaining sections record the predecessor decision, alternatives and evidence at that time. References to `apps/executor`, D1, control-plane bearer polling and OpenAI Agents SDK apply only to [historical revision b8af77af1bb2](https://github.com/Muluk-m/formlane/tree/b8af77af1bb2). They are not current implementation instructions or evidence that Python production activation passed.
+The remaining sections record the predecessor decision, alternatives and evidence at that time. References to `apps/executor`, D1, control-plane bearer polling and OpenAI Agents SDK apply only to [historical revision 8a94fed953c6](https://github.com/Muluk-m/formlane/tree/8a94fed953c6). They are not current implementation instructions or evidence that Python production activation passed.
 
 ## Problem
 
