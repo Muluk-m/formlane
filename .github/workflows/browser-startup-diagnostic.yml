@@ -7,6 +7,19 @@ permissions:
 jobs:
   startup:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ${{ github.run_id }}
+          POSTGRES_DB: formlane_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:${{ github.run_id }}@localhost:5432/formlane_test
     strategy:
       fail-fast: false
       matrix:
@@ -18,6 +31,8 @@ jobs:
           python-version: "3.13"
       - uses: astral-sh/setup-uv@v10.3.3
       - run: uv sync --frozen --project apps/backend
+      - name: Reproduce preceding DBOS workload
+        run: uv run --project apps/backend pytest apps/backend/tests/test_durable_execution.py apps/backend/tests/test_execution_compatibility.py -q
       - name: Instrument first sandboxed Chrome startup
         env:
           STARTUP_VARIANT: ${{ matrix.environment }}
@@ -40,7 +55,10 @@ jobs:
                           stat = (proc/'stat').read_text()
                           end = stat.rfind(')')
                           fields = stat[end+2:].split()
-                          rows[int(proc.name)] = {'ppid':int(fields[1]), 'state':fields[0], 'cpuTicks':int(fields[11])+int(fields[12]), 'rssPages':int(fields[21]), 'name':stat[stat.find('(')+1:end], 'wait':(proc/'wchan').read_text()}
+                          rows[int(proc.name)] = {'ppid':int(fields[1]), 'state':fields[0], 'minorFaults':int(fields[7]), 'majorFaults':int(fields[9]), 'cpuTicks':int(fields[11])+int(fields[12]), 'rssPages':int(fields[21]), 'name':stat[stat.find('(')+1:end], 'wait':(proc/'wchan').read_text()}
+                          for diagnostic in ('io','syscall'):
+                              try: rows[int(proc.name)][diagnostic]=(proc/diagnostic).read_text().strip()
+                              except OSError: pass
                       except (OSError, ValueError):
                           pass
                   own = {os.getpid()}
@@ -48,6 +66,7 @@ jobs:
                       children = {pid for pid,row in rows.items() if row['ppid'] in own}
                       if children <= own: break
                       own |= children
+                  own |= {pid for pid,row in rows.items() if row['name'].startswith(('chrome','chromium'))}
                   pressure={p.name:p.read_text().strip() for p in Path('/proc/pressure').glob('*')}
                   samples.append({'seconds':round(time.monotonic()-started,3),'load':Path('/proc/loadavg').read_text().strip(),'pressure':pressure,'processes':{pid:rows[pid] for pid in own if pid in rows}})
           thread=threading.Thread(target=sample,daemon=True); thread.start()
