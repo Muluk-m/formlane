@@ -2,7 +2,7 @@
 
 ## Current rollout status
 
-**Python/PostgreSQL with DBOS and the flow-first delivery workflow is the production authority.** [PR #19](https://github.com/Muluk-m/formlane/pull/19) shipped release `685d07f30b09faf08eb01d09a061b2911c2e3cbb` as `/opt/formlane/python-backend/releases/flow-v1-20261113`; static Pages deployment `0c52f500` reports `685d07f30b09` from `/version.json`. See [flow-first delivery](#flow-first-delivery-flow-v1) for the activation record.
+**Python/PostgreSQL with DBOS and the flow-first delivery workflow is the production authority.** Backend release `flow-v1-20261113b` runs commit `e415db4`. The latest verified static frontend runs `e1871e318e8e`, build `202611131330`, deployed successfully by [GitHub Actions run 43372366587](https://github.com/Muluk-m/formlane/actions/runs/43372366587). Both frontend domains returned that identity. Frontend and backend commit IDs may differ when their contracts remain compatible. See [flow-first delivery](#flow-first-delivery-flow-v1) for backend activation and rollback evidence.
 
 | Resource                    | Current identity / boundary                                                                                 |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -51,7 +51,34 @@ CI uses a per-run password only for its isolated loopback PostgreSQL container. 
 
 ## Static Pages Python API cutover
 
-Production Pages releases run through the manual [Deploy Pages workflow](../../.github/workflows/deploy-pages.yml): choose the commit whose backend is already active, and the workflow builds with the pinned pnpm, sets `BUILD_COMMIT` to that SHA, runs the deploy script with repository secret `CLOUDFLARE_API_TOKEN` (Pages edit on the designated account only), and fails unless both frontend origins serve that commit. It is deliberately not triggered by merges, because backend activation on the VM is separate.
+Production Pages releases use the manual [Deploy Pages workflow](../../.github/workflows/deploy-pages.yml). Deploy a tested commit compatible with the active backend; a frontend-only release does not require activating that commit on the VM. The workflow sets `BUILD_COMMIT`, builds with pinned pnpm, verifies the designated Cloudflare account, uploads static assets and fails unless both frontend origins serve the selected commit. Merging a PR does **not** trigger deployment; backend activation remains separate.
+
+### Routine frontend release
+
+1. Complete the relevant checks and merge the reviewed PR. Resolve the intended release to a full commit SHA; do not deploy an unreviewed moving branch accidentally.
+2. Confirm compatibility with the active API. For a frontend-only change, leave VM services and the database untouched. Backend/schema changes must complete their own staged acceptance and activation first.
+3. Trigger the workflow from `main`, pinning the artifact with its `ref` input:
+
+   ```bash
+   gh workflow run deploy-pages.yml --repo Muluk-m/formlane --ref main -f ref=<verified-full-commit-sha>
+   gh run watch <run-id> --repo Muluk-m/formlane --exit-status
+   ```
+
+4. Require workflow success, including its live-version check. Check `/version.json` on `https://formlane.nainma.online` and `https://formlane-9dp.pages.dev`: `commit` must equal the selected SHA's first 12 characters. Then smoke-test the changed surface in the browser. Record the run URL, frontend identity and compatible backend release; an upload URL alone is not proof of production activation.
+
+### Deployment credentials and failures
+
+Repository secret `CLOUDFLARE_API_TOKEN` must contain a valid token with **Account → Cloudflare Pages → Edit**, restricted to the designated account above. Create or rotate it in [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens), then enter it interactively in a trusted terminal:
+
+```bash
+gh secret set CLOUDFLARE_API_TOKEN --repo Muluk-m/formlane
+```
+
+Never put the token in chat, tracked files, command arguments or logs. Local Wrangler OAuth credentials do not authenticate GitHub Actions. `gh secret list` confirms only that the secret name exists; it does not prove a nonempty value or valid permissions. The former empty-secret failure in run `43366631470` was resolved and verified by successful run `43372366587` on 2026-11-13; do not carry it forward as an outstanding blocker.
+
+On failure, inspect that run with `gh run view <run-id> --repo Muluk-m/formlane --log-failed`. An identity/authentication failure requires checking the token, expiry and account scope. A build failure requires fixing the build. A version-check failure requires inspecting the actual deployment and both domains before declaring success or rerunning. Do not weaken the account or version guards.
+
+Local deployment is a fallback when Actions is unavailable, using the same guarded deploy script and a clean checkout of the verified release. Run `pnpm run deploy production` to verify the account/target first, then `BUILD_COMMIT=<verified-full-commit-sha> BUILD_VERSION=<YYYYMMDDhhmm> pnpm run deploy production --apply`. Use the 12-digit timestamp format; arbitrary labels are rejected. Verify both live origins and browser behavior afterward. Local deployment does not repair the Actions secret. For a frontend-only rollback, redeploy a known-good commit compatible with the active backend through the same workflow; backend/schema rollback follows its separate database/release procedure.
 
 The root [deploy script](../../scripts/deploy.mjs) builds and uploads **static Pages assets only**. It does not deploy a business Worker, migrate a database, change services or upload Functions. No `API` service binding or runtime API-origin binding is needed. Target settings live in [deploy/environments.json](../../deploy/environments.json).
 
@@ -61,14 +88,16 @@ Keep both the custom frontend and original Pages hostname available: anonymous `
 
 Vite retains `/api/* <apiOrigin>/api/:splat 307` for older loaded clients. `/p/:slug` is a static public route that anonymously fetches the published HTML from Python and renders an opaque full-screen iframe; the address bar stays on the custom domain. It neither redirects to the IP nor grants generated content access to frontend ownership storage. Missing/revoked links render an unavailable state; the SPA document itself has Pages' HTTP status. Pages remains static with SPA fallback, without Functions or a business Worker.
 
-### Required release sequence
+### Historical D1-to-PostgreSQL cutover sequence
+
+This one-time migration is retained as historical recovery context. Do not repeat its export/import steps for routine Pages releases; use the routine frontend release procedure above.
 
 1. **Prepare and accept stage.** Verify exact Cloudflare and GCP identities, final release artifacts, Caddy TLS, CORS and both services against the isolated stage database. Apply reviewed Alembic explicitly. Finish real-model acceptance of the final implementation, including the check-hash fix. Record prior Pages/backend release identities and private recovery snapshots. Keep production activation blocked.
 2. **Fence legacy writes.** Reject new legacy project mutations and generation starts while allowing already-authorized runs to drain under controlled ownership. Stop the old Node executor once runs are terminal; verify no old producer, queued claim or writable legacy ingress remains. Explicit cancellation, if required, must itself finish before the final export. A browser connection closing is not a drain.
 3. **Export the final authority.** Export all six D1 business tables after draining and fencing. Keep the immutable snapshot private and record counts/hashes, pointer relationships, message order, event cursors and ancestry-normalization policy. Rehearsal data is not a substitute for this snapshot.
 4. **Import into empty production.** Keep Python production writers stopped/fenced. Confirm final `formlane` has no business rows; apply Alembic, import once through `formlane.import_d1`, then run `--verify-only` against the same snapshot and retain its manifest. A divergent populated target is a stop condition, never permission to merge or overwrite. Keep `formlane_stage` and `formlane_test` isolated.
 5. **Switch one authority.** Configure API and worker together for the imported final database and intended release. Preserve a write fence while verifying data and routing. Arrange temporary legacy-ingress forwarding to Python for old clients as needed; it must never leave a second writable D1 backend. Enable PostgreSQL writes only after old writers are fenced. Run controlled production acceptance before setting `backendReady: true`.
-6. **Activate static Pages.** Within the authorized release, run `pnpm run deploy production` to inspect the target and account guard; `--apply` rebuilds with target origins and uploads static assets. Set `BUILD_COMMIT` to the full verified release SHA before applying: local builds do not infer it from Git and otherwise report `unknown`. The same mechanism supports a separately verified test target. `backendReady` must already reflect accepted backend/data state. Record the deployed Pages identity and verify `/version.json` alongside the backend release/database identity.
+6. **Activate static Pages.** Within the authorized release, use the manual Deploy Pages workflow described above, with `backendReady` already reflecting accepted backend/data state. Record the deployed Pages identity and verify `/version.json` alongside the backend release/database identity.
 7. **Verify the actual boundary and record the result.** Exercise preserved anonymous ownership, CRUD, real generation/follow-up, SSE replay/cancel, history/restore/Undo, remix, exact ZIP, publication/unpublication and SPA reload. Exercise a browser loaded before cutover: GET/POST/DELETE, SSE and downloads must follow the temporary API redirect with method/body/owner intact. Check allowed/denied CORS and existing anonymous public links on HTTPS. Record final run/version IDs, manifests and limitations; only then label the rollout complete.
 
 ### Explicit database operations
