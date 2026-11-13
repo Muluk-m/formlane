@@ -33,7 +33,7 @@ Remix creates independent project/message/version identities, maps ancestry with
 
 ## Historical D1 migration fidelity
 
-The retired [importer at c108ea0](https://github.com/Muluk-m/formlane/blob/c108ea0/apps/backend/src/formlane/import_d1.py) accepted exact six-table exports from the source-aware D1 schema (historical migrations 0005/0006). It preserved owners, IDs, timestamps, source/HTML, current/published/active-run pointers, messages, event sequence/history and checkpoints. PostgreSQL-specific message positions retained export ordering for timestamp ties; run cursors matched the retained event maxima. The following records its cutover policy, not an active backend import interface.
+The retired [importer at 6aa6e08](https://github.com/Muluk-m/formlane/blob/6aa6e08/apps/backend/src/formlane/import_d1.py) accepted exact six-table exports from the source-aware D1 schema (historical migrations 0005/0006). It preserved owners, IDs, timestamps, source/HTML, current/published/active-run pointers, messages, event sequence/history and checkpoints. PostgreSQL-specific message positions retained export ordering for timestamp ties; run cursors matched the retained event maxima. The following records its cutover policy, not an active backend import interface.
 
 Recovery metadata absent from legacy D1 exports is initialized separately: first attempt, original creation time as attempt start, legacy execution version and conservative current-baseline eligibility. Hash verification projects only the original D1 columns; it does not rewrite old event payloads or infer new model results.
 

@@ -9,7 +9,7 @@ Open [formlane.nainma.online](https://formlane.nainma.online). The original [Pag
 ![Production workspace and history](docs/screenshots/python-cutover-desktop.png)
 ![Production mobile preview](docs/screenshots/python-cutover-mobile.png)
 
-These production screenshots show release `f7dfcb3`, with saved v2 retained after the cancellation acceptance check.
+These production screenshots show release `dea6d12`, with saved v2 retained after the cancellation acceptance check.
 
 ## Features
 
