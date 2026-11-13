@@ -23,6 +23,8 @@
         "incomplete": "执行中断"
       },
       "savedResult": "已保存的成果",
+      "savedResultUndone": "已撤销",
+      "undoneCurrentVersion": "当前版本 {number}",
       "versionNumber": "版本 {number}",
       "viewChanges": "变更",
       "name": "助手",
