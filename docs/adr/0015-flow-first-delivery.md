@@ -44,7 +44,7 @@ Staging run `05fa1643-67a3-43fc-a2ff-b9509ed181e1` saved a tool library that har
 
 ## Reasoning effort
 
-The provider defaults to deep reasoning. Staging plan call `flow-v1/plan-0/llm-1` took 306 s for a 19.6 KB result. Probes on `grok-4.7` accepted `low`, `medium` and `high` with and without tools and rejected `none`. Stages set effort explicitly: router `low`; planner, builder, quick edit, repair and reviewer `medium`.
+The provider defaults to deep reasoning. Staging plan call `flow-v1/plan-0/llm-1` took 306 s for a 19.6 KB result. Probes on `grok-4.7` accepted `low`, `medium` and `high` with and without tools and rejected `none`. Stages set effort explicitly: router and planner `low`; builder, quick edit, repair and reviewer `medium`.
 
 ## Alternatives
 
