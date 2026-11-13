@@ -1,0 +1,429 @@
+[
+  {
+    "id": "signup",
+    "category": "forms",
+    "prompt": "做一个中文报名表。姓名输入框 id=name，邮箱输入框 id=email，提交按钮 id=submit，结果区域 id=result。姓名和邮箱必填，邮箱格式必须有效；提交成功显示“报名成功：姓名”，错误时不能显示成功。所有输入有中文标签。",
+    "checks": [
+      {
+        "name": "Reject empty form then submit valid Chinese name",
+        "steps": [
+          ["click", "#submit"],
+          ["notContains", "#result", "报名成功"],
+          ["fill", "#name", "张三"],
+          ["fill", "#email", "zhang@example.test"],
+          ["click", "#submit"],
+          ["contains", "#result", "报名成功：张三"]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "expense",
+    "category": "forms",
+    "prompt": "做一个中文费用报销计算器。金额输入 id=amount，人数输入 id=people，计算按钮 id=calculate，人均结果 id=result。金额必须大于等于0，人数必须为正整数；100元3人显示33.33元，人数为0显示错误不能显示Infinity。",
+    "checks": [
+      {
+        "name": "Division, rounding and zero guard",
+        "steps": [
+          ["fill", "#amount", "100"],
+          ["fill", "#people", "3"],
+          ["click", "#calculate"],
+          ["contains", "#result", "33.33"],
+          ["fill", "#people", "0"],
+          ["click", "#calculate"],
+          ["matches", "#result", "错误|人数|有效|大于|至少"],
+          ["notContains", "#result", "Infinity"]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "filter",
+    "category": "filter",
+    "prompt": "做中文工具目录，有苹果笔记（办公）、香蕉日历（办公）、星空画板（设计）三项。类别原生select id=category，选项值all/office/design，搜索框 id=search，结果中每项 class=tool-item。类别和名称搜索同时生效；没有结果时显示“没有匹配工具”。",
+    "checks": [
+      {
+        "name": "Native select and intersected Chinese search",
+        "steps": [
+          ["count", ".tool-item", 3],
+          ["select", "#category", "office"],
+          ["count", ".tool-item", 2],
+          ["fill", "#search", "苹果"],
+          ["count", ".tool-item", 1],
+          ["contains", ".tool-item", "苹果笔记"],
+          ["select", "#category", "design"],
+          ["count", ".tool-item", 0],
+          ["contains", "body", "没有匹配工具"]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "todo",
+    "category": "chinese",
+    "prompt": "做中文待办清单，初始为空。输入框 id=task，添加按钮 id=add，每条任务 class=task-item，条目内有checkbox和文字为“删除”的按钮。空白不能添加。添加后清空输入，勾选能完成，删除只删除对应项。",
+    "checks": [
+      {
+        "name": "Chinese input, completion and deletion",
+        "steps": [
+          ["click", "#add"],
+          ["count", ".task-item", 0],
+          ["fill", "#task", "学习中文"],
+          ["click", "#add"],
+          ["value", "#task", ""],
+          ["contains", ".task-item", "学习中文"],
+          ["click", ".task-item input[type=checkbox]"],
+          ["checked", ".task-item input[type=checkbox]", true],
+          ["click", ".task-item button"],
+          ["count", ".task-item", 0]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "counter",
+    "category": "baseline",
+    "prompt": "做中文计数器，数字 id=count 初始0，增加按钮 id=increment 每次加1，重置按钮 id=reset 归零。按钮有明确中文文本。",
+    "checks": [
+      {
+        "name": "Increment and reset",
+        "steps": [
+          ["text", "#count", "0"],
+          ["click", "#increment"],
+          ["text", "#count", "1"],
+          ["click", "#reset"],
+          ["text", "#count", "0"]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "counter-feature",
+    "category": "new-feature",
+    "dependsOn": "counter",
+    "prompt": "把增加按钮改为每次加2，再新增减少按钮 id=decrement 每次减1，允许负数；保留归零。初始仍为0，所有控件id不变。",
+    "checks": [
+      {
+        "name": "New step size and negative decrement",
+        "steps": [
+          ["click", "#increment"],
+          ["text", "#count", "2"],
+          ["click", "#decrement"],
+          ["text", "#count", "1"],
+          ["click", "#reset"],
+          ["click", "#decrement"],
+          ["text", "#count", "-1"]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "counter-style",
+    "category": "style-followup",
+    "dependsOn": "counter-feature",
+    "prompt": "只调整视觉：页面背景改成纯黑色，文字白色，增加按钮背景为rgb(56,189,248)，圆角12px。保持当前每次加2、每次减1、归零及全部id和初始值，不要回到旧功能。",
+    "checks": [
+      {
+        "name": "Style plus preserved accepted feature",
+        "steps": [
+          ["click", "#increment"],
+          ["text", "#count", "2"],
+          ["click", "#decrement"],
+          ["text", "#count", "1"],
+          ["click", "#reset"],
+          ["text", "#count", "0"],
+          [
+            "css",
+            "#increment",
+            { "background-color": "rgb(56, 189, 248)", "border-radius": "12px" }
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "counter-undo",
+    "category": "undo",
+    "dependsOn": "counter-style",
+    "action": "undo",
+    "restoreCase": "counter-feature",
+    "prompt": "撤销刚刚的视觉修改，恢复上一个已保存版本，保留每次加2、每次减1和归零。",
+    "checks": [
+      {
+        "name": "Restored saved version remains interactive",
+        "steps": [
+          ["click", "#increment"],
+          ["text", "#count", "2"],
+          ["click", "#decrement"],
+          ["text", "#count", "1"],
+          ["click", "#reset"],
+          ["text", "#count", "0"]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dice",
+    "category": "random-game",
+    "prompt": "做中文掷骰子小游戏。按钮 id=roll，每次掷出1到6的整数，结果 id=result；历史容器 id=history 每次追加一个 class=roll-item。重置 id=reset 清空历史。不使用外网或本地存储。",
+    "checks": [
+      {
+        "name": "Dice range and real history transitions",
+        "seeds": [7, 29],
+        "steps": [
+          ["click", "#roll"],
+          ["number", "#result", { "min": 1, "max": 6, "integer": true }],
+          ["count", ".roll-item", 1],
+          ["click", "#roll"],
+          ["number", "#result", { "min": 1, "max": 6, "integer": true }],
+          ["count", ".roll-item", 2],
+          ["click", "#reset"],
+          ["count", ".roll-item", 0]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "game-2048",
+    "category": "random-game",
+    "prompt": "做可玩的中文2048。4乘4棋盘 id=board，16个固定单元格 class=cell，空格显示空白或0；初始随机两个2或4。方向键移动并合并，每次有效移动生成一个2或4，无效移动不生成。分数 id=score，重新开始按钮 id=restart。不要固定随机格子，不依赖外网。",
+    "checks": [
+      {
+        "name": "Legal board and keyboard state transition",
+        "seeds": [7, 29],
+        "steps": [
+          ["count", "#board .cell", 16],
+          ["grid2048", "#board .cell", "initial"],
+          ["remember", "#board", "board"],
+          ["press", "body", "ArrowLeft"],
+          ["press", "body", "ArrowDown"],
+          ["changed", "#board", "board"],
+          ["grid2048", "#board .cell", "valid"],
+          ["click", "#restart"],
+          ["grid2048", "#board .cell", "initial"],
+          ["text", "#score", "0"]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "guess",
+    "category": "random-game",
+    "prompt": "做中文猜数字游戏，目标是1到100随机整数。输入框 id=guess，猜测按钮 id=submit，提示 id=hint，次数 id=attempts 初始0。小于1或大于100不计次数且提示“请输入1到100”；有效猜测次数加1并提示“大了”“小了”或“猜中了”；重开按钮 id=restart 归零次数。",
+    "checks": [
+      {
+        "name": "Invalid guess excluded from attempts",
+        "seeds": [7, 29],
+        "steps": [
+          ["fill", "#guess", "101"],
+          ["click", "#submit"],
+          ["text", "#attempts", "0"],
+          ["contains", "#hint", "请输入1到100"],
+          ["fill", "#guess", "50"],
+          ["click", "#submit"],
+          ["text", "#attempts", "1"],
+          ["matches", "#hint", "大了|小了|猜中了"],
+          ["click", "#restart"],
+          ["text", "#attempts", "0"]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "today",
+    "category": "dates",
+    "prompt": "做中文日期工具，打开时用用户当前本地日期填充date输入 id=today，不能写死日期。按钮 id=tomorrow 点击后在 id=result 显示明天，格式YYYY-MM-DD，必须处理月底和跨年。",
+    "checks": [
+      {
+        "name": "December rollover",
+        "now": "2026-12-31T12:00:00+08:00",
+        "steps": [
+          ["value", "#today", "2026-12-31"],
+          ["click", "#tomorrow"],
+          ["contains", "#result", "2027-01-01"]
+        ]
+      },
+      {
+        "name": "Leap day",
+        "now": "2028-02-28T12:00:00+08:00",
+        "steps": [
+          ["value", "#today", "2028-02-28"],
+          ["click", "#tomorrow"],
+          ["contains", "#result", "2028-02-29"]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "date-range",
+    "category": "dates",
+    "prompt": "做中文日期差计算器。date输入 id=start 和 id=end，计算按钮 id=calculate，结果 id=result。按日历日计算结束减开始，不含开始日；2028-02-28到2028-03-01是2天。同日0天，结束早于开始显示“结束日期不能早于开始日期”。",
+    "checks": [
+      {
+        "name": "Leap year and reversed interval",
+        "steps": [
+          ["fill", "#start", "2028-02-28"],
+          ["fill", "#end", "2028-03-01"],
+          ["click", "#calculate"],
+          ["matches", "#result", "(?<![\\d.-])2\\s*天"],
+          ["fill", "#end", "2028-02-28"],
+          ["click", "#calculate"],
+          ["matches", "#result", "(?<![\\d.-])0\\s*天"],
+          ["fill", "#end", "2028-02-27"],
+          ["click", "#calculate"],
+          ["contains", "#result", "结束日期不能早于开始日期"]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "bmi",
+    "category": "forms",
+    "prompt": "做中文BMI计算器，身高厘米输入 id=height，体重千克输入 id=weight，按钮 id=calculate，结果 id=result。公式体重除以米身高平方，保留一位小数。170厘米65千克结果22.5；身高为0要显示“请输入有效身高”，不能出现Infinity。",
+    "checks": [
+      {
+        "name": "Units, rounding and invalid height",
+        "steps": [
+          ["fill", "#height", "170"],
+          ["fill", "#weight", "65"],
+          ["click", "#calculate"],
+          ["contains", "#result", "22.5"],
+          ["fill", "#height", "0"],
+          ["click", "#calculate"],
+          ["contains", "#result", "请输入有效身高"],
+          ["notContains", "#result", "Infinity"]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "chinese-search",
+    "category": "chinese",
+    "prompt": "做中文通讯录，固定三个名字：王小明、李小红、王芳，每人一行 class=contact。搜索框 id=search 按姓名子串实时筛选，清空按钮 id=clear 清空搜索恢复全部；结果计数 id=count 只显示数字。",
+    "checks": [
+      {
+        "name": "Chinese substring filtering and clear",
+        "steps": [
+          ["fill", "#search", "王"],
+          ["count", ".contact", 2],
+          ["text", "#count", "2"],
+          ["fill", "#search", "王芳"],
+          ["count", ".contact", 1],
+          ["contains", ".contact", "王芳"],
+          ["click", "#clear"],
+          ["value", "#search", ""],
+          ["count", ".contact", 3],
+          ["text", "#count", "3"]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "cart",
+    "category": "state",
+    "prompt": "做中文购物车，只有单价19.90元的笔记本。初始数量1，数量 id=quantity 只显示整数，增加 id=plus，减少 id=minus，合计 id=total 显示两位小数。数量最小1，在1时减少按钮禁用。",
+    "checks": [
+      {
+        "name": "Minimum boundary and decimal total",
+        "steps": [
+          ["text", "#quantity", "1"],
+          ["disabled", "#minus", true],
+          ["click", "#plus"],
+          ["text", "#quantity", "2"],
+          ["contains", "#total", "39.80"],
+          ["disabled", "#minus", false],
+          ["click", "#minus"],
+          ["contains", "#total", "19.90"],
+          ["disabled", "#minus", true]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "temperature",
+    "category": "forms",
+    "prompt": "做中文摄氏度转华氏度工具，摄氏输入 id=celsius，转换按钮 id=convert，结果 id=result。公式摄氏乘9除5加32，允许负数，显示一位小数。空输入显示“请输入温度”，不能当0处理。",
+    "checks": [
+      {
+        "name": "Empty versus zero and negative values",
+        "steps": [
+          ["click", "#convert"],
+          ["contains", "#result", "请输入温度"],
+          ["fill", "#celsius", "0"],
+          ["click", "#convert"],
+          ["contains", "#result", "32.0"],
+          ["fill", "#celsius", "-40"],
+          ["click", "#convert"],
+          ["contains", "#result", "-40.0"]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "quiz",
+    "category": "chinese",
+    "prompt": "做一道中文单选题：地球有几颗天然卫星？三个radio值为0、1、2，name=answer。提交按钮 id=submit，反馈 id=feedback。未选择提示“请先选择答案”，选1提交显示“回答正确”，选2显示“回答错误”；重试按钮 id=retry 清空选择和反馈。",
+    "checks": [
+      {
+        "name": "Selection, correctness and retry",
+        "steps": [
+          ["click", "#submit"],
+          ["contains", "#feedback", "请先选择答案"],
+          ["click", "input[name=answer][value='2']"],
+          ["click", "#submit"],
+          ["contains", "#feedback", "回答错误"],
+          ["click", "#retry"],
+          ["count", "input[name=answer]:checked", 0],
+          ["click", "input[name=answer][value='1']"],
+          ["click", "#submit"],
+          ["contains", "#feedback", "回答正确"]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "signup-style",
+    "category": "style-followup",
+    "dependsOn": "signup",
+    "prompt": "只修改报名表视觉：提交按钮背景为rgb(14,165,233)，圆角16px；所有表单控件保留现有id，中文姓名和邮箱校验及报名成功消息保持不变，不增加新功能。",
+    "checks": [
+      {
+        "name": "Form behavior survives restyling",
+        "steps": [
+          ["click", "#submit"],
+          ["notContains", "#result", "报名成功"],
+          ["fill", "#name", "李四"],
+          ["fill", "#email", "li@example.test"],
+          ["click", "#submit"],
+          ["contains", "#result", "报名成功：李四"],
+          ["css", "#submit", { "background-color": "rgb(14, 165, 233)", "border-radius": "16px" }]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "filter-feature",
+    "category": "new-feature",
+    "dependsOn": "filter",
+    "prompt": "在当前工具目录新增结果数量 id=result-count 只显示数字，新增清空筛选按钮 id=clear 清空搜索并把类别选回all，恢复三项。保留原来中文搜索与类别交集筛选、原工具及所有id。",
+    "checks": [
+      {
+        "name": "New clear action preserves filter intersection",
+        "steps": [
+          ["select", "#category", "office"],
+          ["fill", "#search", "苹果"],
+          ["count", ".tool-item", 1],
+          ["text", "#result-count", "1"],
+          ["select", "#category", "design"],
+          ["count", ".tool-item", 0],
+          ["text", "#result-count", "0"],
+          ["click", "#clear"],
+          ["value", "#search", ""],
+          ["value", "#category", "all"],
+          ["count", ".tool-item", 3],
+          ["text", "#result-count", "3"]
+        ]
+      }
+    ]
+  }
+]

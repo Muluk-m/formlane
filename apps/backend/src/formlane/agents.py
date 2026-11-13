@@ -304,6 +304,23 @@ def with_smoke(checks: list[dict]) -> list[dict]:
     return [SMOKE_CHECK, *(check for check in checks if check.get("name") != SMOKE_CHECK_NAME)]
 
 
+def current_visual_review(workspace: dict) -> dict | None:
+    built = current_build(workspace)
+    evidence = workspace.get("visualReview")
+    if (
+        not built
+        or not evidence
+        or not evidence.get("screenshots")
+        or any(evidence.get(key) != built[key] for key in built)
+        or any(
+            not image.get("sha256") or any(image.get(key) != built[key] for key in built)
+            for image in evidence["screenshots"]
+        )
+    ):
+        return None
+    return evidence
+
+
 def completion_status(workspace: dict) -> dict:
     build = current_build(workspace)
     missing = []
@@ -325,6 +342,9 @@ def completion_status(workspace: dict) -> dict:
         or independent.get("checksHash") != check_hash
     ):
         missing.append("david_validation")
+    visual = current_visual_review(workspace)
+    if not visual:
+        missing.append("david_visual_review")
     review = workspace["review"]
     if (
         not build
@@ -332,6 +352,8 @@ def completion_status(workspace: dict) -> dict:
         or not review["accepted"]
         or any(review.get(key) != build[key] for key in ("sourceHash", "artifactHash"))
         or review.get("checksHash") != check_hash
+        or not visual
+        or review.get("visualEvidence") != visual["screenshots"]
     ):
         missing.append("david_acceptance")
     return {"ready": not missing, "missing": missing}
@@ -384,6 +406,7 @@ class Runtime:
             "validatedBy": None,
             "implementationValidation": None,
             "independentValidation": None,
+            "visualReview": None,
             "review": None,
             "candidate": None,
             "revision": 0,
@@ -400,16 +423,68 @@ class Runtime:
             "llm_index": 0,
             "tool_index": 0,
             "uses": {},
+            "images": [],
         }
 
     def begin_model_call(self, scope: dict) -> None:
         self.check()
+
+    def model_messages(self, messages: Any) -> tuple[Any, list[dict]]:
+        """Attach private images only at the native provider boundary, never to Crew text."""
+        built = current_build(self.workspace)
+        images = [
+            image
+            for image in self.scope["images"]
+            if built and all(image.get(key) == built[key] for key in built)
+        ]
+        if not images:
+            return messages, []
+        evidence = [
+            {key: value for key, value in image.items() if key != "data"} for image in images
+        ]
+        content = [
+            {
+                "type": "text",
+                "text": "Current-build viewport screenshots from inspect_preview: "
+                + json.dumps(evidence, ensure_ascii=False),
+            }
+        ]
+        content.extend(
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{image['mimeType']};base64,{image['data']}",
+                    "detail": "high",
+                },
+            }
+            for image in images
+        )
+        history = (
+            [{"role": "user", "content": messages}] if isinstance(messages, str) else list(messages)
+        )
+        return [*history, {"role": "user", "content": content}], evidence
+
+    def record_visual_delivery(self, step: str, evidence: list[dict]) -> None:
+        """Called only after a committed native model response, including durable replay."""
+        built = current_build(self.workspace)
+        if (
+            self.scope["role"] == "david"
+            and built
+            and evidence
+            and all(all(image.get(key) == built[key] for key in built) for image in evidence)
+        ):
+            self.workspace["visualReview"] = {
+                **built,
+                "modelStep": step,
+                "screenshots": copy.deepcopy(evidence),
+            }
 
     def check(self) -> None:
         if self.cancelled():
             raise CancelledError()
 
     def clear_evidence(self) -> None:
+        self.scope["images"].clear()
         self.workspace.update(
             html="",
             build=None,
@@ -417,6 +492,7 @@ class Runtime:
             validatedBy=None,
             implementationValidation=None,
             independentValidation=None,
+            visualReview=None,
             review=None,
             candidate=None,
             reviewedPaths=[],
@@ -536,16 +612,21 @@ class Runtime:
                 or not independent
                 or independent["artifactHash"] != built["artifactHash"]
                 or independent["checksHash"] != checks_hash(current["checks"])
+                or not current_visual_review(current)
                 or not changed.issubset(current["reviewedPaths"])
             ):
                 raise ValueError(
-                    "Acceptance requires your own passing current-artifact browser validation and inspection of every changed baseline file."
+                    "Acceptance requires your own passing current-artifact browser validation, "
+                    "delivered current-build screenshots and inspection of every changed baseline file."
                 )
             current["review"] = {
                 **args,
                 "sourceHash": built["sourceHash"] if built else "",
                 "artifactHash": built["artifactHash"] if built else "",
                 "checksHash": checks_hash(current["checks"]),
+                "visualEvidence": copy.deepcopy(
+                    (current_visual_review(current) or {}).get("screenshots", [])
+                ),
             }
             return {**current["review"], "completion": completion_status(current)}
         if not source:
@@ -592,9 +673,14 @@ class Runtime:
         if name == "search_files":
             return search_source(source, args["query"], args["ignore_case"])
         if name == "inspect_preview":
-            if not current_build(current):
+            built = current_build(current)
+            if not built:
                 raise ValueError("Build current source successfully before inspecting it.")
-            return inspect_artifact(current["html"], args, self.settings, self.cancelled)
+            result = inspect_artifact(current["html"], args, self.settings, self.cancelled)
+            if result["screenshot"]["artifactHash"] != built["artifactHash"]:
+                raise ValueError("Screenshot does not match the current artifact.")
+            result["screenshot"].update(built)
+            return result
         if name == "submit_candidate":
             built = current_build(current)
             if not built:
@@ -666,7 +752,9 @@ class Runtime:
             self.check()
             # Read results and source content stay out of the public tool transcript.
             public = (
-                {"revision": self.workspace["revision"]} if name.startswith("read_") else output
+                {"revision": self.workspace["revision"]}
+                if name.startswith("read_")
+                else self.tool_output(name, output)
             )
             self.emit(
                 "tool_end", {"id": step, "name": name, "agent": scope["role"], "output": public}
@@ -680,6 +768,11 @@ class Runtime:
         if saved["args"] != args:
             raise HarnessFailure("internal")
         self.workspace = copy.deepcopy(saved["workspace"])
+        if "error" not in saved["output"]:
+            if name in ("submit_plan", "write_file", "edit_file", "delete_file", "build_project"):
+                scope["images"].clear()
+            elif name == "inspect_preview" and "screenshot" in saved["output"]:
+                scope["images"].append(copy.deepcopy(saved["output"]["screenshot"]))
         if "error" not in saved["output"] and name in (
             "submit_plan",
             "write_file",
@@ -699,7 +792,18 @@ class Runtime:
                 )
             elif name == "delete_file":
                 self.emit("file_deleted", {"path": args["path"]})
-        return saved["output"]
+        return self.tool_output(name, saved["output"])
+
+    @staticmethod
+    def tool_output(name: str, output: dict) -> dict:
+        if name == "inspect_preview" and "screenshot" in output:
+            return {
+                **output,
+                "screenshot": {
+                    key: value for key, value in output["screenshot"].items() if key != "data"
+                },
+            }
+        return output
 
     def persist_candidate(self) -> None:
         """Journal a private draft after its tool step, never inside another step."""
@@ -796,9 +900,9 @@ class Runtime:
                 SubmitArgs,
             ),
             "inspect_preview": (
-                "Observe the current build in the sandboxed browser: accessibility tree, console, "
+                "Observe the current build: viewport screenshot, accessibility tree, console, "
                 "page errors and document width, optionally after actions, viewport and clock. "
-                "Debugging only; not acceptance evidence.",
+                "The screenshot is attached as an image to your next model turn; behavioral checks remain required.",
                 InspectArgs,
             ),
             "search_files": (
@@ -815,7 +919,8 @@ class Runtime:
                 NoArgs,
             ),
             "record_review": (
-                "Record the independent verdict; acceptance requires your own passing validation. Ends your turn.",
+                "Record the independent verdict; acceptance requires your own passing validation "
+                "and delivered current-build screenshots. Ends your turn.",
                 ReviewArgs,
             ),
         }
@@ -1020,7 +1125,7 @@ class Delivery:
                 f"plan-{attempt}",
                 "planner",
                 "Define the brief, architecture and acceptance checks",
-                {"request": self.rt.context["request"]},
+                {"request": self.rt.context["request"], "workspace": self.rt.workspace_info()},
                 lambda output: self.workspace["brief"] or output,
             )
             if self.workspace["plan"]:
@@ -1035,6 +1140,10 @@ class Delivery:
 
     def implement(self, kind: str, key: str, label: str, evidence: Any = None) -> None:
         task = {"request": self.rt.context["request"]}
+        if kind in ("builder", "quick_edit"):
+            task["workspace"] = self.rt.workspace_info()
+        if kind == "builder" and not self.rt.previous:
+            task["templateFiles"] = dict(self.workspace["source"]["files"])
         if evidence is not None:
             task["evidence"] = evidence
         self.stage(

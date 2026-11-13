@@ -91,11 +91,25 @@ def accepted_workspace():
         "artifactHash": state["build"]["artifactHash"],
         "checksHash": checks_hash(state["checks"]),
     }
+    screenshots = [
+        {
+            **state["build"],
+            "sha256": "a" * 64,
+            "mimeType": "image/jpeg",
+            "viewport": {"width": 1280, "height": 720},
+        }
+    ]
+    state["visualReview"] = {
+        **state["build"],
+        "modelStep": "review/llm-1",
+        "screenshots": screenshots,
+    }
     state["review"] = {
         **state["build"],
         "accepted": True,
         "findings": "Verified",
         "checksHash": checks_hash(state["checks"]),
+        "visualEvidence": copy.deepcopy(screenshots),
     }
     return rt
 
@@ -111,6 +125,11 @@ def test_completion_requires_each_exact_evidence_stamp():
         lambda s: s["review"].update(checksHash="stale"),
         lambda s: s["review"].update(accepted=False),
         lambda s: s["independentValidation"].update(artifactHash="stale"),
+        lambda s: s.update(visualReview=None),
+        lambda s: s["visualReview"].update(artifactHash="stale"),
+        lambda s: s["visualReview"]["screenshots"][0].update(sourceHash="stale"),
+        lambda s: s["visualReview"].update(screenshots=[]),
+        lambda s: s["review"].update(visualEvidence=[]),
         lambda s: s.update(revision=1),
     ]
     for mutate in mutations:
@@ -192,12 +211,18 @@ def test_source_change_clears_all_evidence_and_preserves_checks():
     assert rt.workspace["review"] is None
     assert rt.workspace["implementationValidation"] is None
     assert rt.workspace["independentValidation"] is None
+    assert rt.workspace["visualReview"] is None
+    assert rt.scope["images"] == []
 
 
 def test_review_requires_own_browser_and_changed_file_inspection():
     rt = accepted_workspace()
     rt.workspace["source"]["files"]["index.html"] += "<!-- requested change -->"
     rt.workspace["build"]["sourceHash"] = source_hash(rt.workspace["source"])
+    rt.workspace["visualReview"]["sourceHash"] = rt.workspace["build"]["sourceHash"]
+    rt.workspace["visualReview"]["screenshots"][0]["sourceHash"] = rt.workspace["build"][
+        "sourceHash"
+    ]
     args = {"accepted": True, "findings": "Accepted"}
     with pytest.raises(ValueError, match="inspection"):
         rt.operation("record_review", args)
@@ -534,3 +559,121 @@ def test_stage_tool_budgets_force_a_decision():
     assert "record_review now" in outputs[-1] and "budget of 6" in outputs[-1]
     rt.scope = rt.new_scope("review-1", "david")
     assert "budget" not in inspect.run(selector="body")
+
+
+def test_inspection_alone_and_other_roles_cannot_establish_visual_acceptance(monkeypatch):
+    rt = accepted_workspace()
+    rt.workspace.update(review=None, visualReview=None)
+    rt.scope = rt.new_scope("review", "david")
+    image = {
+        **rt.workspace["build"],
+        "sha256": "a" * 64,
+        "mimeType": "image/jpeg",
+        "viewport": {"width": 375, "height": 812},
+        "data": "private-image-bytes",
+    }
+    monkeypatch.setattr("formlane.agents.inspect_artifact", lambda *args: {"screenshot": image})
+    observed = rt.invoke("inspect_preview", {})
+    assert "data" not in observed["screenshot"]
+    assert rt.workspace["visualReview"] is None
+    verdict = {"accepted": True, "findings": "Looks correct"}
+    with pytest.raises(ValueError, match="screenshots"):
+        rt.operation("record_review", verdict)
+    _, evidence = rt.model_messages("Review")
+    rt.scope["role"] = "alex"
+    rt.record_visual_delivery("alex/llm-0", evidence)
+    assert rt.workspace["visualReview"] is None
+    rt.scope["role"] = "david"
+    rt.record_visual_delivery("review/llm-0", evidence)
+    assert rt.operation("record_review", verdict)["completion"]["ready"]
+    # A screenshot receipt cannot substitute for independent behavior validation.
+    rt.workspace["independentValidation"] = None
+    with pytest.raises(ValueError, match="validation"):
+        rt.operation("record_review", verdict)
+
+
+def test_visual_images_are_scoped_and_source_changes_remove_delivery():
+    rt = accepted_workspace()
+    rt.scope = rt.new_scope("review", "david")
+    image = {
+        **rt.workspace["build"],
+        "sha256": "a" * 64,
+        "mimeType": "image/jpeg",
+        "viewport": {"width": 1280, "height": 720},
+        "data": "private-image-bytes",
+    }
+    rt.scope["images"].append(image)
+    history = [{"role": "user", "content": "Review"}]
+    messages, evidence = rt.model_messages(history)
+    assert len(messages) == 2 and len(history) == 1
+    assert evidence and "data" not in evidence[0]
+    with rt.scoped("different-review", "david"):
+        assert rt.model_messages(history) == (history, [])
+    source = copy.deepcopy(rt.workspace["source"])
+    source["files"]["extra.js"] = "const updated = 1"
+    rt.invalidate(source)
+    assert rt.model_messages(history) == (history, [])
+    assert rt.scope["images"] == []
+    rt.workspace.update(
+        html="new artifact",
+        build={
+            "sourceHash": source_hash(source),
+            "artifactHash": artifact_hash("new artifact"),
+            "revision": rt.workspace["revision"],
+        },
+    )
+    rt.scope["images"].append(image)
+    assert rt.model_messages(history) == (history, [])
+    rt.record_visual_delivery("review/llm-1", evidence)
+    assert rt.workspace["visualReview"] is None
+    assert "david_visual_review" in completion_status(rt.workspace)["missing"]
+
+
+def test_rebuild_clears_visual_images_and_acceptance(monkeypatch):
+    rt = accepted_workspace()
+    rt.scope = rt.new_scope("build", "alex")
+    rt.scope["images"] = [{**rt.workspace["build"], "data": "private-image-bytes"}]
+    html = rt.workspace["html"]
+    monkeypatch.setattr(
+        "formlane.agents.compile_project",
+        lambda source, *_: {
+            "sourceHash": source_hash(source),
+            "html": html,
+        },
+    )
+    assert rt.invoke("build_project", {})["ok"]
+    assert rt.workspace["visualReview"] is None
+    assert rt.scope["images"] == []
+
+
+def test_initial_stages_receive_workspace_and_only_new_builder_gets_template_files():
+    rt, _ = runtime()
+    delivery = Delivery(rt, None)
+    tasks = []
+
+    def stage(key, kind, label, task, message):
+        tasks.append((kind, task))
+        if kind == "planner":
+            rt.workspace.update(plan={"brief": "Plan"}, source=create_source("vanilla"))
+
+    delivery.stage = stage
+    delivery.plan()
+    assert tasks[0][0] == "planner"
+    assert tasks[0][1]["workspace"]["files"] == []
+    assert "templateFiles" not in tasks[0][1]
+    delivery.implement("builder", "build", "Build")
+    builder = tasks[-1][1]
+    assert builder["workspace"] == rt.workspace_info()
+    assert builder["templateFiles"] == rt.workspace["source"]["files"]
+    assert builder["templateFiles"] is not rt.workspace["source"]["files"]
+    delivery.implement("repair", "repair-0", "Repair", {"failures": ["broken"]})
+    assert "workspace" not in tasks[-1][1] and "templateFiles" not in tasks[-1][1]
+    assert tasks[-1][1]["evidence"] == {"failures": ["broken"]}
+    follow_up, _ = runtime(create_source("vanilla"))
+    iteration = Delivery(follow_up, None)
+    iteration.stage = stage
+    iteration.implement("quick_edit", "edit", "Edit")
+    assert tasks[-1][1]["workspace"] == follow_up.workspace_info()
+    assert "templateFiles" not in tasks[-1][1]
+    iteration.implement("builder", "build", "Build")
+    assert "templateFiles" not in tasks[-1][1]

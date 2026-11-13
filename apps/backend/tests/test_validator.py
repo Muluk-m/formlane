@@ -1,4 +1,7 @@
+import base64
+import hashlib
 import os
+import struct
 import threading
 import time
 from concurrent.futures import CancelledError
@@ -601,3 +604,68 @@ def test_randomness_is_seeded_from_the_first_script_at_load():
 
     first, second = initial(), initial()
     assert first[0]["actual"] == first[1]["actual"] == second[0]["actual"]
+
+
+def test_inspection_captures_bounded_viewport_pixels_for_current_artifact():
+    from formlane.validator import MAX_SCREENSHOT_BYTES, inspect_artifact
+
+    html = """<!doctype html><html><body style="margin:0;background:white">
+    <button onclick="document.body.style.background='black'">Change</button>
+    <main style="height:8000px">Tall content</main></body></html>"""
+    viewport = {"width": 375, "height": 812}
+    before = inspect_artifact(html, {"viewport": viewport}, settings(), lambda: False)
+    after = inspect_artifact(
+        html,
+        {
+            "viewport": viewport,
+            "actions": [{"kind": "click", "selector": "button", "value": None}],
+        },
+        settings(),
+        lambda: False,
+    )
+    for observed in (before, after):
+        image = observed["screenshot"]
+        pixels = base64.b64decode(image["data"], validate=True)
+        assert pixels.startswith(b"\xff\xd8\xff")
+        assert 0 < len(pixels) <= MAX_SCREENSHOT_BYTES
+        assert image["mimeType"] == "image/jpeg"
+        assert image["sha256"] == hashlib.sha256(pixels).hexdigest()
+        assert image["artifactHash"] == artifact_hash(html)
+        assert image["viewport"] == viewport
+        # Chromium emits baseline JPEG; the SOF dimensions prove viewport clipping.
+        marker = pixels.index(b"\xff\xc0")
+        assert struct.unpack(">HH", pixels[marker + 5 : marker + 9]) == (812, 375)
+    assert before["screenshot"]["sha256"] != after["screenshot"]["sha256"]
+
+
+@pytest.mark.parametrize("corruption", ["artifact", "viewport", "hash", "encoding", "size"])
+def test_inspector_rejects_unbound_or_oversized_screenshots(monkeypatch, corruption):
+    from formlane.validator import MAX_SCREENSHOT_BYTES, inspect_artifact
+
+    pixels = b"\xff\xd8\xfffixture"
+    image = {
+        "data": base64.b64encode(pixels).decode("ascii"),
+        "mimeType": "image/jpeg",
+        "sha256": hashlib.sha256(pixels).hexdigest(),
+        "artifactHash": artifact_hash(HTML),
+        "viewport": {"width": 1280, "height": 720},
+    }
+    if corruption == "artifact":
+        image["artifactHash"] = "stale"
+    elif corruption == "viewport":
+        image["viewport"]["width"] = 1440
+    elif corruption == "hash":
+        image["sha256"] = "stale"
+    elif corruption == "encoding":
+        image["data"] = "not base64!"
+    else:
+        image["data"] = "A" * (4 * ((MAX_SCREENSHOT_BYTES + 2) // 3) + 1)
+    monkeypatch.setattr(
+        "formlane.validator._subprocess",
+        lambda *_: {
+            "accessibilityTree": "button Save",
+            "screenshot": image,
+        },
+    )
+    with pytest.raises(RuntimeError, match="screenshot"):
+        inspect_artifact(HTML, {}, settings(), lambda: False)
