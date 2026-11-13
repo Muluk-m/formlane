@@ -11,7 +11,13 @@ Record environment/release, project/version, run ID, event cursor and the exact 
 | Generation queues but never starts       | Python worker unit, matching database/environment, PostgreSQL run/lease and provider settings                       |
 | Candidate exists but no saved version    | Current source/artifact/check hashes, implementation report, independent validation and David's acceptance          |
 | Valid source blocked after checks change | Check-set invalidation and evidence-only revalidation; never weaken the acceptance gate to accept stale evidence    |
-| Failure during execution                 | Persisted safe error category/deadline, worker journal, lease owner, named checkpoint and tool/provider event       |
+| Failure during execution                 | Persisted safe error category, worker journal, lease owner, DBOS operation history and tool/provider event          |
+| Old run fails as incompatible            | `execution_version` other than `flow-v1`, or a changed execution manifest; start a new run instead of resuming      |
+| Slow plan or first file                  | Per-stage `reasoning_effort` in `STAGES`; planner checks must not hand-simulate the program                         |
+| Stage stops with a budget error          | `TOOL_BUDGETS` per persona; the agent must decide with current evidence, not explore further                        |
+| Builder disputes checks                  | `candidate.checkDefects` routes failing checks to David; correct the check, never the valid application behavior    |
+| Follow-up re-plans instead of quick edit | Router choice and saved `versions.acceptance_checks`; versions saved before `flow-v1` have none                     |
+| Date or random behavior is flaky         | Check `clock`/`seed`, the validator warm-up navigation and that the app computes from `new Date()`/`Math.random()`  |
 | Reconnect loses progress                 | Owned SSE cursor, PostgreSQL event order and client replay/deduplication; Caddy streaming flush                     |
 | Cancelled run later writes               | Cancellation fence, transaction authority check, heartbeat loss and subprocess cleanup                              |
 | Compiler fails                           | JSON argv, built compiler entry, release working directory, permissions, virtual imports and fixed dependencies     |

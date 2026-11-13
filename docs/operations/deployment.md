@@ -2,7 +2,7 @@
 
 ## Current rollout status
 
-**Python/PostgreSQL with DBOS and the flow-first delivery workflow is the production authority.** Backend release `flow-v1-20261113b` runs commit `4639c43`. The latest verified static frontend runs `a14258ad8e89`, build `202611131330`, deployed successfully by [GitHub Actions run 43372366587](https://github.com/Muluk-m/formlane/actions/runs/43372366587). Both frontend domains returned that identity. Frontend and backend commit IDs may differ when their contracts remain compatible. See [flow-first delivery](#flow-first-delivery-flow-v1) for backend activation and rollback evidence.
+**Python/PostgreSQL with DBOS and the flow-first delivery workflow is the production authority.** Backend release `flow-v1-20261113b` runs commit `4639c43`. The latest verified static frontend runs `a14258ad8e89`, build `202611131330`, deployed successfully by [GitHub Actions run 43372366587](https://github. After the history rewrite below, the live `/version.json` still reports the pre-rewrite identity `e1871e318e8e` for this same build until the next Pages deployment.com/Muluk-m/formlane/actions/runs/43372366587). Both frontend domains returned that identity. Frontend and backend commit IDs may differ when their contracts remain compatible. See [flow-first delivery](#flow-first-delivery-flow-v1) for backend activation and rollback evidence.
 
 | Resource                    | Current identity / boundary                                                                                         |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -176,7 +176,7 @@ Keep `replay-budget-20261113` and `flow-v1-20261113` until production has been s
 
 Cloudflare inspection matched account `252fba810f75c0370e5aa7200abc8f80`: `atoms-demo-web-test` does not exist; D1 `atoms-demo` is `ffd1afdb-33f4-4063-ae97-4a624c034cd7`; the latest `formlane-api` deployment selects version `51e2cf38-563b-4ee3-8b3b-fb2e27e45a94`. Retain Worker/D1 until the stability gate, historical request evidence confirms old clients no longer need forwarding, and the final snapshot is independently backed up. A short quiet live tail alone does not establish absence of old clients. The VM final snapshot hash was rechecked against the recorded SHA-256 before archiving.
 
-The shared checkout's untracked `docs/internals/reviews/2026-11-11-demo-acceptance.md` remains untouched for its author to decide.
+The shared checkout's untracked `docs/internals/reviews/2026-11-11-demo-acceptance.md` described the retired D1 acceptance and was deleted on 2026-11-13.
 
 ### Completion evidence
 
