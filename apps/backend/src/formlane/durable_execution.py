@@ -24,7 +24,7 @@ from ._dbos import resume_on_connection
 from .settings import Settings
 from .storage import EXECUTION_VERSION
 
-# flow-v1 replaced the hierarchical crew (ADR-0015); its histories are not interchangeable.
+# Execution compatibility advances independently of the frozen flow-v1 durable paths.
 APPLICATION_VERSION = EXECUTION_VERSION
 WORKFLOW_NAME = "formlane.flow.v1"
 INCOMPATIBLE_MESSAGE = (
@@ -55,22 +55,17 @@ def compatibility_manifest(settings: Settings) -> dict:
     # Keep this version's code available until its resumable runs have drained;
     # a future incompatible version needs a deliberate migration/version handler.
     root = Path(__file__).parent
-    files = (
-        "delivery/__init__.py",
-        "delivery/_crewai.py",
-        "delivery/errors.py",
-        "delivery/flow.py",
-        "delivery/schemas.py",
-        "delivery/stages.py",
-        "delivery/tools.py",
-        "delivery/workspace.py",
-        "model_stream.py",
-        "delivery/configuration.py",
-        "project.py",
-        "compiler.py",
-        "validator.py",
-        "worker.py",
-        "durable_execution.py",
+    # Discover packaged modules and configuration so new delivery modules and
+    # resources cannot silently fall outside the replay compatibility boundary.
+    files = sorted(
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file()
+        and path.suffix in {".py", ".yaml", ".yml", ".txt"}
+        and not any(
+            part == "__pycache__" or part.startswith(".")
+            for part in path.relative_to(root).parts
+        )
     )
     endpoint = urlsplit(settings.endpoint)
     return {
@@ -136,7 +131,15 @@ def execute_durable(settings: Settings, durable: Any, invoke: Callable[[], dict]
     if durable.job["execution_version"] != APPLICATION_VERSION:
         raise ExecutionVersionMismatch(INCOMPATIBLE_MESSAGE)
     durable.check()
-    session = ExecutionSession(durable, invoke, compatibility_manifest(settings))
+    manifest = compatibility_manifest(settings)
+    saved = durable.store.get_checkpoint(
+        durable.job["id"], durable.job["lease_token"], "flow-v1/execution-manifest"
+    )
+    # A DBOS SUCCESS may still need its application completion committed. Check
+    # compatibility before returning that cached result as well as before replay.
+    if saved is not None and saved["value"] != manifest:
+        raise ExecutionVersionMismatch(INCOMPATIBLE_MESSAGE)
+    session = ExecutionSession(durable, invoke, manifest)
     _session = session
     execution_id = uuid.uuid4().hex
     queue = f"formlane-{execution_id}"
@@ -169,6 +172,13 @@ def execute_durable(settings: Settings, durable: Any, invoke: Callable[[], dict]
             or status.app_version != APPLICATION_VERSION
             or status.application_name != "formlane"
         ):
+            raise ExecutionVersionMismatch(INCOMPATIBLE_MESSAGE)
+        if status is not None and saved is None and (
+            status.status == "SUCCESS"
+            or DBOS.list_workflow_steps(run_id, load_output=False, limit=1)
+        ):
+            # An enqueue interrupted before its first step is still fresh. Once
+            # DBOS has committed work, missing application evidence fails closed.
             raise ExecutionVersionMismatch(INCOMPATIBLE_MESSAGE)
         if status is not None and status.status == "SUCCESS":
             result = DBOS.retrieve_workflow(run_id).get_result()

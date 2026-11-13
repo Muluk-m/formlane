@@ -443,7 +443,7 @@ def test_resume_preserves_checkpoint_source_history_and_fences_old_attempt(
     assert claimed["previous_version_id"] == baseline["id"]
     assert claimed["attempt_started_at"] == clock
 
-    assert claimed["execution_version"] == run["execution_version"] == "flow-v1"
+    assert claimed["execution_version"] == run["execution_version"] == "flow-v2"
     assert (
         pg_store.get_checkpoint(run["id"], claimed["lease_token"], "source:committed") == checkpoint
     )
@@ -547,6 +547,37 @@ def test_resume_rejects_baseline_mismatch_even_when_recovery_marker_is_present(
         assert session.get(Run, run["id"]).previous_version_id == baseline["id"]
 
 
+@pytest.mark.parametrize("retired", ["flow-v1", "crew-v1", "dbos-v1"])
+@pytest.mark.parametrize("terminal", ["failed", "cancelled"])
+def test_retired_history_cannot_resume_or_change_attempt(
+    pg_store, project, owner, retired, terminal
+):
+    run = start(pg_store, project, owner)
+    assert pg_store.finish_run(run["id"], run["lease_token"], terminal, "provider", "safe")
+    with pg_store.sessions.begin() as session:
+        session.get(Run, run["id"]).execution_version = retired
+    before = pg_store.get_run(project["id"], owner, run["id"])
+    history = pg_store.list_run_events(project["id"], owner, run["id"], 0)
+    assert not before["resumable"]
+    with pytest.raises(StoreError) as incompatible:
+        pg_store.resume_run(project["id"], owner, run["id"])
+    assert incompatible.value.status == 409
+    assert pg_store.get_run(project["id"], owner, run["id"]) == before
+    assert pg_store.list_run_events(project["id"], owner, run["id"], 0) == history
+    assert pg_store.claim_run("new-release") is None
+
+
+@pytest.mark.parametrize("retired", ["flow-v1", "crew-v1", "dbos-v1"])
+def test_retired_queued_history_is_never_claimed(pg_store, project, owner, retired):
+    run = pg_store.create_run(project["id"], owner, "Keep the original runtime")
+    with pg_store.sessions.begin() as session:
+        session.get(Run, run["id"]).execution_version = retired
+    history = pg_store.list_run_events(project["id"], owner, run["id"], 0)
+    assert pg_store.claim_run("new-release") is None
+    assert pg_store.get_run(project["id"], owner, run["id"]) == run
+    assert pg_store.list_run_events(project["id"], owner, run["id"], 0) == history
+
+
 def test_incompatible_workflow_failure_cannot_be_resumed(pg_store, project, owner):
     run = start(pg_store, project, owner)
     assert not pg_store.fail_incompatible_run(run["id"], "stale-token")
@@ -608,7 +639,7 @@ def test_recovery_migration_preserves_legacy_run_and_event_history(owner):
             command.upgrade(config, "head")
         assert not store.get_run(project_id, owner, old_run)["resumable"]
         migrated = store.get_run(project_id, owner, latest_run)
-        # History migrates intact; crew-v1 work cannot replay on the flow-v1 worker.
+        # History migrates intact; earlier execution versions cannot replay on this worker.
         assert migrated["attempt"] == 1 and not migrated["resumable"]
         event = store.list_run_events(project_id, owner, latest_run, 0)[0]
         assert event["attempt"] == 1 and event["data"] == {"status": "failed"}

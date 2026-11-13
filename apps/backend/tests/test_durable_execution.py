@@ -11,6 +11,7 @@ import multiprocessing
 import time
 from collections import Counter
 from contextlib import contextmanager
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -25,10 +26,10 @@ from formlane.durable_execution import (
     execute_durable,
     resume_with_authority,
 )
-from formlane.models import Run
+from formlane.models import Run, RunCheckpoint
 from formlane.project import create_source
 from formlane.settings import Settings
-from formlane.storage import LeaseLost, Store, timestamp
+from formlane.storage import LeaseLost, Store, StoreError, timestamp
 from formlane.worker import Durable
 
 SOURCE_TEXT = "document.querySelector('#app').textContent = 'Durably saved';"
@@ -303,7 +304,7 @@ def test_lost_scheduling_connection_cannot_overwrite_replacement_queue(
         client.destroy()
 
 
-@pytest.mark.parametrize("retired", ["crew-v1", "dbos-v1"])
+@pytest.mark.parametrize("retired", ["flow-v1", "crew-v1", "dbos-v1"])
 def test_retired_execution_versions_fail_closed_before_running_work(
     pg_store, project, owner, durable_database, retired
 ):
@@ -317,6 +318,9 @@ def test_retired_execution_versions_fail_closed_before_running_work(
         )
     assert pg_store.fail_incompatible_run(job["id"], job["lease_token"])
     assert not pg_store.get_run(project["id"], owner, job["id"])["resumable"]
+    with pytest.raises(StoreError) as incompatible:
+        pg_store.resume_run(project["id"], owner, job["id"])
+    assert incompatible.value.status == 409
 
 
 def test_failed_provider_retries_only_unfinished_operation_on_same_run_resume(
@@ -415,6 +419,92 @@ def test_changed_execution_manifest_rejects_replay_without_repeating_effects(
     replacement = _reclaim(pg_store, job)
     changed = durable_database.model_copy(update={"model": "different-model"})
     with _producer(changed, replacement, "finish") as (_, receive):
+        assert _receive(receive) == {"state": "error", "type": "ExecutionVersionMismatch"}
+    assert _effect_counts(pg_store) == before
+    assert pg_store.fail_incompatible_run(replacement["id"], replacement["lease_token"])
+    assert not pg_store.get_run(project["id"], owner, job["id"])["resumable"]
+
+
+@pytest.mark.parametrize("completed", [False, True], ids=["interrupted", "committed-result"])
+@pytest.mark.parametrize(
+    "changed_path",
+    [
+        "_dbos.py",
+        "delivery/hooks.py",
+        "delivery/configuration.py",
+        "delivery/resources/stages.yaml",
+        "delivery/resources/checks.txt",
+    ],
+)
+def test_changed_replay_source_rejects_history_before_reusing_operations(
+    pg_store, project, owner, durable_database, monkeypatch, completed, changed_path
+):
+    job = start(pg_store, project, owner)
+    mode = "finish" if completed else "provider-failure"
+    with _producer(durable_database, job, mode) as (_, receive):
+        receipt = _receive(receive)
+    assert receipt["state"] == ("result" if completed else "error"), receipt
+    before = _effect_counts(pg_store)
+    replacement = _reclaim(pg_store, job)
+
+    # Simulate changed installed bytes at the filesystem boundary. Never edit the
+    # running checkout or replace the manifest/DBOS compatibility decision.
+    from formlane import durable_execution
+
+    changed_file = Path(durable_execution.__file__).parent / changed_path
+    read_bytes = Path.read_bytes
+
+    def deployed_bytes(path):
+        content = read_bytes(path)
+        return content + b"\n# changed release\n" if path == changed_file else content
+
+    monkeypatch.setattr(Path, "read_bytes", deployed_bytes)
+    with pytest.raises(ExecutionVersionMismatch):
+        execute_durable(
+            durable_database,
+            Durable(pg_store, replacement, lambda: False),
+            lambda: pytest.fail("An incompatible release entered the delivery runtime"),
+        )
+    assert _effect_counts(pg_store) == before
+    assert pg_store.fail_incompatible_run(replacement["id"], replacement["lease_token"])
+    assert not pg_store.get_run(project["id"], owner, job["id"])["resumable"]
+    with pytest.raises(StoreError) as incompatible:
+        pg_store.resume_run(project["id"], owner, job["id"])
+    assert incompatible.value.status == 409
+
+
+def test_committed_result_recovers_with_unchanged_manifest(pg_store, project, owner, durable_database):
+    job = start(pg_store, project, owner)
+    with _producer(durable_database, job, "finish") as (_, receive):
+        original = _receive(receive)
+    assert original["state"] == "result", original
+    before = _effect_counts(pg_store)
+    replacement = _reclaim(pg_store, job)
+    with _producer(durable_database, replacement, "finish") as (_, receive):
+        assert _receive(receive) == original
+    assert _effect_counts(pg_store) == before
+    assert pg_store.complete_run(replacement["id"], replacement["lease_token"], original["result"])
+    assert pg_store.get_project(project["id"], owner)["source"] == original["result"]["source"]
+
+
+@pytest.mark.parametrize("completed", [False, True], ids=["interrupted", "committed-result"])
+def test_recovery_without_saved_manifest_fails_closed(
+    pg_store, project, owner, durable_database, completed
+):
+    job = start(pg_store, project, owner)
+    with _producer(durable_database, job, "finish" if completed else "provider-failure") as (
+        _,
+        receive,
+    ):
+        receipt = _receive(receive)
+    assert receipt["state"] == ("result" if completed else "error"), receipt
+    before = _effect_counts(pg_store)
+    replacement = _reclaim(pg_store, job)
+    # Simulate incomplete restored application history while retaining real DBOS
+    # committed operations/results. Recovery must require compatibility evidence.
+    with pg_store.sessions.begin() as session:
+        session.delete(session.get(RunCheckpoint, (job["id"], "flow-v1/execution-manifest")))
+    with _producer(durable_database, replacement, "finish") as (_, receive):
         assert _receive(receive) == {"state": "error", "type": "ExecutionVersionMismatch"}
     assert _effect_counts(pg_store) == before
     assert pg_store.fail_incompatible_run(replacement["id"], replacement["lease_token"])

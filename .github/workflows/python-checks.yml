@@ -62,4 +62,19 @@ jobs:
       - run: pnpm --filter @formlane/compiler build
       - run: uv sync --frozen --project apps/backend
       - run: uv run --project apps/backend ruff check apps/backend
-      - run: uv run --project apps/backend pytest apps/backend/tests
+      - name: Frozen Flow behavior equivalence
+        run: uv run --project apps/backend pytest apps/backend/tests/test_flow_equivalence.py
+      - name: Native CrewAI upgrade contracts
+        run: uv run --project apps/backend pytest apps/backend/tests/test_runtime_contract.py
+      - name: DBOS recovery and execution compatibility gates
+        run: >-
+          uv run --project apps/backend pytest
+          apps/backend/tests/test_durable_execution.py
+          apps/backend/tests/test_execution_compatibility.py
+      - name: Complete remaining backend regressions
+        run: >-
+          uv run --project apps/backend pytest apps/backend/tests
+          --ignore=apps/backend/tests/test_flow_equivalence.py
+          --ignore=apps/backend/tests/test_runtime_contract.py
+          --ignore=apps/backend/tests/test_durable_execution.py
+          --ignore=apps/backend/tests/test_execution_compatibility.py
