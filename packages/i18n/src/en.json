@@ -188,8 +188,7 @@
       "conflict": "Current changed before your request was accepted. Your comment and selection are kept; return to Current and select again.",
       "uncertain": "Delivery is uncertain. Your draft is kept. Reconnect to inspect the latest run before deciding whether to send again.",
       "checkDelivery": "Check delivery",
-      "deliveryChecked": "Latest run checked. Your draft remains available; review the conversation before sending again.",
-      "queued": "Your change is queued or running. A version is saved only after acceptance."
+      "deliveryChecked": "Latest run checked. Your draft remains available; review the conversation before sending again."
     },
     "publicViewer": {
       "loading": "Loading published app…",
