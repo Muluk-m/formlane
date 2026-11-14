@@ -1,12 +1,12 @@
 # Formlane
 
-Describe an app and watch an AI product team build it. Emma and Bob plan requirements, architecture and acceptance checks; Alex implements; the browser validates; David independently reviews; Mike routes follow-ups to a quick edit or a new plan. Follow-ups revise the current source and repeat the acceptance gate against the saved checks. This recreates the core [atoms.dev](https://atoms.dev/) loop: team conversation, interactive preview and a published link. Projects belong to an anonymous browser identity; there is no registered account system.
+Describe an app and watch an AI product team build it: streamed conversation, editable source, an interactive preview and an optional published link. Emma and Bob plan requirements, architecture and acceptance checks; Alex implements; the browser validates; David independently reviews. Mike routes follow-ups and coordinates further source repairs or check corrections until the current candidate passes independent acceptance. Projects belong to an anonymous browser identity; there is no registered account system.
 
 The architecture is **FastAPI + native CrewAI + DBOS + PostgreSQL on the existing GCP VM**, with **static React on Cloudflare Pages** and an isolated Node compiler. [Deployment evidence and recovery](docs/operations/deployment.md) record the migration, acceptance runs and release identities.
 
 Open [formlane.nainma.online](https://formlane.nainma.online). The original [Pages hostname](https://formlane-9dp.pages.dev) remains available; anonymous ownership is local to each browser origin. Published examples include the [React counter](https://formlane.nainma.online/p/8tq3mrv54j) and [market app](https://formlane.nainma.online/p/7e2g3qqnnd), shown in an isolated full-screen viewer without navigating to the backend IP.
 
-Historical production screenshots are retained in the private [acceptance evidence archive](docs/operations/deployment.md#acceptance-evidence-retention). They show release `dea6d12`, with saved v2 retained after the cancellation acceptance check; the deployment record preserves run IDs, results and file hashes.
+The [deployment record](docs/operations/deployment.md#current-rollout-status) identifies the active backend and frontend releases, with dated acceptance results and recovery instructions. Historical captures live in a private external archive; they do not establish acceptance of newer builds.
 
 ## Features
 
@@ -34,13 +34,21 @@ The API and worker share PostgreSQL business state; DBOS owns durable workflow/o
 
 A saved version requires a build for the current source, passing implementation checks, independent browser validation and David's explicit acceptance. Source/check changes invalidate affected evidence. Sandboxed Chromium validates opaque iframes with restricted networking and no provider/database credentials. Compiler subprocesses accept bounded virtual source without executing generated package scripts or plugins.
 
-Runs have **no fixed wall-clock deadline**. A 60-second lease and 10-second heartbeat detect lost workers; individual provider, compiler and browser operations retain bounded timeouts. Explicit Resume preserves run identity, source and committed results. Replayed delegations do not consume the current execution's fresh-work allowance. Cancellation fences late writes. Interrupted operations without committed results may repeat, including provider billing. Completed, superseded and baseline-invalidated runs cannot resume; failures retain accepted versions.
+Runs have **no fixed wall-clock deadline or fixed repair-round limit**. Specialist turns, tool budgets and individual provider, compiler and browser operations remain bounded. A 60-second lease and 10-second heartbeat detect lost workers. Explicit Resume preserves run identity, source and committed results when the saved execution manifest matches the deployed runtime. Cancellation fences late writes. Interrupted operations without committed results may repeat, including provider billing. Completed, superseded, baseline-invalidated or runtime-incompatible runs cannot resume; failures retain accepted versions.
 
 ## Development
 
-Use the manifest-pinned Node/pnpm versions and Python 3.13 with uv. PostgreSQL is required; use a dedicated local database and explicit migrations. Provider credentials stay in private backend environment files.
+Use Node 24, the manifest-pinned pnpm and Python 3.13 with uv. Local generation needs PostgreSQL, a sandbox-capable Chromium/Chrome and real provider credentials. Follow the [setup guide](docs/operations/development.md#setup) to install dependencies, configure the private backend environment and apply both application and DBOS migrations.
 
-`pnpm dev` starts only the web frontend. `pnpm dev:api` starts FastAPI, `pnpm dev:worker` builds the compiler and starts the durable Python worker, and `pnpm db:migrate` applies Alembic. See [development](docs/operations/development.md) for setup, CORS, origin configuration and separate process commands; [testing](docs/internals/testing.md) describes authorized focused verification.
+Run these commands from the repository root in separate terminals after setup:
+
+```bash
+pnpm dev:api     # FastAPI on http://localhost:8090
+pnpm dev:worker  # Build the compiler, then start the durable worker
+pnpm dev        # Vite frontend on http://localhost:5173
+```
+
+The API queues requests; the worker executes them. Starting the frontend alone does not start generation. See [development](docs/operations/development.md) for origins and preview configuration, and [testing](docs/internals/testing.md) for focused checks and CI coverage.
 
 ## Deployment and limitations
 
@@ -48,6 +56,6 @@ The API uses the reserved GCP address `formlane-api` in `us-central1` on the exi
 
 Generated projects are frontend applications with fixed template dependencies, bounded to 64 files/256 KiB of source and 512 KiB of compiled preview. The service does not provision generated backends, databases or authentication. Interactive state is in memory inside the opaque preview; saved source/history does not persist generated runtime state. Downloaded projects run with `pnpm install`, `pnpm dev` and `pnpm build`; React projects also support `pnpm typecheck`. The compiler supports local JS/TS/JSX/TSX, CSS, JSON and SVG with fixed React imports, not arbitrary server modules or custom Vite plugins.
 
-Anonymous identity is a demo ownership boundary. Current, viewed and published versions remain distinct; restoring or undoing does not republish. Real-model runs take minutes (measured on 2026-11-13: initial builds about 4–7 minutes, contained style edits about 2–3 minutes); failed or cancelled runs preserve prior results. No GitHub export, visual editor or multi-model race is claimed.
+Anonymous identity is a demo ownership boundary. Current, viewed and published versions remain distinct; restoring or undoing does not republish. Real-model runs can take minutes and vary with the request, provider and repair iterations; dated measurements belong to the [acceptance record](docs/operations/deployment.md#iterative-acceptance-activation-2026-11-13). Failed or cancelled runs preserve prior results. No GitHub export, visual editor or multi-model race is claimed.
 
 [Documentation](docs/README.md) · [Terminology](CONTEXT.md) · [Design system](DESIGN.md) · [Agent guidance](AGENTS.md)
