@@ -71,7 +71,7 @@ export function SelectionPreview({ artifact, device, selection, onSelection, onI
       onEvent: (event) => {
         if (event.type === 'ready') {
           if (documentId.current && documentId.current !== event.payload.documentId) invalidate()
-          setEditing(event.payload.enabled)
+          // Runtime interception can pause for capture without leaving the host's Edit layout.
           documentId.current = event.payload.documentId
           setReady(true)
         } else if (event.type === 'selected') {

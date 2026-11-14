@@ -275,8 +275,13 @@ def test_native_capture_verifies_surface_and_uploads_only_selected_pixels(worksp
 
     page = workspace
     frame = page.frame_locator('[data-testid="preview-frame"] iframe')
-    expected = Image.open(io.BytesIO(frame.locator("#scene-action").screenshot())).convert("RGB")
     page.get_by_test_id("selection-edit").click()
+    page.get_by_role("button", name="Layers", exact=True).click()
+    page.get_by_role("button", name="Expand Selection scene", exact=True).click()
+    layers = page.get_by_role("tree", name="Layers", exact=True)
+    expect(layers).to_be_visible()
+    preview_bounds = page.locator('[data-testid="preview-frame"] iframe').bounding_box()
+    expected = Image.open(io.BytesIO(frame.locator("#scene-action").screenshot())).convert("RGB")
     frame.locator("#scene-action").click(position={"x": 5, "y": 5})
     page.get_by_test_id("followup-input").fill("Keep my live scene")
     page.get_by_test_id("selection-capture").click()
@@ -295,3 +300,7 @@ def test_native_capture_verifies_surface_and_uploads_only_selected_pixels(worksp
         assert max(ImageStat.Stat(ImageChops.difference(actual, expected)).mean) < 12
     expect(page.get_by_test_id("selection-attachment")).to_contain_text("button")
     expect(page.get_by_test_id("followup-input")).to_have_value("Keep my live scene")
+    expect(layers).to_be_visible()
+    expect(page.get_by_role("treeitem", name="Selection scene", exact=True)).to_have_attribute("aria-expanded", "true")
+    expect(page.get_by_test_id("selection-edit")).to_have_attribute("aria-pressed", "true")
+    assert page.locator('[data-testid="preview-frame"] iframe').bounding_box() == preview_bounds

@@ -53,11 +53,17 @@ export async function captureSelectionImage(
   prepare: () => Promise<SelectionEvidence>,
   signal: AbortSignal,
 ): Promise<SelectionImage> {
-  if (!navigator.mediaDevices?.getDisplayMedia || !('CropTarget' in globalThis)) throw new Error('capture-unsupported')
-  const cropTarget = globalThis.CropTarget
+  const capabilities: object = globalThis
+  if (!navigator.mediaDevices?.getDisplayMedia || !('CropTarget' in capabilities)) throw new Error('capture-unsupported')
+  const cropTarget = capabilities.CropTarget
   if (!cropTarget || typeof cropTarget !== 'object' && typeof cropTarget !== 'function' || !('fromElement' in cropTarget) || typeof cropTarget.fromElement !== 'function') throw new Error('capture-unsupported')
+  const displayOptions: DisplayMediaStreamOptions & Pick<MediaStreamConstraints, 'preferCurrentTab'> = {
+    video: { displaySurface: 'browser' },
+    audio: false,
+    preferCurrentTab: true,
+  }
   // Keep the native chooser call in the initiating user gesture.
-  const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: 'browser' }, audio: false, preferCurrentTab: true })
+  const stream = await navigator.mediaDevices.getDisplayMedia(displayOptions)
   const stop = () => { for (const track of stream.getTracks()) track.stop() }
   signal.addEventListener('abort', stop, { once: true })
   const video = document.createElement('video')
