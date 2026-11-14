@@ -21,21 +21,69 @@ MAX_METADATA_BYTES = 64 * 1024
 MAX_IMAGE_BYTES = 2_000_000
 MAX_IMAGE_PIXELS = 16_000_000
 MAX_SELECTION_REQUEST_BYTES = 3 * 1024 * 1024
-ATTRIBUTES = frozenset({
-    "id", "class", "role", "aria-label", "aria-labelledby", "aria-describedby",
-    "aria-expanded", "aria-pressed", "aria-selected", "aria-checked", "aria-disabled",
-    "title", "alt", "type", "name", "placeholder", "disabled", "checked", "tabindex",
-})
-STYLES = frozenset({
-    "display", "visibility", "position", "color", "background-color", "font-family",
-    "font-size", "font-weight", "line-height", "text-align", "text-decoration",
-    "width", "height", "margin", "padding", "border", "border-radius", "opacity",
-    "overflow", "overflow-x", "overflow-y", "z-index", "transform", "flex-direction",
-    "align-items", "justify-content", "gap", "grid-template-columns",
-})
+ATTRIBUTES = frozenset(
+    {
+        "id",
+        "class",
+        "role",
+        "aria-label",
+        "aria-labelledby",
+        "aria-describedby",
+        "aria-expanded",
+        "aria-pressed",
+        "aria-selected",
+        "aria-checked",
+        "aria-disabled",
+        "title",
+        "alt",
+        "type",
+        "name",
+        "placeholder",
+        "disabled",
+        "checked",
+        "tabindex",
+    }
+)
+STYLES = frozenset(
+    {
+        "display",
+        "visibility",
+        "position",
+        "color",
+        "background-color",
+        "font-family",
+        "font-size",
+        "font-weight",
+        "line-height",
+        "text-align",
+        "text-decoration",
+        "width",
+        "height",
+        "margin",
+        "padding",
+        "border",
+        "border-radius",
+        "opacity",
+        "overflow",
+        "overflow-x",
+        "overflow-y",
+        "z-index",
+        "transform",
+        "flex-direction",
+        "align-items",
+        "justify-content",
+        "gap",
+        "grid-template-columns",
+    }
+)
 Identifier = Annotated[str, StringConstraints(min_length=1, max_length=128)]
 Hash = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-Uuid = Annotated[str, StringConstraints(pattern=r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")]
+Uuid = Annotated[
+    str,
+    StringConstraints(
+        pattern=r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    ),
+]
 Tag = Annotated[str, StringConstraints(pattern=r"^[a-zA-Z][a-zA-Z0-9:_-]{0,63}$")]
 Coordinate = Annotated[float, Field(ge=-10_000_000, le=10_000_000, allow_inf_nan=False)]
 Dimension = Annotated[float, Field(ge=0, le=1_000_000, allow_inf_nan=False)]
@@ -111,7 +159,16 @@ class ElementContext(EvidenceModel):
     def safe_fields(self):
         if set(self.attributes) - ATTRIBUTES or set(self.styles) - STYLES:
             raise ValueError("Selection contains unsupported attributes or styles.")
-        if self.tagName.lower() in {"script", "style", "meta", "link", "head", "title", "noscript", "template"}:
+        if self.tagName.lower() in {
+            "script",
+            "style",
+            "meta",
+            "link",
+            "head",
+            "title",
+            "noscript",
+            "template",
+        }:
             raise ValueError("Selection must describe rendered content.")
         if self.attributes.get("type", "").lower() == "password" and self.text:
             raise ValueError("Password content cannot be attached.")
@@ -140,15 +197,22 @@ class RegionEvidence(EvidenceModel):
         if self.focus is not None:
             focus = self.focus
             member = nodes.get(focus.nodeId)
-            if member is not None and (member.sourceId, member.tagName) != (focus.sourceId, focus.tagName):
+            if member is not None and (member.sourceId, member.tagName) != (
+                focus.sourceId,
+                focus.tagName,
+            ):
                 raise ValueError("Region focus contradicts a member's source identity.")
             area = self.rectangle
             if (
-                focus.viewport != self.viewport or focus.scroll != self.scroll
+                focus.viewport != self.viewport
+                or focus.scroll != self.scroll
                 or not any(
-                    rect.width > 0 and rect.height > 0
-                    and rect.x < area.x + area.width and rect.x + rect.width > area.x
-                    and rect.y < area.y + area.height and rect.y + rect.height > area.y
+                    rect.width > 0
+                    and rect.height > 0
+                    and rect.x < area.x + area.width
+                    and rect.x + rect.width > area.x
+                    and rect.y < area.y + area.height
+                    and rect.y + rect.height > area.y
                     for rect in focus.rects
                 )
             ):
@@ -170,7 +234,10 @@ class SelectionImage(EvidenceModel):
     def valid_pixels(self):
         try:
             pixels = base64.b64decode(self.base64, validate=True)
-            if len(pixels) > MAX_IMAGE_BYTES or base64.b64encode(pixels).decode("ascii") != self.base64:
+            if (
+                len(pixels) > MAX_IMAGE_BYTES
+                or base64.b64encode(pixels).decode("ascii") != self.base64
+            ):
                 raise ValueError("Invalid image encoding or size.")
             with Image.open(io.BytesIO(pixels), formats=["PNG", "JPEG", "WEBP"]) as image:
                 if (
@@ -184,8 +251,17 @@ class SelectionImage(EvidenceModel):
             # verify checks container integrity; load also detects truncated pixel data.
             with Image.open(io.BytesIO(pixels), formats=["PNG", "JPEG", "WEBP"]) as image:
                 image.load()
-        except (ValueError, OSError, SyntaxError, binascii.Error, UnidentifiedImageError, Image.DecompressionBombError) as error:
-            raise ValueError("Invalid selection image (2 MB, 16 million pixels maximum).") from error
+        except (
+            ValueError,
+            OSError,
+            SyntaxError,
+            binascii.Error,
+            UnidentifiedImageError,
+            Image.DecompressionBombError,
+        ) as error:
+            raise ValueError(
+                "Invalid selection image (2 MB, 16 million pixels maximum)."
+            ) from error
         return self
 
 
@@ -221,15 +297,26 @@ class SelectionSubmission(EvidenceModel):
         data = self.model_dump(exclude_unset=True)
         if data.get("image"):
             data["image"].pop("base64")
+
         # PostgreSQL JSONB rejects NUL and unpaired surrogates. Enforce UTF-16
         # character budgets shared with the browser, including astral characters.
         def check_strings(value, key=""):
             if isinstance(value, str):
                 limits = {
-                    "text": 2000, "selector": 1000, "label": 500, "context": 500,
-                    "attributes": 500, "styles": 500, "steps": 500, "role": 100,
-                    "nodeId": 128, "sourceId": 128, "sessionId": 128, "documentId": 128,
-                    "instrumentationVersion": 128, "tagName": 64,
+                    "text": 2000,
+                    "selector": 1000,
+                    "label": 500,
+                    "context": 500,
+                    "attributes": 500,
+                    "styles": 500,
+                    "steps": 500,
+                    "role": 100,
+                    "nodeId": 128,
+                    "sourceId": 128,
+                    "sessionId": 128,
+                    "documentId": 128,
+                    "instrumentationVersion": 128,
+                    "tagName": 64,
                 }
                 if "\0" in value or len(value.encode("utf-16-le")) // 2 > limits.get(key, 4000):
                     raise ValueError("Selection text exceeds its limit.")
@@ -240,8 +327,16 @@ class SelectionSubmission(EvidenceModel):
             elif isinstance(value, list):
                 for item in value:
                     check_strings(item, key)
+
         check_strings(data)
-        if len(json.dumps(data, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")) > MAX_METADATA_BYTES:
+        if (
+            len(
+                json.dumps(data, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode(
+                    "utf-8"
+                )
+            )
+            > MAX_METADATA_BYTES
+        ):
             raise ValueError("Selection metadata exceeds 64 KiB.")
         return self
 
@@ -249,7 +344,12 @@ class SelectionSubmission(EvidenceModel):
 def bind_selection(submission: SelectionSubmission, manifest: dict) -> dict:
     """Resolve only compiler IDs; never consume a client path or source range."""
     data = submission.model_dump(exclude_unset=True)
-    for key in ("sourceHash", "canonicalArtifactHash", "editorArtifactHash", "instrumentationVersion"):
+    for key in (
+        "sourceHash",
+        "canonicalArtifactHash",
+        "editorArtifactHash",
+        "instrumentationVersion",
+    ):
         if data[key] != manifest[key]:
             raise ValueError("Selection artifact identity does not match its version.")
     evidence = submission.evidence
@@ -268,11 +368,24 @@ def bind_selection(submission: SelectionSubmission, manifest: dict) -> dict:
             continue
         resolved.add(element.nodeId)
         if element.sourceId is None:
-            resolutions.append({"nodeId": element.nodeId, "status": "unmapped", "reason": "No compiler source attribution."})
+            resolutions.append(
+                {
+                    "nodeId": element.nodeId,
+                    "status": "unmapped",
+                    "reason": "No compiler source attribution.",
+                }
+            )
         else:
             location = manifest["entries"][element.sourceId]
             # Source locations are copied from the trusted compiler, never the browser.
-            resolutions.append({"nodeId": element.nodeId, "status": "mapped", "sourceId": element.sourceId, "location": location})
+            resolutions.append(
+                {
+                    "nodeId": element.nodeId,
+                    "status": "mapped",
+                    "sourceId": element.sourceId,
+                    "location": location,
+                }
+            )
     return {**data, "sourceResolutions": resolutions}
 
 
@@ -282,7 +395,8 @@ def selection_summary(selection: dict | None) -> dict | None:
     evidence = selection["evidence"]
     element = evidence.get("element")
     return {
-        "selectionId": selection["selectionId"], "kind": evidence["kind"],
+        "selectionId": selection["selectionId"],
+        "kind": evidence["kind"],
         "tagName": element["tagName"] if element else None,
         "memberCount": 1 if element else len(evidence["elements"]),
         "hasImage": bool(selection.get("image")),

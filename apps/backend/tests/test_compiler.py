@@ -260,7 +260,9 @@ def test_editor_adapter_rejects_unusable_source_locations_and_artifacts(fault, t
         compiled["manifest"]["editorArtifactHash"] = "0" * 64
     else:
         compiled["editorHtml"] = "x" * (512 * 1024 + 1)
-    script = "import sys,json;json.load(sys.stdin);sys.stdout.write(" + repr(json.dumps(compiled)) + ")"
+    script = (
+        "import sys,json;json.load(sys.stdin);sys.stdout.write(" + repr(json.dumps(compiled)) + ")"
+    )
     executable = tmp_path / "compiler_fault.py"
     executable.write_text(script)
     with pytest.raises(ValueError):
@@ -273,6 +275,8 @@ def test_editor_adapter_preserves_original_html_line_coordinates(newline):
 
     source = legacy_source(f"<!doctype html>{newline}<h1>Original heading</h1>")
     compiled = compile_editor_project(source, settings(), lambda: False)
-    heading = next(row for row in compiled["manifest"]["entries"].values() if row["tagName"] == "h1")
+    heading = next(
+        row for row in compiled["manifest"]["entries"].values() if row["tagName"] == "h1"
+    )
     assert heading["startLine"] == heading["endLine"] == 2
     assert heading["startColumn"] == 1
