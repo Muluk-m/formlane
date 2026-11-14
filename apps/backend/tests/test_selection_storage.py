@@ -82,9 +82,10 @@ def test_selection_migration_preserves_populated_history_and_readiness(owner):
         assert detail["messages"][0]["selectionSummary"] is None
         run = store.get_run(project_id, owner, run_id)
         assert run["selection"] is None and run["selectionSummary"] is None
-        assert store.resume_run(project_id, owner, run_id)["id"] == run_id
-        claimed = store.claim_run("migrated-worker")
-        assert store.harness_context(run_id, claimed["lease_token"])["selection"] is None
+        with pytest.raises(StoreError) as retired:
+            store.resume_run(project_id, owner, run_id)
+        assert retired.value.status == 409
+        assert store.claim_run("migrated-worker") is None
 
 
 def test_expected_current_version_conflict_keeps_existing_state(pg_store, project, owner, result):

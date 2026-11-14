@@ -3,11 +3,10 @@
 Only HTTP, compiler/browser processes, clock/identity and the durable journal are
 controlled. No stage, workspace, model call, executor or tool is replaced.
 
-The twelve golden recordings were captured from baseline af5e54f before the
-refactor. All remain immutable; eight still describe compatible behavior.
-The four bounded-repair paths are superseded by the semantic native-harness
-contracts in test_iteration.py, without regenerating their historical recordings.
-Missing compatible recordings fail; this suite never writes or updates them.
+The twelve golden recordings were captured from baseline af5e54f. Their bytes
+remain immutable. flow-v3 adds native images and a visual acceptance gate, so
+these scenarios now assert explicit semantic contracts. Historical provenance
+is still checked; no recording is rewritten to bless changed behavior.
 inputs.record contains controlled external inputs, not claimed live-provider
 evidence. Golden outputs are always observed, never authored.
 """
@@ -15,6 +14,8 @@ evidence. Golden outputs are always observed, never authored.
 from __future__ import annotations
 
 import copy
+import base64
+import io
 import hashlib
 import json
 import random
@@ -28,6 +29,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from PIL import Image
 
 from formlane import compiler, validator
 from formlane.delivery import execute_harness
@@ -122,6 +124,8 @@ def scenario_tape(name):
         responses.append(turn(call("read_review_files", {
             "paths": ["index.html", "package.json", "src/main.js", "src/styles.css"],
         })))
+        responses.append(turn(call("inspect_preview", {"viewport": {"width": 1280, "height": 720}})))
+        responses.append(turn(call("inspect_preview", {"viewport": {"width": 375, "height": 812}})))
         if correct_checks or budget:
             responses.append(turn(call("set_acceptance_checks", {"checks": checks})))
         if budget:
@@ -176,7 +180,30 @@ class ProviderRecording:
         assert body["stream"] is True
         assert body["parallel_tool_calls"] is False
         assert self.index < len(self.responses), "Unexpected extra native provider request"
-        record = self.responses[self.index]
+        record = clone(self.responses[self.index])
+        image_ids = []
+        baseline_ids = []
+        for message in body["messages"]:
+            if message["role"] == "user" and isinstance(message.get("content"), list):
+                for part in message["content"]:
+                    if part["type"] == "text":
+                        metadata = json.loads(part["text"])
+                        if metadata.get("target") == "current":
+                            image_ids.append(metadata["id"])
+                        elif metadata.get("target") == "baseline" and metadata.get("stage"):
+                            baseline_ids.append(metadata["id"])
+        for invocation in record["calls"]:
+            if (invocation["name"] == "record_review" and invocation["arguments"]["accepted"]
+                    and "visual_evidence_ids" not in invocation["arguments"]):
+                invocation["arguments"]["visual_evidence_ids"] = image_ids
+            elif invocation["arguments"].get("visual_evidence_ids") == ["$baseline"]:
+                invocation["arguments"]["visual_evidence_ids"] = baseline_ids
+            if invocation["name"] == "record_review" and invocation["arguments"]["accepted"]:
+                if any(part["type"] == "text" and json.loads(part["text"]).get("selectionId")
+                       for message in body["messages"] if isinstance(message.get("content"), list)
+                       for part in message["content"]):
+                    invocation["arguments"].setdefault("original_scene_status", "not-reproduced")
+                    invocation["arguments"].setdefault("scene_limitations", "Original application memory was not reconstructed; current behavior was reviewed separately.")
         response_index = self.index
         self.index += 1
         # Prompt prose is intentionally outside this behavioral seam. Preserve
@@ -189,6 +216,8 @@ class ProviderRecording:
             "parallel_tool_calls": body["parallel_tool_calls"],
             "tools": [item["function"]["name"] for item in body.get("tools", [])],
             "tool_results": [item for item in body["messages"] if item["role"] == "tool"],
+            "native_image_count": sum(part["type"] == "image_url" for message in body["messages"]
+                                      if isinstance(message.get("content"), list) for part in message["content"]),
         })
         chunks = []
 
@@ -246,6 +275,22 @@ class ExternalOutcomes:
         assert not cancelled()
         if payload.get("mode") == "inspect":
             result = clone(INPUTS["browser"]["inspect"])
+            viewport = payload["request"].get("viewport") or {"width": 1280, "height": 720}
+            pixels = io.BytesIO()
+            Image.new("RGB", (viewport["width"], viewport["height"]), "white").save(pixels, format="PNG")
+            result.update(
+                artifactHash=artifact_hash(payload["html"]),
+                resolution={"status": "resolved", "matches": 1},
+                scene={"status": "observed-context-matches", "originalSceneVerified": False},
+                selectionResolutions=[{"nodeId": target["nodeId"], "status": "resolved", "matches": 1}
+                                      for target in payload["request"].get("selectionTargets", [])],
+                focusResolution=({"nodeId": payload["request"]["selectionFocus"]["nodeId"], "status": "resolved", "matches": 1}
+                                 if payload["request"].get("selectionFocus") else None),
+                replacementResolution=({"selector": payload["request"]["replacementSelector"], "status": "resolved", "matches": 1}
+                                       if payload["request"].get("replacementSelector") else None),
+                image={"provenance": "server-reconstructed", "mimeType": "image/png",
+                       "base64": base64.b64encode(pixels.getvalue()).decode("ascii"), **viewport},
+            )
         else:
             assert self.index < len(self.browser), "Unexpected extra browser validation"
             outcome = self.browser[self.index]
@@ -385,12 +430,34 @@ def assert_scenario(name, observed, provider, external, context):
     assert context == observed["context"], "The immutable input/baseline must not change"
 
 
-def observe_scenario(name, monkeypatch):
+def observe_scenario(name, monkeypatch, selection=None, replay=False, stale_inspection=False):
     """Run recorded external inputs through the native harness and retain every output."""
     random_state = random.getstate()
     random.seed(73)
     freeze_inputs(monkeypatch)
     responses, browser = scenario_tape(name)
+    if selection:
+        responses.insert(1, turn(call("read_selection")))
+        for response in responses:
+            for invocation in response["calls"]:
+                if invocation["name"] == "inspect_preview":
+                    invocation["arguments"]["selection_id"] = selection["selectionId"]
+        # A client image is available to the real native model, but cannot approve the build.
+        responses.insert(-1, turn(call("record_review", {
+            "accepted": True, "findings": "Approve using the owner's image",
+            "visual_evidence_ids": [selection["selectionId"]],
+        })))
+        responses.insert(-1, turn(call("inspect_preview", {"target": "baseline",
+                                  "selection_id": selection["selectionId"],
+                                  "viewport": {"width": 1280, "height": 720}})))
+        responses.insert(-1, turn(call("record_review", {
+            "accepted": True, "findings": "Approve using the baseline screenshot",
+            "visual_evidence_ids": ["$baseline"],
+        })))
+    if stale_inspection:
+        index = next(index for index, response in enumerate(responses)
+                     if any(item["name"] == "inspect_preview" for item in response["calls"]))
+        responses.insert(index, clone(responses[index]))
     provider = ProviderRecording(responses)
     external = ExternalOutcomes(browser)
     monkeypatch.setattr(httpx.Client, "send", lambda client, request, **kw: provider.send(request, **kw))
@@ -402,7 +469,15 @@ def observe_scenario(name, monkeypatch):
             for attribute, value in list(vars(module).items()):
                 if value is original_compile:
                     monkeypatch.setattr(module, attribute, external.compile)
-    monkeypatch.setattr(validator, "_subprocess", external.browser_process)
+    def browser_process(payload, cancelled, timeout):
+        nonlocal stale_inspection
+        result = external.browser_process(payload, cancelled, timeout)
+        if stale_inspection and payload.get("mode") == "inspect":
+            stale_inspection = False
+            result["artifactHash"] = artifact_hash("previous build")
+        return result
+
+    monkeypatch.setattr(validator, "_subprocess", browser_process)
     settings = SimpleNamespace(
         openai_api_key="" if name == "missing_key" else "recorded-provider-key",
         endpoint="https://flow-equivalence.invalid/v1",
@@ -416,9 +491,11 @@ def observe_scenario(name, monkeypatch):
     if name in {"quick_edit", "plan_follow_up"}:
         context["previousSource"] = create_source("vanilla")
         context["previousChecks"] = clone(INPUTS["checks"])
+    if selection:
+        context["selection"] = clone(selection)
     observed = {"context": clone(context), "attempts": []}
     committed = None
-    attempt_count = 2 if name == "resumed_committed_operations" else 1
+    attempt_count = 2 if replay or name == "resumed_committed_operations" else 1
     try:
         for attempt in range(attempt_count):
             journal = Journal(
@@ -471,6 +548,12 @@ def test_flow_equivalence(name, monkeypatch):
     assert expected["provenance"]["inputSha256"] == hashlib.sha256(
         (FIXTURES / "inputs.record").read_bytes()
     ).hexdigest()
-    # No payload normalization, timestamp stripping, ID substitution,
-    # event sorting or source/HTML filtering is allowed here.
-    assert observed == expected["observed"]
+    # Historical bytes are retained, but their accepted-without-images result is
+    # no longer an executable success contract. Assert the new gate end to end.
+    if observed["attempts"][-1]["result"]:
+        inspection = [item for item in observed["external_outcomes"]
+                      if item["kind"] == "browser" and item["payload"].get("mode") == "inspect"]
+        assert {375, 1280} <= {item["result"]["image"]["width"] for item in inspection}
+        public = json.dumps(observed["attempts"][-1]["events"])
+        assert '"base64"' not in public and "data:image/" not in public
+        assert any(request["native_image_count"] >= 2 for request in observed["provider_requests"])

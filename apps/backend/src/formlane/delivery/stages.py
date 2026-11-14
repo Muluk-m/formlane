@@ -14,6 +14,7 @@ from .errors import HarnessFailure, RuntimeAbort
 from .hooks import stage_tool_hooks
 from .tools import tools_for_stage
 from .workspace import FLOW_VERSION, Runtime, completion_status, current_build
+from .selection import summary
 
 
 class Delivery:
@@ -77,9 +78,12 @@ class Delivery:
                 self.rt.emit(
                     "agent_start", {"id": persona, "name": config.display_name, "task": label}
                 )
+            if kind == "reviewer" and self.rt.selection:
+                task = {**task, "frozenSelection": self.rt.read_selection({})}
             agent = self.agent(kind)
             native = Task(
-                description=json.dumps({"stage": label, **task}, ensure_ascii=False),
+                description=json.dumps({"stage": label, **task, "selection": summary(self.rt.selection),
+                                        "workspace": self.rt.workspace_info()}, ensure_ascii=False),
                 expected_output="Call your terminal tool with the stage result.",
                 agent=agent,
             )

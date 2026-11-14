@@ -103,6 +103,16 @@ def accepted_workspace():
         "findings": "Verified",
         "checksHash": checks_hash(state["checks"]),
     }
+    rt.scope = rt.new_scope("flow-v1/review-0", "david")
+    for key, width in (("desktop", 1280), ("mobile", 375)):
+        state["visualEvidence"][key] = {
+            **state["build"], "id": key, "target": "current", "role": "david",
+            "stage": rt.scope["path"], "resolution": {"status": "resolved"},
+            "image": {"provenance": "server-reconstructed", "mimeType": "image/png",
+                      "base64": "cGl4ZWxz", "width": width, "height": 812},
+        }
+        state["visualReceipts"][key] = rt.scope["path"]
+    state["review"]["visualEvidenceIds"] = ["desktop", "mobile"]
     return rt
 
 
@@ -207,7 +217,9 @@ def test_review_requires_own_browser_and_changed_file_inspection():
     rt = accepted_workspace()
     rt.workspace["source"]["files"]["index.html"] += "<!-- requested change -->"
     rt.workspace["build"]["sourceHash"] = source_hash(rt.workspace["source"])
-    args = {"accepted": True, "findings": "Accepted"}
+    for value in rt.workspace["visualEvidence"].values():
+        value["sourceHash"] = rt.workspace["build"]["sourceHash"]
+    args = {"accepted": True, "findings": "Accepted", "visual_evidence_ids": ["desktop", "mobile"]}
     with pytest.raises(ValueError, match="inspection"):
         rt.record_review(args)
     rt.read_review_files({"paths": ["index.html"]})
@@ -223,6 +235,8 @@ def test_native_review_recovers_missing_files_and_replays_without_provider(monke
     state = rt.workspace
     state["source"] = create_source("react-ts")
     state["build"]["sourceHash"] = source_hash(state["source"])
+    for value in state["visualEvidence"].values():
+        value["sourceHash"] = state["build"]["sourceHash"]
     state["implementationValidation"] = dict(state["build"])
     state["review"] = None
     missing = ["package.json", "tsconfig.json"]
@@ -243,7 +257,7 @@ def test_native_review_recovers_missing_files_and_replays_without_provider(monke
             assert all(path in feedback for path in missing)
             name, args = "read_review_files", {"paths": missing}
         elif turns == 3:
-            name, args = "record_review", {"accepted": True, "findings": "Reviewed all files"}
+            name, args = "record_review", {"accepted": True, "findings": "Reviewed all files", "visual_evidence_ids": ["desktop", "mobile"]}
         else:
             pytest.fail("A recorded verdict must end the review stage")
         yield ChatCompletionChunk(
@@ -437,7 +451,7 @@ def test_plan_initializes_template_once_with_binding_checks():
     assert rt.invoke(rt.submit_candidate, {"summary": "Done"})["error"].startswith("Build")
 
 
-def test_independent_review_checks_preserve_current_implementation_evidence():
+def test_independent_review_checks_preserve_current_implementation_evidence(monkeypatch):
     rt = accepted_workspace()
     checks = [
         {
@@ -462,14 +476,29 @@ def test_independent_review_checks_preserve_current_implementation_evidence():
     assert set(completion_status(rt.workspace)["missing"]) == {
         "david_validation",
         "david_acceptance",
+        "david_visual_approval",
     }
     assert rt.workspace["checks"][0]["name"] == SMOKE_CHECK_NAME
     rt.settings.browser_executable = os.environ.get("BROWSER_EXECUTABLE_PATH")
     rt.scope = rt.new_scope("independent-review", "david")
     report = rt.validate_preview({})
     assert report["valid"], report["issues"]
+    screenshots = [rt.invoke(rt.inspect_preview, {"viewport": viewport})["id"] for viewport in (
+        {"width": 1280, "height": 720}, {"width": 375, "height": 812},
+    )]
+
+    def provider(llm, messages, *args):
+        images = [part for message in messages if isinstance(message.get("content"), list)
+                  for part in message["content"] if part["type"] == "image_url"]
+        assert len(images) == 2
+        assert all(part["image_url"]["url"].startswith("data:image/png;base64,") for part in images)
+        return "Viewed both current viewport images."
+
+    monkeypatch.setattr(OpenAICompletion, "call", provider)
+    model = ObservedOpenAI(model="test", api_key="controlled").bind(rt)
+    model.call("Inspect the current visual evidence.")
     review = rt.record_review(
-        {"accepted": True, "findings": "Independent browser checks passed."}
+        {"accepted": True, "findings": "Independent browser checks passed.", "visual_evidence_ids": screenshots}
     )
     assert review["completion"]["ready"]
     # Re-running implementation evidence on unchanged source keeps the independent verdict.

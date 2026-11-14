@@ -25,7 +25,7 @@ from .selection import selection_summary
 
 LEASE_DURATION_MS = 60_000
 # Runs execute only on the worker release that created their durable history.
-EXECUTION_VERSION = "flow-v2"
+EXECUTION_VERSION = "flow-v3"
 TERMINAL = {"completed", "failed", "cancelled"}
 ERRORS = {
     "timeout": "An earlier time limit interrupted this run. Continue from the saved progress.",

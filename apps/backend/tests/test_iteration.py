@@ -1,8 +1,7 @@
-"""Semantic replacements for four immutable, superseded bounded-repair recordings.
+"""Native semantic contracts for iteration and flow-v3 visual acceptance.
 
-The eight compatible paths still compare every golden byte in test_flow_equivalence.
-These contracts use the same native harness, HTTP/SSE transport and process seams;
-no Delivery stage, Runtime operation, executor or completion predicate is replaced.
+Historical recordings remain immutable. These tests use HTTP/SSE and process
+boundaries; no stage, Runtime operation, executor or completion gate is replaced.
 """
 
 from __future__ import annotations
@@ -62,6 +61,8 @@ class IterationTape:
             self.responses.append(turn(call("set_acceptance_checks", {
                 "checks": clone(INPUTS["checks"]),
             })))
+        self.responses.append(turn(call("inspect_preview", {"viewport": {"width": 1280, "height": 720}})))
+        self.responses.append(turn(call("inspect_preview", {"viewport": {"width": 375, "height": 812}})))
         self.responses.append(turn(call("validate_preview")))
         self.browser.append(outcome)
         self.responses.append(turn(call("record_review", {
@@ -262,7 +263,7 @@ def test_stale_accepted_verdict_and_iteration_decision_cannot_advance_a_new_stag
     committed = attempts[-1]["committed"]
     assert "flow-v1/iteration-1-0/llm-0" in committed
     assert "flow-v1/iteration-1-1/tool-1-schedule_iteration" in committed
-    assert "flow-v1/review-2/tool-2-record_review" in committed
+    assert "flow-v1/review-2/tool-4-record_review" in committed
     decision = committed["flow-v1/iteration-1-1/tool-1-schedule_iteration"]["output"]
     assert decision["stage"] == "flow-v1/iteration-1-1"
     assert not any("review-repair-" in key for key in committed)
