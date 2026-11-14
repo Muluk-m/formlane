@@ -294,6 +294,16 @@ async def _open(browser, html: str, viewport, clock, seed: int = DEFAULT_SEED):
     await context.route_web_socket("**/*", lambda socket: socket.close())
     # Init scripts run in every frame, including the opaque candidate iframe.
     await context.add_init_script(SEEDED_RANDOM.replace("__SEED__", str(seed)))
+    await context.add_init_script("""(() => {
+      window.__clickProbe = [];
+      for (const type of ['pointerdown', 'pointerup', 'click']) {
+        document.addEventListener(type, event => {
+          window.__clickProbe.push({type, target: event.target.outerHTML,
+            trusted: event.isTrusted, value: document.querySelector('output')?.textContent,
+            handler: String(event.target.onclick), prevented: event.defaultPrevented});
+        }, true);
+      }
+    })()""")
     page = await context.new_page()
     errors, console = [], []
     page.on("pageerror", lambda error: errors.append(str(error)[:300]))
@@ -387,6 +397,9 @@ async def _run_browser(html: str, checks: list[dict], settings, cancelled, repor
                         )
                     )
                     issues = [outcome["issue"] for outcome in outcomes if outcome["issue"]]
+                    if issues:
+                        probe = await session.frame.evaluate("() => window.__clickProbe")
+                        issues.append(f"Click diagnostic: {probe}")
                     if session.errors:
                         issues.append(f"{check['name']}: {'; '.join(session.errors)}")
                     report["issues"].extend(issues)

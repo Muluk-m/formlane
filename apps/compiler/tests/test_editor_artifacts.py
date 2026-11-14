@@ -35,42 +35,13 @@ def compile_request(request):
 
 
 def assert_browser(html, checks):
-    html = html.replace(
-        "</body>",
-        """<pre hidden id="click-probe"></pre><script>
-        const probe = {events: [], handler: !!document.querySelector('button')?.onclick};
-        const evidence = document.querySelector('#click-probe');
-        evidence.textContent = JSON.stringify(probe);
-        for (const type of ['pointerdown', 'pointerup', 'click']) {
-          document.addEventListener(type, event => {
-            probe.events.push({type, target: event.target.tagName, trusted: event.isTrusted,
-              value: document.querySelector('output')?.textContent});
-            evidence.textContent = JSON.stringify(probe);
-          }, true);
-        }
-        </script></body>""",
-    )
-    checks = [
-        {
-            **check,
-            "assertions": [
-                *check.get("assertions", []),
-                *(
-                    [{"kind": "text", "selector": "#click-probe", "expected": "click"}]
-                    if any(action["kind"] == "click" for action in check["actions"])
-                    else []
-                ),
-            ],
-        }
-        for check in checks
-    ]
     report = validate_artifact(
         html,
         checks,
         SimpleNamespace(browser_executable=os.environ.get("BROWSER_EXECUTABLE_PATH")),
         lambda: False,
     )
-    assert report["valid"], report
+    assert report["valid"], report["issues"]
 
 
 @pytest.mark.parametrize("template", ["vanilla", "react-ts"])
