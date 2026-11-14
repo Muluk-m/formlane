@@ -49,6 +49,7 @@ function installRuntime(
   const opaqueHosts = new Set<Element>()
   const closedHosts = new WeakSet<Element>()
   const cleanups: (() => void)[] = []
+  const cursorStyle = new CSSStyleSheet()
   const attachShadow = Element.prototype.attachShadow
   function trackedAttachShadow(this: Element, init: ShadowRootInit) {
     const root = attachShadow.call(this, init)
@@ -160,6 +161,12 @@ function installRuntime(
   function observe(root: Node) {
     if (observed.has(root)) return
     observed.add(root)
+    if (root instanceof Document || root instanceof ShadowRoot) {
+      root.adoptedStyleSheets = [...root.adoptedStyleSheets, cursorStyle]
+      cleanups.push(() => {
+        root.adoptedStyleSheets = root.adoptedStyleSheets.filter((sheet) => sheet !== cursorStyle)
+      })
+    }
     observer.observe(root, {
       childList: true,
       subtree: true,
@@ -402,7 +409,7 @@ function installRuntime(
       for (const box of shields) {
         const shield = document.createElement('div')
         shield.style.cssText =
-          `position:fixed;pointer-events:auto;background:transparent;` +
+          `position:fixed;pointer-events:auto;background:transparent;cursor:crosshair;` +
           `left:${box.x}px;top:${box.y}px;width:${box.width}px;height:${box.height}px;`
         drawing?.append(shield)
       }
@@ -775,6 +782,7 @@ function installRuntime(
       switch (message.type) {
         case 'enable':
           enabled = message.payload.enabled
+          cursorStyle.replaceSync(enabled ? '* { cursor: crosshair !important; }' : '')
           if (enabled) discoverOpaque(document)
           hovered = null
           value = { enabled, documentId }

@@ -450,6 +450,32 @@ def test_disable_during_pointer_sequence_does_not_release_its_click(preview):
     assert frame.locator("output").inner_text() == "1"
 
 
+def test_edit_crosshair_restores_application_cursors(preview):
+    frame = mount(
+        preview,
+        """<style>button { cursor: pointer; }</style>
+        <button>Action</button><input><div id="host"></div>
+        <script>
+        const root = document.querySelector('#host').attachShadow({mode: 'open'});
+        root.innerHTML = '<style>button { cursor: grab; }</style><button>Shadow</button>';
+        </script>""",
+    )
+    cursors = """() => [document.querySelector('button'), document.querySelector('input'),
+        document.querySelector('#host').shadowRoot.querySelector('button')]
+        .map(element => getComputedStyle(element).cursor)"""
+    baseline = frame.evaluate(cursors)
+    assert baseline == ["pointer", "text", "grab"]
+    command(preview, "enable", True)
+    assert frame.evaluate(cursors) == ["crosshair"] * 3
+    command(preview, "enable", False)
+    assert frame.evaluate(cursors) == baseline
+    command(preview, "enable", True)
+    preview.evaluate("() => bridge.dispose()")
+    frame.wait_for_function(
+        f"expected => JSON.stringify(({cursors})()) === JSON.stringify(expected)", arg=baseline
+    )
+
+
 def test_wheel_scrolling_survives_edit_and_frame_never_receives_owner_secrets(preview):
     frame = mount(preview, '<main style="height:2000px"><button>Top</button></main>')
     command(preview, "enable", True)

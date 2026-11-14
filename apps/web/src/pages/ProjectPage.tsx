@@ -289,7 +289,6 @@ export function ProjectPage() {
       changeSelection(null)
       setUncertainDelivery(false)
       setConnection('connected')
-      setBanner(t('atoms.selection.queued'))
     }
     try {
       accept(await startRun(id, !project?.currentVersionId, content, submitted))
