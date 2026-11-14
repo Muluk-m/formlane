@@ -101,12 +101,15 @@ const messageParts = {
 function AssistantMessage({
   resolveAgent,
   renderSavedVersion,
+  renderMessageAttachment,
 }: {
   resolveAgent: AssistantAgentResolver
   renderSavedVersion?: (versionId: string) => ReactNode
+  renderMessageAttachment?: (messageId: string) => ReactNode
 }) {
   const { t } = useI18n()
   const role = useAuiState((s) => s.message.role)
+  const messageId = useAuiState((s) => s.message.id)
   const custom = useAuiState((s) => s.message.metadata.custom)
   const status = useAuiState((s) => s.message.status)
   const hasText = useAuiState((s) =>
@@ -134,6 +137,7 @@ function AssistantMessage({
         <span className="text-xs font-medium text-muted-foreground">{t('ui.assistant.you')}</span>
         <div className="max-w-[92%] rounded-2xl rounded-br-sm bg-secondary px-4 py-3 text-secondary-foreground">
           <MessagePrimitive.Parts components={messageParts} />
+          {renderMessageAttachment?.(messageId)}
         </div>
       </MessagePrimitive.Root>
     )
@@ -390,12 +394,16 @@ export function AssistantThread({
   disabled,
   stopping,
   renderSavedVersion,
+  composerAttachment,
+  renderMessageAttachment,
 }: {
   resolveAgent: AssistantAgentResolver
   status?: ReactNode
   disabled?: boolean
   stopping?: boolean
   renderSavedVersion?: (versionId: string) => ReactNode
+  composerAttachment?: ReactNode
+  renderMessageAttachment?: (messageId: string) => ReactNode
 }) {
   const { t } = useI18n()
   return (
@@ -431,6 +439,7 @@ export function AssistantThread({
               <AssistantMessage
                 resolveAgent={resolveAgent}
                 renderSavedVersion={renderSavedVersion}
+                renderMessageAttachment={renderMessageAttachment}
               />
             )}
           </ThreadPrimitive.Messages>
@@ -447,6 +456,7 @@ export function AssistantThread({
           </ThreadPrimitive.ScrollToBottom>
         </div>
       </ThreadPrimitive.Viewport>
+      {composerAttachment}
       <AssistantComposer disabled={disabled} stopping={stopping} />
     </ThreadPrimitive.Root>
   )

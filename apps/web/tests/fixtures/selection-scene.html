@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Selection acceptance scene</title>
+  <style>
+    body { margin: 0; padding: 24px; font: 16px system-ui; background: white; color: #171717; }
+    main { display: grid; gap: 16px; }
+    button, input { padding: 12px; font: inherit; }
+    .cards { display: flex; gap: 16px; }
+    .selection-card { background: #e3f0ff; border: 1px solid #0d74ce; }
+    .overlap { height: 100px; position: relative; }
+    .overlap button { position: absolute; inset: 16px auto auto 16px; width: 160px; }
+    #overlap-front { inset: 28px auto auto 60px; opacity: .8; }
+    #scene-offscreen { margin-top: 900px; }
+  </style>
+</head>
+<body>
+  <main aria-label="Selection scene">
+    <label>Scene input <input id="scene-input"></label>
+    <button id="scene-action"><span>Save scene</span></button>
+    <output id="scene-count">0</output>
+    <section class="cards" aria-label="Cards">
+      <button class="selection-card">First card</button>
+      <button class="selection-card">Second card</button>
+    </section>
+    <section data-formlane-source="app-owned-marker" aria-label="Application marker">
+      <button id="dynamic-target">Runtime target</button>
+    </section>
+    <div class="overlap" aria-label="Overlap">
+      <button id="overlap-back">Back target</button>
+      <button id="overlap-front">Front target</button>
+    </div>
+    <button id="open-modal">Open modal</button>
+    <button hidden>Hidden target</button>
+    <button id="scene-offscreen">Offscreen target</button>
+  </main>
+  <dialog><label>Dialog input <input id="dialog-input"></label><button id="close-modal">Close modal</button></dialog>
+  <script>
+    let count = 0;
+    const action = document.querySelector('#scene-action');
+    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+      action.addEventListener(type, () => { document.querySelector('#scene-count').textContent = String(++count); }, true);
+    }
+    document.querySelector('#open-modal').onclick = () => document.querySelector('dialog').showModal();
+    document.querySelector('#close-modal').onclick = () => document.querySelector('dialog').close();
+    const dynamic = document.createElement('button');
+    dynamic.id = 'dynamic-target';
+    dynamic.textContent = 'Runtime target';
+    dynamic.setAttribute('data-formlane-source', 'application-runtime-marker');
+    document.querySelector('#dynamic-target').replaceWith(dynamic);
+  </script>
+</body>
+</html>
