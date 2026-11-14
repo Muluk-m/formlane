@@ -73,6 +73,7 @@ class Message(Base):
     role: Mapped[str] = mapped_column(Text)
     agent: Mapped[str | None] = mapped_column(Text)
     content: Mapped[str] = mapped_column(Text)
+    selection_summary: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     created_at: Mapped[int] = mapped_column(BigInteger)
     # D1 orders tied timestamps by rowid. Import preserves export order in this identity.
     position: Mapped[int] = mapped_column(BigInteger, Identity(), unique=True)
@@ -115,6 +116,8 @@ class Run(Base):
     status: Mapped[str] = mapped_column(Text, default="queued", server_default="queued")
     request: Mapped[str] = mapped_column(Text)
     previous_version_id: Mapped[str | None] = mapped_column(Text)
+    # Immutable original evidence; only owner reads and fenced runtime context expose it.
+    selection: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     created_at: Mapped[int] = mapped_column(BigInteger)
     started_at: Mapped[int | None] = mapped_column(BigInteger)
     finished_at: Mapped[int | None] = mapped_column(BigInteger)
@@ -132,6 +135,15 @@ class Run(Base):
     lease_expires_at: Mapped[int | None] = mapped_column(BigInteger)
     event_cursor: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     __table_args__ = (
+        CheckConstraint(
+            "selection IS NULL OR (jsonb_typeof(selection) = 'object' "
+            "AND selection->>'projectId' = project_id "
+            "AND selection->>'versionId' = previous_version_id "
+            "AND selection ?& ARRAY['projectId','versionId','selectionId','evidence','sourceResolutions'] "
+            "AND previous_version_id IS NOT NULL "
+            "AND octet_length(selection::text) <= 3145728)",
+            name="run_selection_binding",
+        ),
         UniqueConstraint("project_id", "id", name="run_project_identity"),
         CheckConstraint(
             "status IN ('queued','running','completed','failed','cancelled')", name="run_status"

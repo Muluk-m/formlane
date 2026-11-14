@@ -574,7 +574,7 @@ def test_retired_queued_history_is_never_claimed(pg_store, project, owner, retir
         session.get(Run, run["id"]).execution_version = retired
     history = pg_store.list_run_events(project["id"], owner, run["id"], 0)
     assert pg_store.claim_run("new-release") is None
-    assert pg_store.get_run(project["id"], owner, run["id"]) == run
+    assert pg_store.get_run(project["id"], owner, run["id"]) == {**run, "selection": None}
     assert pg_store.list_run_events(project["id"], owner, run["id"], 0) == history
 
 

@@ -20,11 +20,14 @@ from pydantic import (
     StringConstraints,
     ValidationError,
     field_validator,
+    model_validator,
 )
 from sqlalchemy import text
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.cors import CORSMiddleware
 
+from .compiler import compile_editor_project
+from .selection import MAX_SELECTION_REQUEST_BYTES, SelectionSubmission, bind_selection
 from .settings import Settings
 from .storage import TERMINAL, Store, StoreError
 
@@ -47,12 +50,21 @@ class IdeaInput(BaseModel):
 
 
 class FollowupInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     content: StrictStr
+    expectedVersionId: UuidString | None = None
+    selection: SelectionSubmission | None = None
 
     @field_validator("content")
     @classmethod
     def valid_content(cls, value: str) -> str:
         return IdeaInput.valid_idea(value)
+
+    @model_validator(mode="after")
+    def selection_baseline(self):
+        if self.selection is not None and self.expectedVersionId is None:
+            raise ValueError("Selection requires expectedVersionId.")
+        return self
 
 
 class GenerateInput(FollowupInput):
@@ -193,7 +205,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
         try:
             with store.engine.connect() as connection:
                 connection.execute(text("SELECT 1 FROM projects LIMIT 0"))
-                connection.execute(text("SELECT 1 FROM messages LIMIT 0"))
+                connection.execute(text("SELECT selection_summary FROM messages LIMIT 0"))
                 connection.execute(
                     text(
                         "SELECT source, parent_version_id, acceptance_checks FROM versions LIMIT 0"
@@ -201,7 +213,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
                 )
                 connection.execute(
                     text(
-                        "SELECT event_cursor, lease_token, attempt, attempt_started_at, execution_version, recovery_eligible FROM runs LIMIT 0"
+                        "SELECT event_cursor, lease_token, attempt, attempt_started_at, execution_version, recovery_eligible, selection FROM runs LIMIT 0"
                     )
                 )
                 connection.execute(text("SELECT sequence, attempt FROM run_events LIMIT 0"))
@@ -209,7 +221,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
                 revision = connection.execute(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar()
-                if revision != "0004_version_acceptance_checks":
+                if revision != "0005_selection_evidence":
                     return JSONResponse({"ok": False}, status_code=503)
             return {"ok": True}
         except Exception:
@@ -251,6 +263,24 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
         return {
             "version": store.get_version(project_id, request.state.owner_id, version_id)["version"]
         }
+
+    def editor_artifact(project_id: str, owner_id: str, version_id: str) -> dict:
+        saved = store.get_version(project_id, owner_id, version_id)["version"]
+        try:
+            compiled = compile_editor_project(saved["source"], settings, lambda: False)
+        except (ValueError, TimeoutError):
+            raise StoreError(409, "The editor preview could not be reproduced for this version.") from None
+        if compiled["html"] != saved["html"]:
+            raise StoreError(409, "The editor preview does not match the saved version.")
+        return {
+            "projectId": project_id, "versionId": version_id,
+            "html": compiled["html"], "editorHtml": compiled["editorHtml"],
+            "manifest": compiled["manifest"], "diagnostics": compiled["diagnostics"],
+        }
+
+    @app.get("/api/projects/{project_id}/versions/{version_id}/editor")
+    def editor_version(request: Request, project_id: UuidString, version_id: UuidString):
+        return editor_artifact(project_id, request.state.owner_id, version_id)
 
     @app.post("/api/projects/{project_id}/publish")
     def publish(request: Request, project_id: UuidString):
@@ -304,21 +334,47 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
             raise StoreError(503, "Generation is unavailable: the executor is not configured.")
         if initial and detail["project"]["currentVersionId"]:
             raise StoreError(400, "This project already has a build. Send a follow-up instead.")
-        raw = await request.body()
+        raw = bytearray()
+        async for chunk in request.stream():
+            if len(raw) + len(chunk) > MAX_SELECTION_REQUEST_BYTES:
+                raise StoreError(400, "Follow-up evidence exceeds the request size limit.")
+            raw.extend(chunk)
         try:
             payload = json.loads(raw) if raw else {}
         except (ValueError, UnicodeDecodeError):
             raise StoreError(400, "Invalid JSON request.") from None
         try:
             parsed = (GenerateInput if initial else FollowupInput).model_validate(payload)
-        except ValidationError:
-            raise StoreError(400, "Describe the change in 1 to 4000 characters.") from None
+        except ValidationError as error:
+            if any("image" in item["loc"] for item in error.errors()):
+                raise StoreError(400, "Invalid selection image: use a single PNG, JPEG or WebP up to 2 MB and 16 million pixels.") from None
+            raise StoreError(400, "Invalid follow-up content or selection evidence.") from None
+        selection = None
+        if parsed.selection is not None:
+            if initial:
+                raise StoreError(400, "Selection is only supported on follow-ups.")
+            if (
+                parsed.expectedVersionId != detail["project"]["currentVersionId"]
+                or parsed.selection.versionId != parsed.expectedVersionId
+            ):
+                raise StoreError(409, "The current version changed. Select the target again.")
+            editor = await run_in_threadpool(
+                editor_artifact, project_id, request.state.owner_id, parsed.expectedVersionId
+            )
+            try:
+                selection = bind_selection(parsed.selection, editor["manifest"])
+            except LookupError:
+                raise StoreError(400, "Selection contains an invalid source reference.") from None
+            except ValueError:
+                raise StoreError(409, "Selection does not match the current version.") from None
         run = await run_in_threadpool(
             store.create_run,
             project_id,
             request.state.owner_id,
             parsed.content,
             "initial" if initial else "followup",
+            expected_version_id=parsed.expectedVersionId,
+            selection=selection,
         )
         return JSONResponse({"run": run}, status_code=202)
 
