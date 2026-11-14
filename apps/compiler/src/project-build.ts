@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer'
+import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { posix } from 'node:path'
 import {
@@ -8,8 +9,15 @@ import {
   projectSourceHash,
   validateProjectSource,
 } from '@atoms-demo/core/project'
+import type { SelectionSourceManifest } from '@atoms-demo/core/selection'
 import { context, type Loader, type Plugin } from 'esbuild'
 import { type DefaultTreeAdapterTypes, parse, parseFragment, serialize } from 'parse5'
+import {
+  type EditorBuildDiagnostic,
+  INSTRUMENTATION_VERSION,
+  InstrumentationLimitError,
+  SourceAttribution,
+} from './source-attribution'
 
 type Node = DefaultTreeAdapterTypes.Node
 type Element = DefaultTreeAdapterTypes.Element
@@ -96,6 +104,60 @@ function resolveFile(source: ProjectSource, specifier: string, importer?: string
   throw new Error(`Project file not found: ${specifier}${importer ? ` (from ${importer})` : ''}`)
 }
 
+export interface EditorProjectBuild {
+  /** Canonical publication/download artifact, identical to compileProject. */
+  html: string
+  sourceHash: string
+  /** Private editor preview; a runtime bridge is injected separately by the host. */
+  editorHtml: string
+  manifest: SelectionSourceManifest
+  diagnostics: EditorBuildDiagnostic[]
+}
+
+/** Build-local attribution never changes the canonical artifact or original source. */
+export async function compileEditorProject(
+  source: ProjectSource,
+  signal: AbortSignal,
+): Promise<EditorProjectBuild> {
+  const canonical = await compileProject(source, signal)
+  const attribution = new SourceAttribution(signal, canonical.sourceHash)
+  let editorHtml: string
+  let entries: SelectionSourceManifest['entries']
+  let diagnostics: EditorBuildDiagnostic[]
+  try {
+    editorHtml = (await compile(source, signal, attribution, canonical.sourceHash)).html
+    entries = Object.fromEntries(
+      Object.entries(attribution.entries).sort(([left], [right]) => left.localeCompare(right)),
+    )
+    diagnostics = attribution.diagnostics.sort((left, right) =>
+      (left.path ?? '').localeCompare(right.path ?? '') ||
+      (left.startLine ?? 0) - (right.startLine ?? 0) ||
+      (left.startColumn ?? 0) - (right.startColumn ?? 0) ||
+      left.code.localeCompare(right.code),
+    )
+  } catch (error) {
+    signal.throwIfAborted()
+    if (!(error instanceof InstrumentationLimitError) && !attribution.limitExceeded) throw error
+    // Explicit reduced-confidence selection retains valid canonical behavior when
+    // annotations cannot fit the bounded private preview/manifest contract.
+    editorHtml = canonical.html
+    entries = {}
+    diagnostics = [{ code: 'instrumentation-limit' }]
+  }
+  return {
+    ...canonical,
+    editorHtml,
+    manifest: {
+      instrumentationVersion: INSTRUMENTATION_VERSION,
+      sourceHash: canonical.sourceHash,
+      canonicalArtifactHash: createHash('sha256').update(canonical.html).digest('hex'),
+      editorArtifactHash: createHash('sha256').update(editorHtml).digest('hex'),
+      entries,
+    },
+    diagnostics,
+  }
+}
+
 /**
  * Compile a virtual source tree. Model files are parser inputs, never host modules,
  * build plugins, package scripts, or configuration executed by Node.
@@ -104,10 +166,20 @@ export async function compileProject(
   source: ProjectSource,
   signal: AbortSignal,
 ): Promise<{ html: string; sourceHash: string }> {
+  return compile(source, signal)
+}
+
+async function compile(
+  source: ProjectSource,
+  signal: AbortSignal,
+  attribution?: SourceAttribution,
+  canonicalSourceHash?: string,
+): Promise<{ html: string; sourceHash: string }> {
   signal.throwIfAborted()
   validateProjectSource(source)
-  const sourceHash = await projectSourceHash(source)
-  const document = parse(source.files['index.html'] ?? '')
+  const sourceHash = canonicalSourceHash ?? (await projectSourceHash(source))
+  const document = parse(source.files['index.html'] ?? '', { sourceCodeLocationInfo: !!attribution })
+  attribution?.html(document)
   const virtual = new Map<string, VirtualFile>()
   const imports: string[] = []
   let head: Element | undefined
@@ -193,7 +265,10 @@ export async function compileProject(
                 ? 'dataurl'
                 : loaders[posix.extname(path)]
           if (!loader) throw new Error(`Unsupported module type: ${path}`)
-          return { contents: content, loader }
+          const contents = attribution && (loader === 'jsx' || loader === 'tsx')
+            ? attribution.jsx(path, content)
+            : content
+          return { contents, loader }
         })
       },
     }
@@ -244,7 +319,9 @@ export async function compileProject(
   }
   signal.throwIfAborted()
   const html = serialize(document)
-  if (Buffer.byteLength(html) > MAX_PREVIEW_BYTES)
+  if (Buffer.byteLength(html) > MAX_PREVIEW_BYTES) {
+    if (attribution) throw new InstrumentationLimitError()
     throw new Error('The compiled preview exceeds the 512 KiB limit.')
+  }
   return { html, sourceHash }
 }
