@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { type ProjectSource, validateProjectSource } from '@atoms-demo/core/project'
-import { compileProject } from './project-build'
+import { compileEditorProject, compileProject } from './project-build'
 
 // One invocation, one bounded JSON request, one JSON response. No project files
 // are written to disk and no generated script, plugin or configuration is loaded.
@@ -27,7 +27,22 @@ try {
   const request: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
   if (!request || typeof request !== 'object' || Array.isArray(request))
     throw new Error('A source object is required.')
-  const source = request as ProjectSource
+  // Bare source requests retain the original canonical wire format. Editor
+  // compilation is explicit and returns its private artifact/manifest separately.
+  const editor = 'mode' in request
+  let input: unknown = request
+  if (editor) {
+    if (
+      request.mode !== 'editor' ||
+      !('source' in request) ||
+      Object.keys(request).some((key) => key !== 'mode' && key !== 'source')
+    )
+      throw new Error('Editor compilation requires only mode="editor" and source.')
+    input = request.source
+  }
+  if (!input || typeof input !== 'object' || Array.isArray(input))
+    throw new Error('A source object is required.')
+  const source = input as ProjectSource
   if (
     !source.files ||
     typeof source.files !== 'object' ||
@@ -37,7 +52,8 @@ try {
   )
     throw new Error('A source snapshot contains only template and string files.')
   validateProjectSource(source)
-  process.stdout.write(`${JSON.stringify(await compileProject(source, controller.signal))}\n`)
+  const result = await (editor ? compileEditorProject : compileProject)(source, controller.signal)
+  process.stdout.write(`${JSON.stringify(result)}\n`)
 } catch (error) {
   const message = error instanceof Error ? error.message.slice(0, 4000) : 'Compilation failed.'
   process.stderr.write(`${message}\n`)
