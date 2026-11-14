@@ -84,6 +84,33 @@ jobs:
           # Materialize cold image pages before the existing bounded browser launch.
           find /opt/google/chrome -type f -exec cat {} + > /dev/null
           "$BROWSER_EXECUTABLE_PATH" --version
+      - name: Diagnose native iframe clicks
+        run: |
+          uv run --project apps/backend python - <<'PY'
+          import asyncio, importlib.util, json, os
+          from pathlib import Path
+          from types import SimpleNamespace
+          import formlane.validator as v
+          spec = importlib.util.spec_from_file_location('parity', Path('apps/compiler/tests/test_editor_artifacts.py'))
+          t = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(t)
+          cases = []
+          t.assert_browser = lambda html, checks: cases.append((html, checks))
+          t.test_editor_artifacts_map_rendered_instances_and_preserve_canonical_interactions('vanilla')
+          original = v._act
+          async def observe(session, action):
+              await original(session, action)
+              print(json.dumps(await session.frame.evaluate('()=>({events:window.clickProbe,value:document.querySelector("output").textContent,handler:!!document.querySelector("button").onclick,ready:document.readyState})')), flush=True)
+          v._act = observe
+          async def main():
+              for trial in range(10):
+                  for kind, (html, checks) in enumerate(cases):
+                      instrumentation = '<script>window.clickProbe=[];for(const type of ["pointerdown","pointerup","click"])document.addEventListener(type,e=>clickProbe.push({type,target:e.target.tagName,trusted:e.isTrusted,x:e.clientX,y:e.clientY,value:document.querySelector("output")?.textContent}),true)</script>'
+                      html = html.replace('<head>', '<head>'+instrumentation, 1)
+                      report = await v._run_browser(html, v.validate_checks(checks), SimpleNamespace(browser_executable=os.environ['BROWSER_EXECUTABLE_PATH']), lambda:False, {'issues':[], 'checks':[]})
+                      print(json.dumps({'trial':trial, 'kind':kind, **report}), flush=True)
+          asyncio.run(main())
+          PY
       - name: Recorded acceptance and iteration contracts
         run: uv run --project apps/backend pytest apps/backend/tests/test_flow_equivalence.py apps/backend/tests/test_iteration.py
       - name: Native CrewAI upgrade contracts
