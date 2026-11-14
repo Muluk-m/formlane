@@ -293,7 +293,7 @@ def test_mobile_preview_and_chinese_selection_labels(workspace):
     page.add_init_script("localStorage.setItem('atoms-demo.locale', 'zh')")
     page.reload()
     page.get_by_test_id("workspace-preview").click()
-    expect(page.get_by_test_id("selection-edit")).to_have_text("编辑")
+    expect(page.get_by_role("button", name="编辑", exact=True)).to_be_visible()
     page.get_by_test_id("selection-edit").click()
     expect(page.get_by_role("button", name="图层", exact=True)).to_be_visible()
 
