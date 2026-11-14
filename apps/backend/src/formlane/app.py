@@ -269,13 +269,18 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
         try:
             compiled = compile_editor_project(saved["source"], settings, lambda: False)
         except (ValueError, TimeoutError):
-            raise StoreError(409, "The editor preview could not be reproduced for this version.") from None
+            raise StoreError(
+                409, "The editor preview could not be reproduced for this version."
+            ) from None
         if compiled["html"] != saved["html"]:
             raise StoreError(409, "The editor preview does not match the saved version.")
         return {
-            "projectId": project_id, "versionId": version_id,
-            "html": compiled["html"], "editorHtml": compiled["editorHtml"],
-            "manifest": compiled["manifest"], "diagnostics": compiled["diagnostics"],
+            "projectId": project_id,
+            "versionId": version_id,
+            "html": compiled["html"],
+            "editorHtml": compiled["editorHtml"],
+            "manifest": compiled["manifest"],
+            "diagnostics": compiled["diagnostics"],
         }
 
     @app.get("/api/projects/{project_id}/versions/{version_id}/editor")
@@ -347,7 +352,10 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
             parsed = (GenerateInput if initial else FollowupInput).model_validate(payload)
         except ValidationError as error:
             if any("image" in item["loc"] for item in error.errors()):
-                raise StoreError(400, "Invalid selection image: use a single PNG, JPEG or WebP up to 2 MB and 16 million pixels.") from None
+                raise StoreError(
+                    400,
+                    "Invalid selection image: use a single PNG, JPEG or WebP up to 2 MB and 16 million pixels.",
+                ) from None
             raise StoreError(400, "Invalid follow-up content or selection evidence.") from None
         selection = None
         if parsed.selection is not None:

@@ -18,7 +18,8 @@ def upgrade() -> None:
     op.add_column("runs", sa.Column("selection", postgresql.JSONB(), nullable=True))
     op.add_column("messages", sa.Column("selection_summary", postgresql.JSONB(), nullable=True))
     op.create_check_constraint(
-        "run_selection_binding", "runs",
+        "run_selection_binding",
+        "runs",
         "selection IS NULL OR (jsonb_typeof(selection) = 'object' "
         "AND selection->>'projectId' = project_id "
         "AND selection->>'versionId' = previous_version_id "

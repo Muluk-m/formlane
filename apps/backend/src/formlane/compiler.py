@@ -9,7 +9,7 @@ import subprocess
 import time
 from concurrent.futures import CancelledError
 
-from .project import MAX_PREVIEW_BYTES, artifact_hash, source_hash, utf16_length, utf8_bytes
+from .project import MAX_PREVIEW_BYTES, artifact_hash, source_hash, utf8_bytes, utf16_length
 
 COMPILER_TIMEOUT_SECONDS = 30
 MAX_COMPILER_OUTPUT = 4 * 1024 * 1024
@@ -107,8 +107,12 @@ def _stop_group(process: subprocess.Popen) -> None:
 
 
 def _exchange(
-    process: subprocess.Popen, payload: bytes, cancelled, timeout_seconds: float | None = None,
-    *, output_limit: int = MAX_COMPILER_OUTPUT,
+    process: subprocess.Popen,
+    payload: bytes,
+    cancelled,
+    timeout_seconds: float | None = None,
+    *,
+    output_limit: int = MAX_COMPILER_OUTPUT,
 ) -> tuple[bytes, bytes]:
     deadline = time.monotonic() + (
         COMPILER_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
@@ -197,7 +201,9 @@ def _compile(source: dict, settings, cancelled, *, editor: bool) -> dict:
     )
     try:
         stdout, stderr = _exchange(
-            process, payload, cancelled,
+            process,
+            payload,
+            cancelled,
             output_limit=MAX_EDITOR_COMPILER_OUTPUT if editor else MAX_COMPILER_OUTPUT,
         )
         raise_if_cancelled(cancelled)
@@ -211,9 +217,11 @@ def _compile(source: dict, settings, cancelled, *, editor: bool) -> dict:
             raise ValueError("Compiler returned an invalid JSON response.") from None
         if (
             not isinstance(result, dict)
-            or set(result) != (
+            or set(result)
+            != (
                 {"html", "sourceHash", "editorHtml", "manifest", "diagnostics"}
-                if editor else {"html", "sourceHash"}
+                if editor
+                else {"html", "sourceHash"}
             )
             or not isinstance(result["html"], str)
         ):
@@ -252,7 +260,9 @@ def _validate_editor_result(result: dict, source: dict) -> None:
         lines = source_lines.get(location.path)
         if lines is None:
             # HTML normalizes CR/CRLF; TypeScript also recognizes Unicode line separators.
-            separators = r"\r\n|[\r\n]" if location.path == "index.html" else r"\r\n|[\r\n\u2028\u2029]"
+            separators = (
+                r"\r\n|[\r\n]" if location.path == "index.html" else r"\r\n|[\r\n\u2028\u2029]"
+            )
             lines = source_lines[location.path] = re.split(separators, original)
         if (
             location.endLine > len(lines)
@@ -270,6 +280,10 @@ def _validate_editor_result(result: dict, source: dict) -> None:
             or set(item) - {"code", "path", "startLine", "startColumn"}
             or item.get("code") not in {"reserved-marker", "jsx-spread", "instrumentation-limit"}
             or ("path" in item and item["path"] not in source["files"])
-            or any(type(item[key]) is not int or item[key] < 1 for key in ("startLine", "startColumn") if key in item)
+            or any(
+                type(item[key]) is not int or item[key] < 1
+                for key in ("startLine", "startColumn")
+                if key in item
+            )
         ):
             raise ValueError("Compiler returned invalid diagnostics.")
