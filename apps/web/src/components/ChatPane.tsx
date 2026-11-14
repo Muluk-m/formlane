@@ -4,7 +4,11 @@ import {
   type ThreadMessageLike,
   useExternalStoreRuntime,
 } from '@assistant-ui/react'
-import type { RunEvent as HarnessEvent, Run as HarnessRun, SelectionSubmission } from '@atoms-demo/contracts'
+import type {
+  RunEvent as HarnessEvent,
+  Run as HarnessRun,
+  SelectionSubmission,
+} from '@atoms-demo/contracts'
 import { AGENT_ORDER, type AgentId, type AppVersion } from '@atoms-demo/core/types'
 import { useI18n } from '@atoms-demo/i18n/react'
 import {
@@ -92,7 +96,9 @@ export function ChatPane({
       try {
         await onSend(parsed.data)
       } catch (error) {
-        throw new MessageNotSentError(error instanceof Error ? error.message : t('atoms.requestError'))
+        throw new MessageNotSentError(
+          error instanceof Error ? error.message : t('atoms.requestError'),
+        )
       }
     },
     onCancel: async () => {
@@ -117,7 +123,16 @@ export function ChatPane({
         resolveAgent={resolveAgent}
         disabled={disabled}
         stopping={stopping}
-        composerAttachment={selection ? <SelectionAttachment selection={selection} stale={selectionStale} disabled={running || stopping} onChange={onSelection} /> : undefined}
+        composerAttachment={
+          selection ? (
+            <SelectionAttachment
+              selection={selection}
+              stale={selectionStale}
+              disabled={running || stopping}
+              onChange={onSelection}
+            />
+          ) : undefined
+        }
         renderMessageAttachment={(messageId) => {
           const summary = messages.find((message) => message.id === messageId)?.selectionSummary
           return summary ? <SelectionMessageSummary summary={summary} /> : null

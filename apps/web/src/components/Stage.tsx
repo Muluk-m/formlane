@@ -12,11 +12,11 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useQuery } from '@tanstack/react-query'
 import { type ReactNode, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import type { ProjectBuild } from '../features/projects/workspace'
 import { editorVersionQuery } from '../features/projects/queries'
-import { SelectionPreview } from './SelectionPreview'
+import type { ProjectBuild } from '../features/projects/workspace'
 import { formatBytes } from '../lib/format'
 import { highlightSource, sourceLanguage } from '../lib/highlight'
+import { SelectionPreview } from './SelectionPreview'
 
 export function Stage({
   html,
@@ -77,7 +77,10 @@ export function Stage({
   const [selection, setSelection] = useState<string | null>(null)
   const [copyError, setCopyError] = useState(false)
   const [previewRevision, setPreviewRevision] = useState(0)
-  const editor = useQuery({ ...editorVersionQuery(projectId, versionId ?? ''), enabled: Boolean(versionId) })
+  const editor = useQuery({
+    ...editorVersionQuery(projectId, versionId ?? ''),
+    enabled: Boolean(versionId),
+  })
   const paths = useMemo(
     () => [...new Set([...Object.keys(source?.files ?? {}), ...Object.keys(drafts)])].sort(),
     [source, drafts],
@@ -212,7 +215,9 @@ export function Stage({
         <TabsContent value="preview" keepMounted className="h-full min-h-0 data-[hidden]:hidden">
           <div className="flex h-full min-w-0 items-stretch justify-center">
             {versionId && editor.isPending ? (
-              <p role="status" className="p-6 text-sm text-muted-foreground">{t('atoms.selection.loading')}</p>
+              <p role="status" className="p-6 text-sm text-muted-foreground">
+                {t('atoms.selection.loading')}
+              </p>
             ) : versionId && editor.data ? (
               <SelectionPreview
                 key={`${versionId}:${previewRevision}`}
@@ -225,10 +230,17 @@ export function Stage({
               />
             ) : html ? (
               <div className="flex h-full w-full flex-col gap-2">
-                {versionId && editor.isError && <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-destructive">
-                  {t('atoms.selection.unavailable')}
-                  <Button size="sm" variant="outline" onClick={() => void editor.refetch()}>{t('atoms.selection.retry')}</Button>
-                </div>}
+                {versionId && editor.isError && (
+                  <div
+                    role="alert"
+                    className="flex flex-wrap items-center gap-2 text-xs text-destructive"
+                  >
+                    {t('atoms.selection.unavailable')}
+                    <Button size="sm" variant="outline" onClick={() => void editor.refetch()}>
+                      {t('atoms.selection.retry')}
+                    </Button>
+                  </div>
+                )}
                 <PreviewFrame key={`${previewRevision}:${html}`} html={html} device={device} />
               </div>
             ) : (

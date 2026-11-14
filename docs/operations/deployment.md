@@ -335,3 +335,42 @@ Repository verification: syntax/Biome and production inspection passed; unsuppor
 ## Commit history rewrite (2026-11-13)
 
 All branches were rewritten to replace the former company author/committer identity and `Co-authored-by` trailers with `Nain Ma <maqiqian0316@gmail.com>`; GitHub merge committers and `Cursor Agent` commits are unchanged. Trees are identical, so released source did not change, but every rewritten commit has a new hash. Commit references in this repository were updated. Hashes recorded elsewhere before the rewrite (VM `RELEASE_COMMIT` files, Pages `/version.json`, CI run pages, merged PR pages and read-only `refs/pull/*`) keep old values until their next release. The pre-rewrite mirror, its SHA-256 and the old-to-new commit map are kept privately in `/Users/qiqian/Backups/formlane/history-before-rewrite-20261113T065427Z`; for example production backend `e415db4` is now `4639c43` and the flow-v1 merge `685d07f` is now `ee87304`.
+
+## Visual selection release (`flow-v3`)
+
+[PR #53](https://github.com/Muluk-m/formlane/pull/53) implements [issue #46](https://github.com/Muluk-m/formlane/issues/46) and [ADR-0016](../adr/0016-version-bound-visual-selection.md). Its integration and staging work does not activate production. The current production identities above remain a separate release record.
+
+The candidate requires Alembic `0005_selection_evidence`, matching API/worker code and its own compiler supporting separate canonical/editor artifacts. Private selection evidence is stored on Runs and bounded summaries on Messages; existing rows remain nullable. Execution eligibility advances to `flow-v3`, while workflow/operation names and the `flow-v1/candidate/` reader namespace remain frozen. Older histories are readable but cannot execute or Resume under the new acceptance contract. Never edit saved manifests to bypass that boundary.
+
+Every newly saved Version requires Alex validation, David validation and David's explicit approval of native current-build desktop/mobile images received in the same review stage. Client crops and reconstructed baseline images are context, not acceptance evidence. The matching frontend must preserve Current/Viewed/Published separation and submit the expected Current version with the immutable attachment.
+
+Isolated verification uses `/opt/formlane/python-backend/releases/issue46-selection-20261114` and dedicated `formlane_issue46_test` / `formlane_issue46_stage` databases. Real-provider staging is assigned loopback 8098 with separate issue46 services; it must not replace production or the other session's 8094 services. Keep the imported package and compiler command pinned to the exact tested release. Evidence belongs in private `/Users/qiqian/Backups/formlane/issue46-acceptance-20261114-bVgiVU`, outside source checkouts; owner capabilities and image bytes must not enter committed records.
+
+A future authorized activation must drain work, retain the complete PostgreSQL/DBOS backup and previous release, explicitly migrate with API/worker stopped, and activate compatible backend/compiler/frontend artifacts together. The earlier executable-only `flow-v2` rollback procedure does not apply to this schema transition: older readiness checks require `0004_version_acceptance_checks`. Database restoration or downgrade is a separate coordinated recovery decision that must account for new writes and selection evidence. Never restore a staging database into production.
+
+### Isolated acceptance (2026-11-14)
+
+Backend source `de9ec7764c7ebb2f23f12448735740bfe914e563` ran the real configured provider in the dedicated stage above. The integration includes compiler/editor parity fixes and workspace lifecycle/capture fixes verified against that stage. No production activation was performed.
+
+| Scenario                             | Run and accepted Version               | Wall seconds | Committed model calls |
+| ------------------------------------ | -------------------------------------- | -----------: | --------------------: |
+| Vanilla baseline                     | `d57876a6-f36e-492f-9123-037ea06df6d2` |      191.509 |                    18 |
+| React TS baseline                    | `fb7a7731-7149-407c-b9f5-adfbb0efdfa2` |      348.625 |                    20 |
+| Hero typography                      | `e71a576e-d562-47a5-9e8d-2aa6d243ab1a` |      147.214 |                    18 |
+| Span-to-heading parent selection     | `9cf37cf8-2dad-4ed1-834f-ce184d7a9072` |      134.094 |                    16 |
+| One repeated card                    | `44850d7f-8dd1-4fc1-9064-f18b0ca53e06` |      183.420 |                    18 |
+| Explicit shared button styling       | `edb34e88-1940-4f5e-9ce3-48fabe536fc4` |      309.744 |                    21 |
+| Open reservation modal               | `b99aac27-88ea-496e-ab78-2d5c4340739c` |      458.467 |                    26 |
+| Planned approval behavior and Resume | `10fc1c0e-c181-42a5-be34-59514ea76927` |      545.117 |                    44 |
+
+Baseline first-file events arrived at 86.633 s and 102.397 s. Follow-up metrics contained no `file_delta` event, so first-file latency is unavailable; source edits still committed through tools. Counts include committed model operations, not every provider transport attempt. The approval case needed one source-repair stage: David rejected an unrequested navigation item, then accepted the restored three-item navigation with approval behavior preserved. Earlier card/shared/modal review attempts also rejected incomplete target evidence before acceptance; those refusals remain in the private metrics.
+
+Independent browser operation verified all six requested deltas and functional Undo. Coverage included preserved title/CTA behavior, only one recommended card, shared primary colors with unchanged secondary controls, modal Escape/focus/required-name validation, and request → pending → reject/retry → approve plus preserved reservation. The approval result also passed a measured 375px iframe viewport without horizontal overflow; the workspace's ordinary mobile preset measured 388px. Undo restored immediate borrowing and removed the approval list. The projects' publication pointers remained unset throughout these cases; separate workspace/API regressions cover a nonempty frozen publication.
+
+The approval Run was interrupted after committed source work, cancelled and explicitly resumed after its browser observation tab closed. It completed with the same Run ID and attempt 2. All 19 prior checkpoint digests/timestamps and selection SHA-256 `fe820fb3785222ed3b5f4c99ab3c0409c33341df510e7d268c3cf48a4be8ef6f` survived through completion; cancellation preserved the accepted baseline and publication pointer.
+
+Headed sandboxed Chrome captured real selected pixels for the current tab and a scrolled target at device scale 1.25. Pixel comparisons exclude only two video-conversion edge pixels and allow one pixel of fractional rounding. Real wrong-tab capture and native permission rejection preserved the selection, comment, expanded Layers and Edit state without attaching an image. The wrong-tab driver disables only the `preferCurrentTab` picker hint because Chromium's title-selection flag operates its standard chooser; it never substitutes a MediaStream or bypasses the application's surface checks. The initial wrong-tab attempts stalled in the preferred-tab chooser and are not passes.
+
+The private archive named above contains accepted source/details, per-case browser assertions, screenshots, checkpoint metrics and recovery evidence. `SHA256SUMS` binds its retained files; no owner capability or capture is committed. The earlier compiler-tip CI failed formatting and one seeded-randomness regression. Eighteen subsequent diagnostic observations and default-seed validation passed without a runtime change; this does not establish a fix for that earlier intermittent failure. The final PR checks determine integration readiness.
+
+The 60-file acceptance manifest has SHA-256 `4d8f649643f0451b7ea7cde11ed8e8f988baed771d1ec706e77310bbade1c53f`. The archive directory is mode 0700 and its files are mode 0600.

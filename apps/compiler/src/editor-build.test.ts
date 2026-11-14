@@ -167,14 +167,9 @@ export default function App() {
   return <main><button {...props}>Spread</button><button data-formlane-source="owned">Owned</button><span>Mapped</span></main>
 }`
     const editor = await compileEditorProject(source, signal())
-    const entries = Object.values(editor.manifest.entries)
-    expect(entries.some((entry) => entry.tagName === 'button')).toBe(false)
-    expect(entries.some((entry) => entry.tagName === 'span')).toBe(true)
-    expect(editor.manifest.entries['from-spread']).toBeUndefined()
-    expect(editor.manifest.entries.owned).toBeUndefined()
-    expect(editor.diagnostics.map((item) => item.code)).toEqual(
-      expect.arrayContaining(['jsx-spread', 'reserved-marker']),
-    )
+    expect(editor.manifest.entries).toEqual({})
+    expect(editor.editorHtml).toBe(editor.html)
+    expect(editor.diagnostics).toEqual([{ code: 'reserved-marker', path: 'src/App.tsx' }])
   })
 
   it('does not transform raw imports or turn JavaScript-created markup into exact mappings', async () => {

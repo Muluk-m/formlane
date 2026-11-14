@@ -181,13 +181,11 @@ export default function App() {
         for key, value in editor["manifest"]["entries"].items()
         if value["tagName"] == "button"
     ]
-    assert len(locations) == 1
+    assert locations == []
+    assert editor["editorHtml"] == editor["html"]
     assert "application-owned" not in editor["manifest"]["entries"]
     assert "explicit-owned" not in editor["manifest"]["entries"]
-    assert {item["code"] for item in editor["diagnostics"]} == {
-        "reserved-marker",
-        "jsx-spread",
-    }
+    assert {item["code"] for item in editor["diagnostics"]} == {"reserved-marker"}
     assert_browser(
         editor["editorHtml"],
         [
@@ -211,17 +209,54 @@ export default function App() {
                 ],
             },
             {
-                "name": "Safe sibling gets an authoritative build-local source ID",
+                "name": "Unmapped siblings retain ordinary behavior",
                 "actions": [{"kind": "click", "selector": "#mapped", "value": None}],
                 "assertions": [
                     {
-                        "kind": "attribute",
-                        "selector": "#mapped",
-                        "attribute": MARKER,
-                        "expected": locations[0][0],
+                        "kind": "count",
+                        "selector": f"#mapped[{MARKER}]",
+                        "expected": "0",
                     },
                     {"kind": "text", "selector": "#result", "expected": "mapped"},
                 ],
+            },
+        ],
+    )
+
+
+@pytest.mark.parametrize("template", ["vanilla", "react-ts"])
+def test_application_marker_selectors_cannot_hide_editor_siblings(template):
+    source = create_source(template)
+    if template == "react-ts":
+        source["files"]["src/App.tsx"] = """import { useState } from 'react'
+export default function App() {
+  const [count, setCount] = useState(0)
+  return <main><style>{'[data-formlane-source]{display:none}'}</style><button onClick={() => setCount(count + 1)}>Increase</button><output>{count}</output></main>
+}"""
+    else:
+        source["files"]["index.html"] = """<!doctype html><html><body>
+<style>[data-formlane-source]{display:none}</style><button>Increase</button><output>0</output>
+<script type="module" src="/src/main.js"></script></body></html>"""
+        source["files"][
+            "src/main.js"
+        ] = """document.querySelector('button').onclick = () => {
+  const output = document.querySelector('output'); output.textContent = String(Number(output.textContent) + 1)
+}"""
+    editor = compile_request({"mode": "editor", "source": source})
+    assert editor["manifest"]["entries"] == {}
+    assert editor["editorHtml"] == editor["html"]
+    assert_browser(
+        editor["editorHtml"],
+        [
+            {
+                "name": "Initial content remains visible",
+                "actions": [],
+                "assertion": {"kind": "text", "selector": "output", "expected": "0"},
+            },
+            {
+                "name": "Application selector preserves visible interactive content",
+                "actions": [{"kind": "click", "selector": "button", "value": None}],
+                "assertion": {"kind": "text", "selector": "output", "expected": "1"},
             },
         ],
     )

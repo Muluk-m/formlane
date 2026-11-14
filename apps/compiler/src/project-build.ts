@@ -9,7 +9,10 @@ import {
   projectSourceHash,
   validateProjectSource,
 } from '@atoms-demo/core/project'
-import type { SelectionSourceManifest } from '@atoms-demo/core/selection'
+import {
+  SELECTION_SOURCE_ATTRIBUTE,
+  type SelectionSourceManifest,
+} from '@atoms-demo/core/selection'
 import { context, type Loader, type Plugin } from 'esbuild'
 import { type DefaultTreeAdapterTypes, parse, parseFragment, serialize } from 'parse5'
 import {
@@ -120,30 +123,45 @@ export async function compileEditorProject(
   signal: AbortSignal,
 ): Promise<EditorProjectBuild> {
   const canonical = await compileProject(source, signal)
-  const attribution = new SourceAttribution(signal, canonical.sourceHash)
   let editorHtml: string
   let entries: SelectionSourceManifest['entries']
   let diagnostics: EditorBuildDiagnostic[]
-  try {
-    editorHtml = (await compile(source, signal, attribution, canonical.sourceHash)).html
-    entries = Object.fromEntries(
-      Object.entries(attribution.entries).sort(([left], [right]) => left.localeCompare(right)),
-    )
-    diagnostics = attribution.diagnostics.sort(
-      (left, right) =>
-        (left.path ?? '').localeCompare(right.path ?? '') ||
-        (left.startLine ?? 0) - (right.startLine ?? 0) ||
-        (left.startColumn ?? 0) - (right.startColumn ?? 0) ||
-        left.code.localeCompare(right.code),
-    )
-  } catch (error) {
-    signal.throwIfAborted()
-    if (!(error instanceof InstrumentationLimitError) && !attribution.limitExceeded) throw error
-    // Explicit reduced-confidence selection retains valid canonical behavior when
-    // annotations cannot fit the bounded private preview/manifest contract.
+  let reservedPath: string | undefined
+  for (const path in source.files) {
+    if (source.files[path]?.toLowerCase().includes(SELECTION_SOURCE_ATTRIBUTE)) {
+      reservedPath = path
+      break
+    }
+  }
+  // Application selectors/scripts may observe the marker on any sibling. A
+  // per-node exception cannot preserve canonical behavior in that case.
+  if (reservedPath) {
     editorHtml = canonical.html
     entries = {}
-    diagnostics = [{ code: 'instrumentation-limit' }]
+    diagnostics = [{ code: 'reserved-marker', path: reservedPath }]
+  } else {
+    const attribution = new SourceAttribution(signal, canonical.sourceHash)
+    try {
+      editorHtml = (await compile(source, signal, attribution, canonical.sourceHash)).html
+      entries = Object.fromEntries(
+        Object.entries(attribution.entries).sort(([left], [right]) => left.localeCompare(right)),
+      )
+      diagnostics = attribution.diagnostics.sort(
+        (left, right) =>
+          (left.path ?? '').localeCompare(right.path ?? '') ||
+          (left.startLine ?? 0) - (right.startLine ?? 0) ||
+          (left.startColumn ?? 0) - (right.startColumn ?? 0) ||
+          left.code.localeCompare(right.code),
+      )
+    } catch (error) {
+      signal.throwIfAborted()
+      if (!(error instanceof InstrumentationLimitError) && !attribution.limitExceeded) throw error
+      // Explicit reduced-confidence selection retains valid canonical behavior when
+      // annotations cannot fit the bounded private preview/manifest contract.
+      editorHtml = canonical.html
+      entries = {}
+      diagnostics = [{ code: 'instrumentation-limit' }]
+    }
   }
   return {
     ...canonical,

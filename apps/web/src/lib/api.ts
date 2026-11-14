@@ -2,10 +2,10 @@ import {
   contract,
   type Run,
   type RunEvent,
-  type SelectionSubmission,
   runEventSchema,
   runReceiptSchema,
   runSchema,
+  type SelectionSubmission,
 } from '@atoms-demo/contracts'
 import { readLocale, translate } from '@atoms-demo/i18n'
 import { createORPCClient } from '@orpc/client'
@@ -119,7 +119,10 @@ export async function startRun(
 ): Promise<Run> {
   const response = await request(`/api/projects/${id}/${initial ? 'generate' : 'chat'}`, {
     method: 'POST',
-    body: JSON.stringify({ content, ...(selection ? { expectedVersionId: selection.versionId, selection } : {}) }),
+    body: JSON.stringify({
+      content,
+      ...(selection ? { expectedVersionId: selection.versionId, selection } : {}),
+    }),
   })
   if (!response.ok) throw new RunConnectionError(await readError(response), response.status)
   const result = runReceiptSchema.parse(await response.json())

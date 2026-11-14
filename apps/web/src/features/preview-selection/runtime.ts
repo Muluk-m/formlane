@@ -46,7 +46,27 @@ function installRuntime(
   const identities = new WeakMap<Element, string>()
   const nodes = new Map<string, WeakRef<Element>>()
   const observed = new WeakSet<Node>()
+  const opaqueHosts = new Set<Element>()
+  const closedHosts = new WeakSet<Element>()
   const cleanups: (() => void)[] = []
+  const attachShadow = Element.prototype.attachShadow
+  function trackedAttachShadow(this: Element, init: ShadowRootInit) {
+    const root = attachShadow.call(this, init)
+    if (!disposed && this !== overlay) {
+      if (root.mode === 'open') observe(root)
+      else {
+        closedHosts.add(this)
+        opaqueHosts.add(this)
+      }
+      schedule()
+    }
+    return root
+  }
+  Element.prototype.attachShadow = trackedAttachShadow
+  cleanups.push(() => {
+    if (Element.prototype.attachShadow === trackedAttachShadow)
+      Element.prototype.attachShadow = attachShadow
+  })
   const technical: Record<string, true> = {
     script: true,
     style: true,
@@ -147,9 +167,23 @@ function installRuntime(
       characterData: true,
     })
     if (root instanceof ShadowRoot) listen(root, 'scroll', schedule, true)
+    discoverOpaque(root)
+  }
+  function discoverOpaque(root: Node) {
+    if (!(root instanceof Document || root instanceof ShadowRoot || root instanceof Element)) return
+    const visit = (element: Element) => {
+      if (closedHosts.has(element) || ['iframe', 'object', 'embed'].includes(tag(element)))
+        opaqueHosts.add(element)
+      if (element.shadowRoot) {
+        if (observed.has(element.shadowRoot)) discoverOpaque(element.shadowRoot)
+        else observe(element.shadowRoot)
+      }
+    }
+    if (root instanceof Element) visit(root)
+    for (const element of root.querySelectorAll('*')) visit(element)
   }
   function children(element: Element): Element[] {
-    if (['iframe', 'canvas', 'object', 'embed'].includes(tag(element))) return []
+    if (opaqueHosts.has(element) || tag(element) === 'canvas') return []
     if (element.shadowRoot) {
       observe(element.shadowRoot)
       return Array.from(element.shadowRoot.children).filter(usable)
@@ -300,7 +334,8 @@ function installRuntime(
         }
       }
     }
-    if (!enabled || (!selected && !hovered)) {
+    for (const element of opaqueHosts) if (!element.isConnected) opaqueHosts.delete(element)
+    if (!enabled || (!selected && !hovered && opaqueHosts.size === 0)) {
       overlay?.remove()
       overlay = null
       drawing = null
@@ -328,6 +363,29 @@ function installRuntime(
       overlay.showPopover()
       topLayerChanged = false
     }
+    const shields: SelectionRect[] = []
+    for (const element of opaqueHosts) {
+      if (hidden(element)) continue
+      const bounds = element.getBoundingClientRect()
+      let left = Math.max(0, bounds.left)
+      let top = Math.max(0, bounds.top)
+      let right = Math.min(innerWidth, bounds.right)
+      let bottom = Math.min(innerHeight, bounds.bottom)
+      for (let ancestor = parentElement(element); ancestor; ancestor = parentElement(ancestor)) {
+        const style = getComputedStyle(ancestor)
+        const clip = ancestor.getBoundingClientRect()
+        if (style.overflowX !== 'visible') {
+          left = Math.max(left, clip.left)
+          right = Math.min(right, clip.right)
+        }
+        if (style.overflowY !== 'visible') {
+          top = Math.max(top, clip.top)
+          bottom = Math.min(bottom, clip.bottom)
+        }
+      }
+      if (right > left && bottom > top)
+        shields.push({ x: left, y: top, width: right - left, height: bottom - top })
+    }
     const fragments: { box: SelectionRect; active: boolean }[] = []
     for (const element of new Set([selected, hovered])) {
       if (!element?.isConnected) continue
@@ -335,10 +393,19 @@ function installRuntime(
         fragments.push({ box: rect(box), active: element === selected })
       }
     }
-    const signature = JSON.stringify(fragments)
+    const signature = JSON.stringify([fragments, shields])
     if (signature !== lastDrawing) {
       lastDrawing = signature
       drawing?.replaceChildren()
+      // Events in a nested browsing context never bubble to this window. These
+      // transparent input shields select its accessible host, not its contents.
+      for (const box of shields) {
+        const shield = document.createElement('div')
+        shield.style.cssText =
+          `position:fixed;pointer-events:auto;background:transparent;` +
+          `left:${box.x}px;top:${box.y}px;width:${box.width}px;height:${box.height}px;`
+        drawing?.append(shield)
+      }
       for (const { box, active } of fragments) {
         const outline = document.createElement('div')
         outline.style.cssText =
@@ -365,6 +432,11 @@ function installRuntime(
           ),
       )
     ) {
+      for (const record of records) {
+        for (const node of record.addedNodes) discoverOpaque(node)
+        if (record.target instanceof Element && record.target.shadowRoot)
+          observe(record.target.shadowRoot)
+      }
       revision++
       nodesChanged = true
       schedule()
@@ -486,10 +558,25 @@ function installRuntime(
     cancelAnimationFrame(scheduled)
     overlay?.remove()
     nodes.clear()
+    opaqueHosts.clear()
     selected = null
     hovered = null
   }
   function target(event: Event) {
+    if (event.target === overlay && event instanceof MouseEvent && overlay) {
+      overlay.style.setProperty('visibility', 'hidden', 'important')
+      try {
+        let element = document.elementFromPoint(event.clientX, event.clientY)
+        while (element?.shadowRoot) {
+          const child = element.shadowRoot.elementFromPoint(event.clientX, event.clientY)
+          if (!child || child === element) break
+          element = child
+        }
+        return element && usable(element) ? element : null
+      } finally {
+        overlay.style.removeProperty('visibility')
+      }
+    }
     for (const item of event.composedPath()) {
       if (item instanceof Element && usable(item)) {
         const root = item.getRootNode()
@@ -688,6 +775,7 @@ function installRuntime(
       switch (message.type) {
         case 'enable':
           enabled = message.payload.enabled
+          if (enabled) discoverOpaque(document)
           hovered = null
           value = { enabled, documentId }
           send('ready', value)

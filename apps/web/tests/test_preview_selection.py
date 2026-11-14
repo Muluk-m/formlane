@@ -180,6 +180,86 @@ def test_layers_distinguish_instances_paginate_and_reject_replaced_nodes(preview
     assert cursor_error == "cursor-stale"
 
 
+@pytest.mark.parametrize("shadow", [None, "open", "closed"])
+@pytest.mark.parametrize("existing", [False, True])
+def test_edit_selects_embedded_host_without_running_child_handlers(
+    preview, shadow, existing
+):
+    frame = mount(
+        preview,
+        '<section id="container"></section>' if existing else "<main>Preview</main>",
+    )
+    command(preview, "enable", True)
+    with preview.expect_event("frameattached") as attached:
+        frame.evaluate(
+            """({shadow, existing}) => {
+          const host = existing ? document.querySelector('#container') : document.createElement('section');
+          host.id = 'container';
+          const root = shadow ? host.attachShadow({mode:shadow}) : host;
+          const embedded = document.createElement('iframe');
+          embedded.id = 'embedded';
+          embedded.style.cssText = 'width:240px;height:100px;border:0';
+          embedded.srcdoc = '<button>Operate</button><output>0</output><script>' +
+            'for (const type of ["pointerdown","mousedown","click"]) ' +
+            'window.addEventListener(type, () => { const output = document.querySelector("output");' +
+            'output.textContent = String(Number(output.textContent) + 1); }, true);' + '</script>';
+          root.append(embedded);
+          if (!existing) document.body.append(host);
+        }""",
+            {"shadow": shadow, "existing": existing},
+        )
+    child = attached.value
+    child.locator("button").wait_for()
+    box = child.locator("button").bounding_box()
+    preview.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    assert child.locator("output").inner_text() == "0"
+    captured = command(preview, "capture")
+    assert captured["element"]["tagName"] == (
+        "section" if shadow == "closed" else "iframe"
+    )
+    assert captured["element"]["attributes"]["id"] == (
+        "container" if shadow == "closed" else "embedded"
+    )
+    assert command(preview, "children", captured["element"]["nodeId"])["children"] == []
+    command(preview, "enable", False)
+    child.locator("button").click()
+    assert child.locator("output").inner_text() == "3"
+
+
+@pytest.mark.parametrize("initially_detached", [False, True])
+def test_closed_embedded_host_remains_selectable_after_disconnection(
+    preview, initially_detached
+):
+    frame = mount(preview, '<section id="closed-host"></section>')
+    command(preview, "enable", True)
+    frame.evaluate(
+        """async initiallyDetached => {
+      const host = document.querySelector('#closed-host');
+      if (initiallyDetached) host.remove();
+      const root = host.attachShadow({mode:'closed'});
+      const embedded = document.createElement('iframe');
+      embedded.style.cssText = 'width:240px;height:100px;border:0';
+      embedded.srcdoc = `<button onclick="this.textContent='Activated'">Operate</button>`;
+      root.append(embedded);
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      host.remove();
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      document.body.append(host);
+    }""",
+        initially_detached,
+    )
+    child = frame.child_frames[0]
+    child.locator("button").wait_for()
+    box = child.locator("button").bounding_box()
+    preview.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    assert child.locator("button").inner_text() == "Operate"
+    captured = command(preview, "capture")
+    assert captured["element"]["attributes"]["id"] == "closed-host"
+    command(preview, "enable", False)
+    child.locator("button").click()
+    assert child.locator("button").inner_text() == "Activated"
+
+
 def test_composed_layers_shadow_slots_dialog_svg_and_opaque_hosts(preview):
     frame = mount(
         preview,

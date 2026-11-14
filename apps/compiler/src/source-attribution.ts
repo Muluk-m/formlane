@@ -61,10 +61,7 @@ export class SourceAttribution {
     return id
   }
 
-  private diagnose(
-    code: 'reserved-marker' | 'jsx-spread',
-    location: SelectionSourceLocation,
-  ): void {
+  private diagnose(code: 'jsx-spread', location: SelectionSourceLocation): void {
     if (this.diagnostics.length >= MAX_DIAGNOSTICS) this.exceedLimit()
     this.diagnostics.push({
       code,
@@ -99,12 +96,6 @@ export class SourceAttribution {
         endLine: range.endLine,
         endColumn: range.endCol,
         tagName: node.tagName,
-      }
-      if (
-        node.attrs.some((attribute) => attribute.name.toLowerCase() === SELECTION_SOURCE_ATTRIBUTE)
-      ) {
-        this.diagnose('reserved-marker', location)
-        continue
       }
       node.attrs.push({ name: SELECTION_SOURCE_ATTRIBUTE, value: this.add(location) })
     }
@@ -141,16 +132,6 @@ export class SourceAttribution {
         tagName,
       }
       const attributes = node.attributes.properties
-      if (
-        attributes.some(
-          (attribute) =>
-            ts.isJsxAttribute(attribute) &&
-            attribute.name.getText(file).toLowerCase() === SELECTION_SOURCE_ATTRIBUTE,
-        )
-      ) {
-        this.diagnose('reserved-marker', location)
-        continue
-      }
       // An unknown spread can supply the reserved attribute. Neither overriding
       // it nor allowing it to replace a compiler ID preserves trustworthy mapping.
       if (attributes.some(ts.isJsxSpreadAttribute)) {

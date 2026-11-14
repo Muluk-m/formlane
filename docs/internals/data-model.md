@@ -2,14 +2,14 @@
 
 [SQLAlchemy models](../../apps/backend/src/formlane/models.py), [storage](../../apps/backend/src/formlane/storage.py) and [Alembic migrations](../../apps/backend/migrations/) define the six business tables. DBOS owns its separate workflow/operation history schema in PostgreSQL; both are part of recovery backups and require explicit migrations.
 
-| Table             | Authority                                                                                   |
-| ----------------- | ------------------------------------------------------------------------------------------- |
-| `projects`        | Anonymous owner, idea, current/published pointers, public slug and active-run fence         |
-| `messages`        | Conversation, including stable ordering for equal timestamps                                |
-| `versions`        | Immutable source/HTML snapshots, accepted check sets, project-local numbers and ancestry    |
-| `runs`            | Request/baseline, status, attempt, execution compatibility, eligibility, lease and cursor   |
-| `run_events`      | Sequence-addressed observations tagged with execution attempt and idempotent event identity |
-| `run_checkpoints` | Retained legacy completed-step results consumed during DBOS migration                       |
+| Table             | Authority                                                                                       |
+| ----------------- | ----------------------------------------------------------------------------------------------- |
+| `projects`        | Anonymous owner, idea, current/published pointers, public slug and active-run fence             |
+| `messages`        | Conversation, stable ordering for equal timestamps and bounded selection summaries              |
+| `versions`        | Immutable source/HTML snapshots, accepted check sets, project-local numbers and ancestry        |
+| `runs`            | Request/baseline, immutable private selection, status, attempt, compatibility, lease and cursor |
+| `run_events`      | Sequence-addressed observations tagged with execution attempt and idempotent event identity     |
+| `run_checkpoints` | Retained legacy completed-step results consumed during DBOS migration                           |
 
 IDs retain their historical text identity and timestamps remain epoch milliseconds. JSONB stores structured source/events/checkpoints. Schema changes require explicit Alembic migrations; application startup and requests never create tables.
 
@@ -19,7 +19,7 @@ Every private operation first resolves the project under its anonymous browser o
 
 The worker claims a 60-second lease refreshed every 10 seconds. Transactions and locks protect ownership, active-run selection, attempts, events and completion. Stale, expired or cancelled producers cannot write. Queue waiting and healthy execution have no fixed wall-clock deadline. Explicit resume atomically keeps the run ID and committed work, increments its attempt and clears terminal failure; its next claim records when execution starts. Active duplicate resume requests are idempotent. New runs, version restores and incompatible execution history invalidate recovery eligibility.
 
-DBOS records completed model/tool operations, not interrupted provider token streams. Uncommitted calls may repeat. The refactored worker requires execution compatibility `flow-v2` and a matching saved manifest to resume; `flow-v1`, `crew-v1` and `dbos-v1` runs keep their history but cannot execute or resume on it ([ADR-0015](../adr/0015-flow-first-delivery.md)). Durable names remain `formlane.flow.v1` and `flow-v1/...`. [Deployment](../operations/deployment.md) records the active executable separately. Each event carries an attempt and the cursor remains monotonic across attempts, preventing historical terminal events from settling resumed execution. Failure categories distinguish timeout, provider, validation, step-limit and internal failures. Completion still requires current-source build, implementation validation, independent validation and explicit review.
+DBOS records completed model/tool operations, not interrupted provider token streams. Uncommitted calls may repeat. The selection worker requires execution compatibility `flow-v3` and a matching saved manifest to resume; older execution versions retain their history but cannot execute or resume on it ([ADR-0016](../adr/0016-version-bound-visual-selection.md)). Durable names remain `formlane.flow.v1` and `flow-v1/...`, including candidate checkpoints. [Deployment](../operations/deployment.md) records the active executable separately. Each event carries an attempt and the cursor remains monotonic across attempts, preventing historical terminal events from settling resumed execution. Failure categories distinguish timeout, provider, validation, step-limit and internal failures. Completion still requires current-source build, implementation validation, independent validation and explicit review, including David-owned current-stage desktop/mobile visual evidence.
 
 ## Version selections and ancestry
 
@@ -30,6 +30,12 @@ DBOS records completed model/tool operations, not interrupted provider token str
 Completion atomically saves source, compiled HTML, the accepted check set and recorded parent and updates current. The check set (`acceptance_checks`, null before `flow-v1`) is the next follow-up's regression baseline; remix copies it. Restore selects an existing version without deleting later versions or publishing it. Undo directly selects the current version's recorded generation parent: generating v4 after restoring v1 makes v1 its parent, regardless of version numbering. Republish updates the frozen public selection; unpublish revokes it without deleting history.
 
 Remix creates independent project/message/version identities, maps ancestry within its copied history and selects the requested historical/current version. It does not inherit public ownership. Downloads contain the authorized selected version's complete runnable source. Generated applications' interactive state remains in-memory preview state, separate from persisted project history.
+
+## Immutable selection evidence
+
+Migration `0005_selection_evidence` adds nullable `runs.selection` and `messages.selection_summary`. The Run owns the submitted element/region, original document identity, reproduction hints and optional private image with provenance. Server-resolved source locations come from a reproducible editor manifest for the same accepted Version. The database binds the attachment to its Run, Project and baseline and prevents later replacement. Historical null attachments remain null.
+
+Run admission checks the expected Current version under the Project lock, so a concurrent restore or completed edit cannot silently rebase a comment. Owner-authorized Run snapshots include the original selection; admission receipts, conversation messages and events carry bounded summaries. Public links and downloads expose no attachment or editor instrumentation. Resume and worker reclaim use the persisted original, even if the browser closes or selects another element. Cancel and failed acceptance preserve Current and Published versions.
 
 ## Historical D1 migration fidelity
 
