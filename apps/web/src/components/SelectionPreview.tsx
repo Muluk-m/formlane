@@ -7,7 +7,7 @@ import type {
 import { useI18n } from '@atoms-demo/i18n/react'
 import { Button } from '@atoms-demo/ui/components/button'
 import { FieldSet } from '@atoms-demo/ui/components/field'
-import { ArrowDown01Icon } from '@hugeicons/core-free-icons'
+import { ArrowDown01Icon, CursorRectangleSelection01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import {
@@ -352,14 +352,16 @@ export function SelectionPreview({
       <div className="h-28 shrink-0 space-y-2 overflow-y-auto">
         <div className="flex flex-wrap items-center gap-2">
           <Button
-            size="sm"
+            size="icon-sm"
             variant={editing ? 'default' : 'outline'}
             disabled={!ready || capturing}
             aria-pressed={editing}
+            aria-label={t(editing ? 'atoms.selection.done' : 'atoms.selection.edit')}
+            title={t(editing ? 'atoms.selection.done' : 'atoms.selection.edit')}
             onClick={() => void toggleEdit()}
             data-testid="selection-edit"
           >
-            {t(editing ? 'atoms.selection.done' : 'atoms.selection.edit')}
+            <HugeiconsIcon icon={CursorRectangleSelection01Icon} size={18} strokeWidth={1.5} />
           </Button>
           {editing && (
             <>

@@ -59,6 +59,8 @@ Generated projects are frontend applications with fixed template dependencies, b
 
 Anonymous identity is a demo ownership boundary. Current, viewed and published versions remain distinct; restoring or undoing does not republish. Real-model runs can take minutes and vary with the request, provider and repair iterations; dated measurements belong to the [acceptance record](docs/operations/deployment.md#iterative-acceptance-activation-2026-11-13). Failed or cancelled runs preserve prior results. No GitHub export or multi-model race is claimed.
 
+Use the framed-pointer icon in Preview to toggle Edit. The pointer becomes a crosshair while selecting; hover outlines follow the target, and leaving Edit restores the application's cursor. The icon keeps a localized accessible name and tooltip. Running requests use the conversation status without a duplicate warning banner.
+
 Visual selection edits source through the same acceptance gates. Edit preserves the open Preview document; rebuilt Versions do not inherit arbitrary application memory. Dynamic DOM may have no exact source attribution, and a shared source definition may represent several visible instances. Browser scene capture requires permission and a verifiable capture surface; refusal or lack of support leaves selection and comments usable. Historical and Candidate previews cannot silently become the editable baseline. Published and downloaded output contains no editor instrumentation. See [ADR-0016](docs/adr/0016-version-bound-visual-selection.md).
 
 [Documentation](docs/README.md) · [Terminology](CONTEXT.md) · [Design system](DESIGN.md) · [Agent guidance](AGENTS.md)
