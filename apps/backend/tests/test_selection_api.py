@@ -22,9 +22,13 @@ from formlane.storage import LeaseLost
 
 @pytest.fixture
 def selection_api(pg_store, project, owner):
-    source = legacy_source('<!doctype html><html><body><h1>Hello</h1><button>Save</button></body></html>')
+    source = legacy_source(
+        "<!doctype html><html><body><h1>Hello</h1><button>Save</button></body></html>"
+    )
     compiled = compile_project(source, compiler_settings(), lambda: False)
-    baseline = complete(pg_store, project, owner, {"source": source, "html": compiled["html"], "summary": "Built"})
+    baseline = complete(
+        pg_store, project, owner, {"source": source, "html": compiled["html"], "summary": "Built"}
+    )
     settings = Settings(
         database_url="postgresql://unused/unused",
         compiler_command=compiler_settings().compiler_command,
@@ -36,40 +40,74 @@ def selection_api(pg_store, project, owner):
         response = client.get(route + f"/versions/{baseline['id']}/editor", headers=auth(owner))
         assert response.status_code == 200, response.text
         editor = response.json()
-        source_id = next(key for key, location in editor["manifest"]["entries"].items() if location["tagName"] == "h1")
+        source_id = next(
+            key
+            for key, location in editor["manifest"]["entries"].items()
+            if location["tagName"] == "h1"
+        )
         element = {
-            "nodeId": "node-1", "sourceId": source_id, "tagName": "h1", "role": None,
-            "text": "Private transient heading", "attributes": {"aria-label": "Heading"},
-            "styles": {"color": "rgb(0, 0, 0)"}, "selector": "h1", "ancestors": [],
+            "nodeId": "node-1",
+            "sourceId": source_id,
+            "tagName": "h1",
+            "role": None,
+            "text": "Private transient heading",
+            "attributes": {"aria-label": "Heading"},
+            "styles": {"color": "rgb(0, 0, 0)"},
+            "selector": "h1",
+            "ancestors": [],
             "rects": [{"x": 10, "y": 20, "width": 200, "height": 40}],
-            "viewport": {"width": 800, "height": 600}, "scroll": {"x": 0, "y": 0},
+            "viewport": {"width": 800, "height": 600},
+            "scroll": {"x": 0, "y": 0},
             "instance": {"label": "Heading", "context": "Private scene"},
         }
         selection = {
             "versionId": baseline["id"],
-            **{key: editor["manifest"][key] for key in (
-                "sourceHash", "canonicalArtifactHash", "editorArtifactHash", "instrumentationVersion"
-            )},
-            "sessionId": "frame-session", "documentId": "document-1",
+            **{
+                key: editor["manifest"][key]
+                for key in (
+                    "sourceHash",
+                    "canonicalArtifactHash",
+                    "editorArtifactHash",
+                    "instrumentationVersion",
+                )
+            },
+            "sessionId": "frame-session",
+            "documentId": "document-1",
             "evidence": {"kind": "element", "element": element},
             "reproduction": {"steps": ["Open the dialog"]},
         }
-        yield client, route, editor, {"content": "Make only this heading smaller", "expectedVersionId": baseline["id"], "selection": selection}
+        yield (
+            client,
+            route,
+            editor,
+            {
+                "content": "Make only this heading smaller",
+                "expectedVersionId": baseline["id"],
+                "selection": selection,
+            },
+        )
 
 
-def test_editor_and_selection_are_owner_private_and_resume_immutable(selection_api, pg_store, project, owner):
+def test_editor_and_selection_are_owner_private_and_resume_immutable(
+    selection_api, pg_store, project, owner
+):
     client, route, editor, payload = selection_api
     version_id = editor["versionId"]
     denied = client.get(route + f"/versions/{version_id}/editor", headers=auth(str(uuid4())))
     assert denied.status_code == 404
     assert "data-formlane-source" not in editor["html"]
-    assert client.get(route + f"/versions/{version_id}/editor", headers=auth(owner)).json() == editor
+    assert (
+        client.get(route + f"/versions/{version_id}/editor", headers=auth(owner)).json() == editor
+    )
     publication = client.post(route + "/publish", headers=auth(owner)).json()
     image = io.BytesIO()
     Image.new("RGB", (4, 3), "red").save(image, format="PNG")
     payload["selection"]["image"] = {
-        "provenance": "client-captured", "mimeType": "image/png",
-        "base64": base64.b64encode(image.getvalue()).decode(), "width": 4, "height": 3,
+        "provenance": "client-captured",
+        "mimeType": "image/png",
+        "base64": base64.b64encode(image.getvalue()).decode(),
+        "width": 4,
+        "height": 3,
     }
     submitted = client.post(route + "/chat", json=payload, headers=auth(owner))
     assert submitted.status_code == 202, submitted.text
@@ -89,7 +127,13 @@ def test_editor_and_selection_are_owner_private_and_resume_immutable(selection_a
     with pytest.raises(LeaseLost):
         pg_store.harness_context(job["id"], job["lease_token"])
     events = client.get(run_route + "/events", headers=auth(owner)).text
-    for private in ("Private transient heading", "Private scene", original["image"]["base64"], owner, "private-provider-secret"):
+    for private in (
+        "Private transient heading",
+        "Private scene",
+        original["image"]["base64"],
+        owner,
+        "private-provider-secret",
+    ):
         assert private not in events
     messages = client.get(route, headers=auth(owner)).json()["messages"]
     message = next(row for row in messages if row["id"] == receipt["id"])
@@ -102,15 +146,24 @@ def test_editor_and_selection_are_owner_private_and_resume_immutable(selection_a
     assert pg_store.harness_context(resumed["id"], resumed["lease_token"])["selection"] == original
     assert client.get(run_route, headers=auth(owner)).json()["run"]["selection"] == original
     detail = client.get(route, headers=auth(owner)).json()
-    assert detail["project"]["currentVersionId"] == detail["project"]["publishedVersionId"] == version_id
+    assert (
+        detail["project"]["currentVersionId"]
+        == detail["project"]["publishedVersionId"]
+        == version_id
+    )
     assert client.get(f"/p/{publication['slug']}").text == editor["html"]
 
 
-@pytest.mark.parametrize("field,value", [
-    ("sourceHash", "0" * 64), ("canonicalArtifactHash", "0" * 64),
-    ("editorArtifactHash", "0" * 64), ("instrumentationVersion", "forged"),
-    ("versionId", str(uuid4())),
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("sourceHash", "0" * 64),
+        ("canonicalArtifactHash", "0" * 64),
+        ("editorArtifactHash", "0" * 64),
+        ("instrumentationVersion", "forged"),
+        ("versionId", str(uuid4())),
+    ],
+)
 def test_selection_rejects_forged_baseline_identity(selection_api, owner, field, value):
     client, route, _, payload = selection_api
     before = client.get(route, headers=auth(owner)).json()
@@ -119,16 +172,37 @@ def test_selection_rejects_forged_baseline_identity(selection_api, owner, field,
     assert client.get(route, headers=auth(owner)).json() == before
 
 
-@pytest.mark.parametrize("mutation", [
-    lambda p: p.pop("expectedVersionId"),
-    lambda p: p["selection"]["evidence"]["element"].update(sourceId="forged"),
-    lambda p: p["selection"]["evidence"]["element"].update(text="x" * 2001),
-    lambda p: p["selection"]["evidence"]["element"].update(attributes={"value": "password"}),
-    lambda p: p["selection"]["evidence"]["element"].update(styles={"background-image": "url(secret)"}),
-    lambda p: p["selection"].update(manifest={"entries": {}}),
-    lambda p: p["selection"].update(image={"provenance": "server-reconstructed", "mimeType": "image/png", "base64": "eA==", "width": 1, "height": 1}),
-    lambda p: p["selection"].update(image={"provenance": "client-captured", "mimeType": "image/png", "base64": "eA==", "width": 1, "height": 1}),
-])
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda p: p.pop("expectedVersionId"),
+        lambda p: p["selection"]["evidence"]["element"].update(sourceId="forged"),
+        lambda p: p["selection"]["evidence"]["element"].update(text="x" * 2001),
+        lambda p: p["selection"]["evidence"]["element"].update(attributes={"value": "password"}),
+        lambda p: p["selection"]["evidence"]["element"].update(
+            styles={"background-image": "url(secret)"}
+        ),
+        lambda p: p["selection"].update(manifest={"entries": {}}),
+        lambda p: p["selection"].update(
+            image={
+                "provenance": "server-reconstructed",
+                "mimeType": "image/png",
+                "base64": "eA==",
+                "width": 1,
+                "height": 1,
+            }
+        ),
+        lambda p: p["selection"].update(
+            image={
+                "provenance": "client-captured",
+                "mimeType": "image/png",
+                "base64": "eA==",
+                "width": 1,
+                "height": 1,
+            }
+        ),
+    ],
+)
 def test_invalid_selection_never_persists_message_or_run(selection_api, owner, mutation):
     client, route, _, payload = selection_api
     before = client.get(route, headers=auth(owner)).json()
@@ -142,28 +216,44 @@ def test_unmapped_region_context_is_explicit_and_focus_is_not_a_second_target(se
     element = payload["selection"]["evidence"]["element"]
     element["sourceId"] = None
     payload["selection"]["evidence"] = {
-        "kind": "region", "rectangle": {"x": 0, "y": 0, "width": 400, "height": 200},
-        "elements": [element], "focus": copy.deepcopy(element),
-        "viewport": element["viewport"], "scroll": element["scroll"], "truncated": False,
+        "kind": "region",
+        "rectangle": {"x": 0, "y": 0, "width": 400, "height": 200},
+        "elements": [element],
+        "focus": copy.deepcopy(element),
+        "viewport": element["viewport"],
+        "scroll": element["scroll"],
+        "truncated": False,
     }
     response = client.post(route + "/chat", json=payload, headers=auth(owner))
     assert response.status_code == 202, response.text
-    run = client.get(route + f"/runs/{response.json()['run']['id']}", headers=auth(owner)).json()["run"]
-    assert run["selection"]["sourceResolutions"] == [{"nodeId": "node-1", "status": "unmapped", "reason": "No compiler source attribution."}]
+    run = client.get(route + f"/runs/{response.json()['run']['id']}", headers=auth(owner)).json()[
+        "run"
+    ]
+    assert run["selection"]["sourceResolutions"] == [
+        {"nodeId": "node-1", "status": "unmapped", "reason": "No compiler source attribution."}
+    ]
     assert run["selectionSummary"]["memberCount"] == 1
 
 
-def test_baseline_change_during_compile_is_rejected_atomically(selection_api, pg_store, project, owner, monkeypatch):
+def test_baseline_change_during_compile_is_rejected_atomically(
+    selection_api, pg_store, project, owner, monkeypatch
+):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Event
 
     import formlane.app as api_module
 
     client, route, editor, payload = selection_api
-    second = complete(pg_store, project, owner, {
-        "source": legacy_source("<h1>Second accepted version</h1>"),
-        "html": "<h1>Second accepted version</h1>", "summary": "Second",
-    })
+    second = complete(
+        pg_store,
+        project,
+        owner,
+        {
+            "source": legacy_source("<h1>Second accepted version</h1>"),
+            "html": "<h1>Second accepted version</h1>",
+            "summary": "Second",
+        },
+    )
     pg_store.restore_version(project["id"], owner, editor["versionId"])
     compiled, release = Event(), Event()
     real_compile = api_module.compile_editor_project
@@ -192,27 +282,58 @@ def test_concurrent_selection_submissions_admit_one_original(selection_api, owne
 
     client, route, _, payload = selection_api
     with ThreadPoolExecutor(max_workers=2) as pool:
-        responses = list(pool.map(lambda _: client.post(route + "/chat", json=payload, headers=auth(owner)), range(2)))
+        responses = list(
+            pool.map(
+                lambda _: client.post(route + "/chat", json=payload, headers=auth(owner)), range(2)
+            )
+        )
     assert sorted(response.status_code for response in responses) == [202, 409]
     detail = client.get(route, headers=auth(owner)).json()
-    assert len([message for message in detail["messages"] if message["content"] == payload["content"]]) == 1
+    assert (
+        len([message for message in detail["messages"] if message["content"] == payload["content"]])
+        == 1
+    )
 
 
-def test_history_candidates_and_foreign_versions_cannot_become_current(selection_api, pg_store, project, owner):
+def test_history_candidates_and_foreign_versions_cannot_become_current(
+    selection_api, pg_store, project, owner
+):
     client, route, editor, payload = selection_api
     other = pg_store.create_project(owner, "Other project")
-    other_version = complete(pg_store, other, owner, {
-        "source": legacy_source("<h1>Other</h1>"), "html": "<h1>Other</h1>", "summary": "Other",
-    })
-    assert client.get(route + f"/versions/{other_version['id']}/editor", headers=auth(owner)).status_code == 404
+    other_version = complete(
+        pg_store,
+        other,
+        owner,
+        {
+            "source": legacy_source("<h1>Other</h1>"),
+            "html": "<h1>Other</h1>",
+            "summary": "Other",
+        },
+    )
+    assert (
+        client.get(
+            route + f"/versions/{other_version['id']}/editor", headers=auth(owner)
+        ).status_code
+        == 404
+    )
     candidate = pg_store.create_run(project["id"], owner, "Unaccepted draft")
     job = pg_store.claim_run("candidate-worker")
-    pg_store.put_checkpoint(job["id"], job["lease_token"], "flow-v1/candidate/1", {
-        "source": legacy_source("<h1>Candidate</h1>"), "sourceHash": "0" * 64,
-        "html": "<h1>Candidate</h1>", "artifactHash": "0" * 64,
-    })
+    pg_store.put_checkpoint(
+        job["id"],
+        job["lease_token"],
+        "flow-v1/candidate/1",
+        {
+            "source": legacy_source("<h1>Candidate</h1>"),
+            "sourceHash": "0" * 64,
+            "html": "<h1>Candidate</h1>",
+            "artifactHash": "0" * 64,
+        },
+    )
     pg_store.cancel_run(project["id"], owner, candidate["id"])
-    assert client.get(route + f"/versions/{candidate['id']}/editor", headers=auth(owner)).status_code == 404
+    assert (
+        client.get(route + f"/versions/{candidate['id']}/editor", headers=auth(owner)).status_code
+        == 404
+    )
     payload["expectedVersionId"] = payload["selection"]["versionId"] = candidate["id"]
     assert client.post(route + "/chat", json=payload, headers=auth(owner)).status_code == 409
     detail = client.get(route, headers=auth(owner)).json()
@@ -229,13 +350,23 @@ def test_images_validate_actual_bytes_and_pixels(selection_api, owner, fault):
     image.save(output, format="PNG")
     if fault == "animated":
         output = io.BytesIO()
-        image.save(output, format="PNG", save_all=True, append_images=[Image.new("RGB", (4, 3), "blue")], duration=100, loop=0)
+        image.save(
+            output,
+            format="PNG",
+            save_all=True,
+            append_images=[Image.new("RGB", (4, 3), "blue")],
+            duration=100,
+            loop=0,
+        )
     pixels = output.getvalue()
     if fault == "bytes":
         pixels += b"x" * 2_000_000
     payload["selection"]["image"] = {
-        "provenance": "client-captured", "mimeType": "image/jpeg" if fault == "mime" else "image/png",
-        "base64": base64.b64encode(pixels).decode(), "width": width + 1 if fault == "dimensions" else width, "height": height,
+        "provenance": "client-captured",
+        "mimeType": "image/jpeg" if fault == "mime" else "image/png",
+        "base64": base64.b64encode(pixels).decode(),
+        "width": width + 1 if fault == "dimensions" else width,
+        "height": height,
     }
     before = client.get(route, headers=auth(owner)).json()
     assert client.post(route + "/chat", json=payload, headers=auth(owner)).status_code == 400
@@ -246,9 +377,13 @@ def test_region_enforces_metadata_and_member_limits(selection_api, owner):
     client, route, _, payload = selection_api
     element = payload["selection"]["evidence"]["element"]
     region = {
-        "kind": "region", "rectangle": {"x": 0, "y": 0, "width": 400, "height": 200},
+        "kind": "region",
+        "rectangle": {"x": 0, "y": 0, "width": 400, "height": 200},
         "elements": [{**element, "nodeId": f"member-{i}", "text": "x" * 2000} for i in range(32)],
-        "focus": None, "viewport": element["viewport"], "scroll": element["scroll"], "truncated": True,
+        "focus": None,
+        "viewport": element["viewport"],
+        "scroll": element["scroll"],
+        "truncated": True,
     }
     payload["selection"]["evidence"] = region
     assert client.post(route + "/chat", json=payload, headers=auth(owner)).status_code == 400
@@ -257,7 +392,9 @@ def test_region_enforces_metadata_and_member_limits(selection_api, owner):
 
 
 @pytest.mark.parametrize("fault", [None, "outside", "viewport", "scroll", "contradiction"])
-def test_region_focus_can_be_deduplicated_ancestor_but_not_unrelated_context(selection_api, owner, fault):
+def test_region_focus_can_be_deduplicated_ancestor_but_not_unrelated_context(
+    selection_api, owner, fault
+):
     client, route, _, payload = selection_api
     element = payload["selection"]["evidence"]["element"]
     focus = copy.deepcopy(element)
@@ -272,19 +409,30 @@ def test_region_focus_can_be_deduplicated_ancestor_but_not_unrelated_context(sel
         focus["nodeId"] = element["nodeId"]
         focus["sourceId"] = None
     payload["selection"]["evidence"] = {
-        "kind": "region", "rectangle": {"x": 0, "y": 0, "width": 400, "height": 200},
-        "elements": [element], "focus": focus, "viewport": element["viewport"],
-        "scroll": element["scroll"], "truncated": False,
+        "kind": "region",
+        "rectangle": {"x": 0, "y": 0, "width": 400, "height": 200},
+        "elements": [element],
+        "focus": focus,
+        "viewport": element["viewport"],
+        "scroll": element["scroll"],
+        "truncated": False,
     }
     response = client.post(route + "/chat", json=payload, headers=auth(owner))
     assert response.status_code == (400 if fault else 202), response.text
     if not fault:
-        run = client.get(route + f"/runs/{response.json()['run']['id']}", headers=auth(owner)).json()["run"]
-        assert {row["nodeId"] for row in run["selection"]["sourceResolutions"]} == {element["nodeId"], focus["nodeId"]}
+        run = client.get(
+            route + f"/runs/{response.json()['run']['id']}", headers=auth(owner)
+        ).json()["run"]
+        assert {row["nodeId"] for row in run["selection"]["sourceResolutions"]} == {
+            element["nodeId"],
+            focus["nodeId"],
+        }
         assert run["selectionSummary"]["memberCount"] == 1
 
 
-def test_original_selection_is_database_immutable_and_cancel_fences_late_completion(selection_api, pg_store, project, owner):
+def test_original_selection_is_database_immutable_and_cancel_fences_late_completion(
+    selection_api, pg_store, project, owner
+):
     from sqlalchemy import text
     from sqlalchemy.exc import DBAPIError
 
@@ -295,36 +443,73 @@ def test_original_selection_is_database_immutable_and_cancel_fences_late_complet
     job = pg_store.claim_run("cancel-selection")
     with pytest.raises(DBAPIError, match="Run selection is immutable"):
         with pg_store.engine.begin() as connection:
-            connection.execute(text("UPDATE runs SET selection=NULL WHERE id=:id"), {"id": admitted["id"]})
+            connection.execute(
+                text("UPDATE runs SET selection=NULL WHERE id=:id"), {"id": admitted["id"]}
+            )
     pg_store.cancel_run(project["id"], owner, admitted["id"])
     saved = pg_store.get_version(project["id"], owner, editor["versionId"])["version"]
-    assert not pg_store.complete_run(job["id"], job["lease_token"], {
-        "source": saved["source"], "html": saved["html"], "summary": "Late result",
-    })
+    assert not pg_store.complete_run(
+        job["id"],
+        job["lease_token"],
+        {
+            "source": saved["source"],
+            "html": saved["html"],
+            "summary": "Late result",
+        },
+    )
     assert pg_store.get_run(project["id"], owner, admitted["id"])["selection"] == original
     pg_store.resume_run(project["id"], owner, admitted["id"])
     resumed = pg_store.claim_run("failed-validation-selection")
-    assert pg_store.finish_run(resumed["id"], resumed["lease_token"], "failed", "validation")
+    assert pg_store.finish_run(
+        resumed["id"], resumed["lease_token"], "failed", "validation", "Validation failed"
+    )
     assert pg_store.get_run(project["id"], owner, admitted["id"])["selection"] == original
     detail = pg_store.get_project(project["id"], owner)
-    assert detail["project"]["currentVersionId"] == detail["project"]["publishedVersionId"] == editor["versionId"]
+    assert (
+        detail["project"]["currentVersionId"]
+        == detail["project"]["publishedVersionId"]
+        == editor["versionId"]
+    )
     assert pg_store.get_published(publication["slug"])["html"] == editor["html"]
 
 
-def test_incompatible_editor_build_never_replaces_saved_canonical_artifact(selection_api, pg_store, project, owner):
+def test_incompatible_editor_build_never_replaces_saved_canonical_artifact(
+    selection_api, pg_store, project, owner
+):
     client, route, _, _ = selection_api
     source = legacy_source("<h1>Original source</h1>")
-    mismatched = complete(pg_store, project, owner, {"source": source, "html": "<h1>Different saved artifact</h1>", "summary": "Legacy version"})
+    mismatched = complete(
+        pg_store,
+        project,
+        owner,
+        {
+            "source": source,
+            "html": "<h1>Different saved artifact</h1>",
+            "summary": "Legacy version",
+        },
+    )
     before = pg_store.get_project(project["id"], owner)
-    assert client.get(route + f"/versions/{mismatched['id']}/editor", headers=auth(owner)).status_code == 409
+    assert (
+        client.get(route + f"/versions/{mismatched['id']}/editor", headers=auth(owner)).status_code
+        == 409
+    )
     assert pg_store.get_project(project["id"], owner) == before
 
 
-def test_historical_editor_is_read_only_and_requires_explicit_restore(selection_api, pg_store, project, owner):
+def test_historical_editor_is_read_only_and_requires_explicit_restore(
+    selection_api, pg_store, project, owner
+):
     client, route, editor, payload = selection_api
-    later = complete(pg_store, project, owner, {
-        "source": legacy_source("<h1>Later</h1>"), "html": "<h1>Later</h1>", "summary": "Later",
-    })
+    later = complete(
+        pg_store,
+        project,
+        owner,
+        {
+            "source": legacy_source("<h1>Later</h1>"),
+            "html": "<h1>Later</h1>",
+            "summary": "Later",
+        },
+    )
     before = pg_store.get_project(project["id"], owner)
     viewed = client.get(route + f"/versions/{editor['versionId']}/editor", headers=auth(owner))
     assert viewed.status_code == 200 and viewed.json() == editor

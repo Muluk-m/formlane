@@ -26,6 +26,9 @@ function installRuntime(
   sourceAttribute: string,
   limits: typeof SELECTION_LIMITS,
 ) {
+  const documentId = Array.from(crypto.getRandomValues(new Uint32Array(4)), (value) =>
+    value.toString(16).padStart(8, '0'),
+  ).join('')
   let enabled = false
   let disposed = false
   let selected: Element | null = null
@@ -163,7 +166,7 @@ function installRuntime(
       style.display === 'none' ||
       style.visibility === 'hidden' ||
       style.visibility === 'collapse' ||
-      element.getClientRects().length === 0
+      (style.display !== 'contents' && element.getClientRects().length === 0)
     )
   }
   function text(element: Element, maximum: number = limits.textCharacters) {
@@ -686,7 +689,7 @@ function installRuntime(
         case 'enable':
           enabled = message.payload.enabled
           hovered = null
-          value = { enabled }
+          value = { enabled, documentId }
           send('ready', value)
           cancelAnimationFrame(scheduled)
           draw()
@@ -736,7 +739,7 @@ function installRuntime(
     send('error', { code: 'document-replaced', message: 'Preview document replaced' })
     dispose()
   })
-  send('ready', { enabled })
+  send('ready', { enabled, documentId })
 }
 
 /** Insert before application scripts; the runtime begins disabled and never reloads on enable. */

@@ -11,9 +11,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import sync_playwright
-
 from formlane.compiler import safe_environment
+from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -44,10 +43,13 @@ def preview(browser_bundle):
             env=safe_environment(),
         )
         page = browser.new_page(viewport={"width": 1000, "height": 800})
-        page.route("https://selection.test/**", lambda route: route.fulfill(
-            body="<!doctype html><html><body></body></html>",
-            content_type="text/html",
-        ))
+        page.route(
+            "https://selection.test/**",
+            lambda route: route.fulfill(
+                body="<!doctype html><html><body></body></html>",
+                content_type="text/html",
+            ),
+        )
         page.goto("https://selection.test/")
         page.add_script_tag(content=browser_bundle)
         page.evaluate("""() => {
@@ -88,7 +90,9 @@ def command(page, method, *args):
 
 
 def test_edit_owns_early_events_and_preserves_live_scene(preview):
-    frame = mount(preview, """
+    frame = mount(
+        preview,
+        """
       <input id="draft"><button id="action"><span>Save</span></button>
       <output id="count">0</output>
       <script>
@@ -99,7 +103,9 @@ def test_edit_owns_early_events_and_preserves_live_scene(preview):
           }, true);
         }
       </script>
-    """, late=True)
+    """,
+        late=True,
+    )
     frame.locator("#draft").fill("unsaved scene")
     before = frame.locator("#count").inner_text()
     command(preview, "enable", True)
@@ -118,16 +124,25 @@ def test_edit_owns_early_events_and_preserves_live_scene(preview):
 
 
 def test_layers_distinguish_instances_paginate_and_reject_replaced_nodes(preview):
-    frame = mount(preview, "<main>" + "".join(
-        f'<button data-formlane-source="same">Row {index}</button>'
-        for index in range(205)
-    ) + '<button hidden>Hidden row</button></main>')
+    frame = mount(
+        preview,
+        "<main>"
+        + "".join(
+            f'<button data-formlane-source="same">Row {index}</button>'
+            for index in range(205)
+        )
+        + "<button hidden>Hidden row</button></main>",
+    )
     root = command(preview, "children", None)["children"][0]
     first = command(preview, "children", root["nodeId"])
     assert len(first["children"]) == 200
     assert first["nextCursor"]
-    second = command(preview, "children", root["nodeId"], {"cursor": first["nextCursor"]})
-    assert [row["label"] for row in second["children"]] == [f"Row {index}" for index in range(200, 205)]
+    second = command(
+        preview, "children", root["nodeId"], {"cursor": first["nextCursor"]}
+    )
+    assert [row["label"] for row in second["children"]] == [
+        f"Row {index}" for index in range(200, 205)
+    ]
     assert second["nextCursor"] is None
     rows = first["children"]
     assert rows[0]["sourceId"] == rows[1]["sourceId"] == "same"
@@ -136,22 +151,39 @@ def test_layers_distinguish_instances_paginate_and_reject_replaced_nodes(preview
     assert selected["element"]["text"] == "Row 1"
     assert selected["element"]["nodeId"] == rows[1]["nodeId"]
     revealed = command(preview, "children", root["nodeId"], {"includeHidden": True})
-    revealed_last = command(preview, "children", root["nodeId"], {
-        "includeHidden": True, "cursor": revealed["nextCursor"],
-    })
+    revealed_last = command(
+        preview,
+        "children",
+        root["nodeId"],
+        {
+            "includeHidden": True,
+            "cursor": revealed["nextCursor"],
+        },
+    )
     assert revealed_last["children"][-1]["hidden"] is True
-    frame.locator("button").nth(1).evaluate("node => node.replaceWith(node.cloneNode(true))")
-    preview.wait_for_function("id => events.some(event => event.type === 'invalidated' && event.payload.nodeId === id)", arg=rows[1]["nodeId"])
+    frame.locator("button").nth(1).evaluate(
+        "node => node.replaceWith(node.cloneNode(true))"
+    )
+    preview.wait_for_function(
+        "id => events.some(event => event.type === 'invalidated' && event.payload.nodeId === id)",
+        arg=rows[1]["nodeId"],
+    )
     assert command(preview, "capture") is None
-    error = preview.evaluate("id => bridge.select(id).catch(error => error.message)", rows[1]["nodeId"])
+    error = preview.evaluate(
+        "id => bridge.select(id).catch(error => error.message)", rows[1]["nodeId"]
+    )
     assert error == "node-missing"
-    cursor_error = preview.evaluate("args => bridge.children(...args).catch(error => error.message)",
-                                    [root["nodeId"], {"cursor": first["nextCursor"]}])
+    cursor_error = preview.evaluate(
+        "args => bridge.children(...args).catch(error => error.message)",
+        [root["nodeId"], {"cursor": first["nextCursor"]}],
+    )
     assert cursor_error == "cursor-stale"
 
 
 def test_composed_layers_shadow_slots_dialog_svg_and_opaque_hosts(preview):
-    frame = mount(preview, """
+    frame = mount(
+        preview,
+        """
       <section id="host"><button slot="action" data-formlane-source="slotted">Slotted</button></section>
       <div id="closed"></div><canvas id="canvas"></canvas><iframe id="foreign"></iframe>
       <dialog><button><svg width="30" height="30"><rect width="30" height="30"/></svg>Dialog action</button></dialog>
@@ -161,7 +193,8 @@ def test_composed_layers_shadow_slots_dialog_svg_and_opaque_hosts(preview):
         document.querySelector('#closed').attachShadow({mode:'closed'}).innerHTML = '<b>Private</b>';
         document.querySelector('dialog').showModal();
       </script>
-    """)
+    """,
+    )
     command(preview, "enable", True)
     frame.locator("dialog svg rect").click()
     assert command(preview, "capture")["element"]["tagName"] == "rect"
@@ -175,18 +208,24 @@ def test_composed_layers_shadow_slots_dialog_svg_and_opaque_hosts(preview):
     host = next(row for row in rows if row["tagName"] == "section")
     article = command(preview, "children", host["nodeId"])["children"][0]
     slot = command(preview, "children", article["nodeId"])["children"][0]
-    assert command(preview, "children", slot["nodeId"])["children"][0]["nodeId"] == selected["nodeId"]
+    assert (
+        command(preview, "children", slot["nodeId"])["children"][0]["nodeId"]
+        == selected["nodeId"]
+    )
     for row in rows:
         if row["tagName"] in {"canvas", "iframe"}:
             assert command(preview, "children", row["nodeId"])["children"] == []
 
 
 def test_geometry_tracks_nested_scroll_zoom_resize_and_fragments(preview):
-    frame = mount(preview, """
+    frame = mount(
+        preview,
+        """
       <style>#scroller{height:200px;overflow:auto;width:220px}article{height:1000px}
       #target{display:inline;font-size:24px}body{zoom:1.25}</style>
       <div id="scroller"><article><span id="target">A long multiline target with several fragments</span></article></div>
-    """)
+    """,
+    )
     command(preview, "enable", True)
     frame.locator("#target").click(position={"x": 10, "y": 10})
     before = command(preview, "capture")["element"]
@@ -197,35 +236,53 @@ def test_geometry_tracks_nested_scroll_zoom_resize_and_fragments(preview):
     assert after["rects"][0]["y"] < before["rects"][0]["y"]
     preview.locator("iframe").evaluate("node => node.style.width = '375px'")
     assert command(preview, "capture")["element"]["viewport"]["width"] == 375
-    actual = frame.locator("#target").evaluate("node => Array.from(node.getClientRects(), r => ({x:r.x,y:r.y,width:r.width,height:r.height}))")
+    actual = frame.locator("#target").evaluate(
+        "node => Array.from(node.getClientRects(), r => ({x:r.x,y:r.y,width:r.width,height:r.height}))"
+    )
     assert command(preview, "capture")["element"]["rects"] == actual
 
 
 def test_region_deduplicates_ancestors_retains_overlap_and_bounds_evidence(preview):
-    mount(preview, """
+    mount(
+        preview,
+        """
       <style>body{margin:0}main{position:relative;width:400px;height:400px}
       button{position:absolute;top:20px;left:20px;width:100px;height:40px}</style>
       <main><button><span>First</span></button><button style="left:70px">Second</button>
       <input type="password" value="PRIVATE_PASSWORD"><script>const secret = 'PRIVATE_SCRIPT';</script></main>
-    """)
-    result = command(preview, "capture", {"region": {"x": 0, "y": 0, "width": 300, "height": 100}})
+    """,
+    )
+    result = command(
+        preview, "capture", {"region": {"x": 0, "y": 0, "width": 300, "height": 100}}
+    )
     assert result["kind"] == "region"
     assert result["rectangle"] == {"x": 0, "y": 0, "width": 300, "height": 100}
     assert {item["text"] for item in result["elements"]} >= {"First", "Second"}
     assert not any(item["tagName"] in {"body", "main"} for item in result["elements"])
     assert "PRIVATE_PASSWORD" not in json.dumps(result)
     assert "PRIVATE_SCRIPT" not in json.dumps(result)
-    mount(preview, '<main style="display:flex;flex-wrap:wrap;width:700px">' + ''.join(
-        f'<span style="width:30px;height:30px">{index}</span>' for index in range(100)
-    ) + '</main>')
-    bounded = command(preview, "capture", {"region": {"x": 0, "y": 0, "width": 800, "height": 600}})
+    mount(
+        preview,
+        '<main style="display:flex;flex-wrap:wrap;width:700px">'
+        + "".join(
+            f'<span style="width:30px;height:30px">{index}</span>'
+            for index in range(100)
+        )
+        + "</main>",
+    )
+    bounded = command(
+        preview, "capture", {"region": {"x": 0, "y": 0, "width": 800, "height": 600}}
+    )
     assert len(bounded["elements"]) == 32
     assert bounded["truncated"] is True
     assert len(json.dumps(bounded).encode()) <= 65536
 
 
 def test_keyboard_cancel_and_disposal_restore_application_input(preview):
-    frame = mount(preview, '<button>Action</button><output>0</output><script>document.addEventListener("click", () => document.querySelector("output").textContent = "1")</script>')
+    frame = mount(
+        preview,
+        '<button>Action</button><output>0</output><script>document.addEventListener("click", () => document.querySelector("output").textContent = "1")</script>',
+    )
     command(preview, "enable", True)
     frame.locator("button").click()
     frame.locator("button").press("Escape")
@@ -233,11 +290,16 @@ def test_keyboard_cancel_and_disposal_restore_application_input(preview):
     command(preview, "dispose")
     frame.locator("button").click()
     assert frame.locator("output").inner_text() == "1"
-    assert preview.evaluate("() => bridge.capture().catch(error => error.message)") == "bridge-disposed"
+    assert (
+        preview.evaluate("() => bridge.capture().catch(error => error.message)")
+        == "bridge-disposed"
+    )
 
 
-def test_old_sessions_foreign_windows_and_malformed_messages_cannot_replace_selection(preview):
-    frame = mount(preview, '<button>Original</button>')
+def test_old_sessions_foreign_windows_and_malformed_messages_cannot_replace_selection(
+    preview,
+):
+    frame = mount(preview, "<button>Original</button>")
     row = command(preview, "children", None)["children"][0]
     command(preview, "select", row["nodeId"])
     before = preview.evaluate("events.length")
@@ -250,27 +312,36 @@ def test_old_sessions_foreign_windows_and_malformed_messages_cannot_replace_sele
         ', "https://selection.test")<\\/script>';
       document.body.append(sibling);
     }""")
-    frame.evaluate("""sessionId => parent.postMessage({protocol:'formlane-selection',protocolVersion:1,
+    frame.evaluate(
+        """sessionId => parent.postMessage({protocol:'formlane-selection',protocolVersion:1,
       sessionId,requestId:null,type:'selected',payload:{kind:'element',element:{nodeId:'fake'}}},
-      'https://selection.test')""", preview.evaluate("config.sessionId"))
+      'https://selection.test')""",
+        preview.evaluate("config.sessionId"),
+    )
     assert command(preview, "capture")["element"]["text"] == "Original"
     assert preview.evaluate("events.length") == before
     old_session = preview.evaluate("config.sessionId")
-    mount(preview, '<button>New document</button>')
+    mount(preview, "<button>New document</button>")
     current = command(preview, "children", None)["children"][0]
     command(preview, "select", current["nodeId"])
-    preview.frames[1].evaluate("""sessionId => parent.postMessage({protocol:'formlane-selection',protocolVersion:1,
-      sessionId,requestId:null,type:'cleared',payload:null}, 'https://selection.test')""", old_session)
+    preview.frames[1].evaluate(
+        """sessionId => parent.postMessage({protocol:'formlane-selection',protocolVersion:1,
+      sessionId,requestId:null,type:'cleared',payload:null}, 'https://selection.test')""",
+        old_session,
+    )
     assert command(preview, "capture")["element"]["text"] == "New document"
 
 
 def test_overlap_cycle_is_distinct_from_parent_and_keyboard_can_select(preview):
-    frame = mount(preview, '''
+    frame = mount(
+        preview,
+        """
       <main style="position:relative;height:200px">
         <button id="back" style="position:absolute;width:180px;height:80px">Back</button>
         <button id="front" style="position:absolute;width:180px;height:80px">Front</button>
       </main>
-    ''')
+    """,
+    )
     command(preview, "enable", True)
     frame.locator("#front").click()
     assert command(preview, "capture")["element"]["text"] == "Front"
@@ -284,7 +355,10 @@ def test_overlap_cycle_is_distinct_from_parent_and_keyboard_can_select(preview):
 
 
 def test_disable_during_pointer_sequence_does_not_release_its_click(preview):
-    frame = mount(preview, '<button>Action</button><output>0</output><script>window.addEventListener("click", () => document.querySelector("output").textContent = "1", true)</script>')
+    frame = mount(
+        preview,
+        '<button>Action</button><output>0</output><script>window.addEventListener("click", () => document.querySelector("output").textContent = "1", true)</script>',
+    )
     command(preview, "enable", True)
     box = frame.locator("button").bounding_box()
     preview.mouse.move(box["x"] + 5, box["y"] + 5)
@@ -304,14 +378,22 @@ def test_wheel_scrolling_survives_edit_and_frame_never_receives_owner_secrets(pr
     frame.wait_for_function("scrollY > 0")
     rows = command(preview, "children", None)["children"]
     assert rows[0]["hidden"] is False
-    assert frame.evaluate("() => {try { return parent.document.cookie } catch { return 'opaque' }}") == "opaque"
+    assert (
+        frame.evaluate(
+            "() => {try { return parent.document.cookie } catch { return 'opaque' }}"
+        )
+        == "opaque"
+    )
 
 
 def test_request_correlation_rejects_wrong_command_and_dispose_settles_pending(preview):
-    frame = mount(preview, '<button>Action</button>')
-    frame.evaluate("""sessionId => parent.postMessage({protocol:'formlane-selection', protocolVersion:1,
+    frame = mount(preview, "<button>Action</button>")
+    frame.evaluate(
+        """sessionId => parent.postMessage({protocol:'formlane-selection', protocolVersion:1,
       sessionId,requestId:'r999999',type:'result',payload:{command:'capture',value:null}},
-      'https://selection.test')""", preview.evaluate("config.sessionId"))
+      'https://selection.test')""",
+        preview.evaluate("config.sessionId"),
+    )
     assert command(preview, "children", None)["children"][0]["label"] == "Action"
     result = preview.evaluate("""() => {
       const frame = document.createElement('iframe'); frame.setAttribute('sandbox','allow-scripts');
@@ -325,12 +407,19 @@ def test_request_correlation_rejects_wrong_command_and_dispose_settles_pending(p
     assert result == "bridge-disposed"
 
 
-def test_large_unicode_metadata_remains_bounded_with_explicit_layer_continuation(preview):
+def test_large_unicode_metadata_remains_bounded_with_explicit_layer_continuation(
+    preview,
+):
     label = "界" * 500
-    frame = mount(preview, '<main>' + ''.join(
-        f'<button aria-label="{label}" data-formlane-source="{label}">{index}</button>'
-        for index in range(205)
-    ) + '</main>')
+    frame = mount(
+        preview,
+        "<main>"
+        + "".join(
+            f'<button aria-label="{label}" data-formlane-source="{label}">{index}</button>'
+            for index in range(205)
+        )
+        + "</main>",
+    )
     root = command(preview, "children", None)["children"][0]
     seen = []
     cursor = None
@@ -370,23 +459,33 @@ def test_missing_runtime_times_out_without_resubmitting_or_reloading(preview):
 
 
 def test_outline_is_rendered_above_modal_and_disappears_when_edit_is_disabled(preview):
-    frame = mount(preview, '''
+    frame = mount(
+        preview,
+        """
       <dialog style="padding:50px;background:white"><button style="width:180px;height:60px;background:white">Modal target</button></dialog>
       <script>document.querySelector('dialog').showModal()</script>
-    ''')
+    """,
+    )
     command(preview, "enable", True)
     frame.locator("button").click()
     box = frame.locator("button").bounding_box()
 
     def outline_pixel():
         image = base64.b64encode(preview.screenshot()).decode()
-        return preview.evaluate("""async ({image,x,y}) => {
+        return preview.evaluate(
+            """async ({image,x,y}) => {
           const bytes = Uint8Array.from(atob(image), char => char.charCodeAt(0));
           const bitmap = await createImageBitmap(new Blob([bytes], {type:'image/png'}));
           const canvas = document.createElement('canvas'); canvas.width=bitmap.width; canvas.height=bitmap.height;
           const context = canvas.getContext('2d'); context.drawImage(bitmap,0,0); bitmap.close();
           return Array.from(context.getImageData(x,y,1,1).data);
-        }""", {"image": image, "x": int(box["x"] + box["width"] / 2), "y": int(box["y"] + 1)})
+        }""",
+            {
+                "image": image,
+                "x": int(box["x"] + box["width"] / 2),
+                "y": int(box["y"] + 1),
+            },
+        )
 
     assert outline_pixel() == [2, 132, 199, 255]
     command(preview, "enable", False)
@@ -394,8 +493,23 @@ def test_outline_is_rendered_above_modal_and_disappears_when_edit_is_disabled(pr
     assert frame.locator("dialog").evaluate("node => node.open") is True
 
 
-def test_document_navigation_invalidates_even_a_late_attached_bridge(preview):
-    mount(preview, '<button>Before navigation</button>', late=True)
-    preview.locator("iframe").evaluate("frame => frame.srcdoc = '<button>Replacement</button>'")
-    preview.wait_for_function("events.some(event => event.type === 'error' && event.payload.code === 'document-replaced')")
-    assert preview.evaluate("() => bridge.capture().catch(error => error.message)") == "bridge-disposed"
+@pytest.mark.parametrize("instrumented", [False, True])
+def test_document_navigation_invalidates_even_a_late_attached_bridge(
+    preview, instrumented
+):
+    mount(preview, "<button>Before navigation</button>", late=True)
+    preview.evaluate(
+        """instrumented => {
+      const replacement = '<button>Replacement</button>';
+      document.querySelector('iframe').srcdoc = instrumented
+        ? selectionRuntime.injectPreviewSelectionRuntime(replacement, config) : replacement;
+    }""",
+        instrumented,
+    )
+    preview.wait_for_function(
+        "events.some(event => event.type === 'error' && event.payload.code === 'document-replaced')"
+    )
+    assert (
+        preview.evaluate("() => bridge.capture().catch(error => error.message)")
+        == "bridge-disposed"
+    )

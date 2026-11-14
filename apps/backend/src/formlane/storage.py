@@ -546,7 +546,10 @@ class Store:
                 raise StoreError(400, "This project already has a build. Send a follow-up instead.")
             if project.run_id:
                 raise StoreError(409, "A generation is already running for this project.")
-            if expected_version_id is not None and project.current_version_id != expected_version_id:
+            if (
+                expected_version_id is not None
+                and project.current_version_id != expected_version_id
+            ):
                 raise StoreError(409, "The current version changed. Select the target again.")
             frozen_selection = None
             if selection is not None:
