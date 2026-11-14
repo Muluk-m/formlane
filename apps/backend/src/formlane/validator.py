@@ -399,7 +399,7 @@ async def _run_browser(html: str, checks: list[dict], settings, cancelled, repor
                     issues = [outcome["issue"] for outcome in outcomes if outcome["issue"]]
                     if issues:
                         probe = await session.frame.evaluate("() => window.__clickProbe")
-                        issues.append(f"Click diagnostic: {probe}")
+                        report.setdefault("clickDiagnostics", []).append({"issues": issues[:], "events": probe})
                     if session.errors:
                         issues.append(f"{check['name']}: {'; '.join(session.errors)}")
                     report["issues"].extend(issues)
@@ -742,7 +742,11 @@ def _subprocess(payload: dict, cancelled, timeout: int) -> dict:
                 "Browser validation failed: " + stderr.decode("utf-8", errors="replace")[:4000]
             )
         try:
-            return json.loads(stdout)
+            result = json.loads(stdout)
+            diagnostics = result.pop("clickDiagnostics", None)
+            if diagnostics:
+                print("Click diagnostic: " + json.dumps(diagnostics), file=sys.stderr)
+            return result
         except (ValueError, UnicodeError):
             raise RuntimeError("Browser validator returned invalid JSON.") from None
     finally:

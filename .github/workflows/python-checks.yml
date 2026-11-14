@@ -84,6 +84,11 @@ jobs:
           # Materialize cold image pages before the existing bounded browser launch.
           find /opt/google/chrome -type f -exec cat {} + > /dev/null
           "$BROWSER_EXECUTABLE_PATH" --version
+      - name: Capture native click failures
+        run: >-
+          uv run --project apps/backend pytest
+          apps/compiler/tests/test_editor_artifacts.py
+          apps/backend/tests/test_selection_scene_harness.py
       - name: Recorded acceptance and iteration contracts
         run: uv run --project apps/backend pytest apps/backend/tests/test_flow_equivalence.py apps/backend/tests/test_iteration.py
       - name: Native CrewAI upgrade contracts
