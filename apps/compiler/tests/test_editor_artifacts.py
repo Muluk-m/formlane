@@ -125,9 +125,11 @@ const aside = document.createElement('aside'); aside.id = 'dynamic'; aside.textC
 
 def test_reserved_attributes_and_jsx_spreads_preserve_real_dom_semantics():
     source = create_source("react-ts")
-    source["files"]["src/App.tsx"] = """const props = { 'data-formlane-source': 'application-owned' }
+    source["files"]["src/App.tsx"] = """import { useState } from 'react'
+const props = { 'data-formlane-source': 'application-owned' }
 export default function App() {
-  return <main><button id="spread" {...props}>Spread</button><button id="explicit" data-formlane-source="explicit-owned">Explicit</button><button id="mapped">Mapped</button></main>
+  const [value, setValue] = useState('idle')
+  return <main><button id="spread" onClick={() => setValue('spread')} {...props}>Spread</button><button id="explicit" data-formlane-source="explicit-owned">Explicit</button><button id="mapped" onClick={() => setValue('mapped')}>Mapped</button><output id="result">{value}</output></main>
 }
 """
     editor = compile_request({"mode": "editor", "source": source})
@@ -139,16 +141,20 @@ export default function App() {
     assert_browser(editor["editorHtml"], [
         {
             "name": "Application attributes retain their values",
-            "actions": [],
+            "actions": [{"kind": "click", "selector": "#spread", "value": None}],
             "assertions": [
                 {"kind": "attribute", "selector": "#spread", "attribute": MARKER, "expected": "application-owned"},
                 {"kind": "attribute", "selector": "#explicit", "attribute": MARKER, "expected": "explicit-owned"},
+                {"kind": "text", "selector": "#result", "expected": "spread"},
             ],
         },
         {
             "name": "Safe sibling gets an authoritative build-local source ID",
-            "actions": [],
-            "assertion": {"kind": "attribute", "selector": "#mapped", "attribute": MARKER, "expected": locations[0][0]},
+            "actions": [{"kind": "click", "selector": "#mapped", "value": None}],
+            "assertions": [
+                {"kind": "attribute", "selector": "#mapped", "attribute": MARKER, "expected": locations[0][0]},
+                {"kind": "text", "selector": "#result", "expected": "mapped"},
+            ],
         },
     ])
 
@@ -162,6 +168,9 @@ def test_template_clones_keep_source_identity_and_string_created_dom_is_unmapped
 const main = document.querySelector('main')
 main.append(template.content.cloneNode(true), template.content.cloneNode(true))
 main.insertAdjacentHTML('beforeend', '<aside id="dynamic">String created</aside>')
+main.addEventListener('click', event => {
+  if (event.target instanceof HTMLButtonElement) event.target.textContent = 'Used clone'
+})
 """
     editor = compile_request({"mode": "editor", "source": source})
     buttons = [key for key, value in editor["manifest"]["entries"].items() if value["tagName"] == "button"]
@@ -169,8 +178,12 @@ main.insertAdjacentHTML('beforeend', '<aside id="dynamic">String created</aside>
     assert_browser(editor["editorHtml"], [
         {
             "name": "Template clones share their immutable definition",
-            "actions": [],
-            "assertion": {"kind": "count", "selector": f'main button[{MARKER}="{buttons[0]}"]', "expected": "2"},
+            "actions": [{"kind": "click", "selector": "main button:first-child", "value": None}],
+            "assertions": [
+                {"kind": "count", "selector": f'main button[{MARKER}="{buttons[0]}"]', "expected": "2"},
+                {"kind": "text", "selector": "main button:first-child", "expected": "Used clone"},
+                {"kind": "text", "selector": "main button:nth-child(2)", "expected": "Cloned row"},
+            ],
         },
         {
             "name": "Runtime string insertion has no fabricated source",

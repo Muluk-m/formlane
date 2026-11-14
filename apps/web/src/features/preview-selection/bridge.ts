@@ -1,26 +1,62 @@
-import {
-  SELECTION_LIMITS,
-  SELECTION_PROTOCOL,
-  SELECTION_PROTOCOL_VERSION,
-} from '@atoms-demo/core/selection'
 import type {
   SelectionCommandPayloads,
   SelectionCommandResults,
   SelectionEvent,
   SelectionRect,
 } from '@atoms-demo/core/selection'
+import {
+  SELECTION_LIMITS,
+  SELECTION_PROTOCOL,
+  SELECTION_PROTOCOL_VERSION,
+} from '@atoms-demo/core/selection'
 import { z } from 'zod'
 import type { PreviewSelectionConfig } from './runtime'
 
 const shortString = z.string().max(SELECTION_LIMITS.attributeCharacters)
 const nodeId = z.string().min(1).max(200)
-const rectangle = z.strictObject({ x: z.number(), y: z.number(), width: z.number().nonnegative(), height: z.number().nonnegative() })
-const viewport = z.strictObject({ width: z.number().nonnegative(), height: z.number().nonnegative() })
+const rectangle = z.strictObject({
+  x: z.number(),
+  y: z.number(),
+  width: z.number().nonnegative(),
+  height: z.number().nonnegative(),
+})
+const viewport = z.strictObject({
+  width: z.number().nonnegative(),
+  height: z.number().nonnegative(),
+})
 const scroll = z.strictObject({ x: z.number(), y: z.number() })
-const attributes = z.enum(['id', 'class', 'role', 'aria-label', 'aria-labelledby', 'aria-describedby',
-  'aria-expanded', 'aria-selected', 'aria-checked', 'aria-disabled', 'alt', 'title', 'type', 'placeholder'])
-const styles = z.enum(['display', 'visibility', 'position', 'color', 'background-color', 'font-family',
-  'font-size', 'font-weight', 'line-height', 'text-align', 'border-radius', 'padding', 'gap', 'opacity'])
+const attributes = z.enum([
+  'id',
+  'class',
+  'role',
+  'aria-label',
+  'aria-labelledby',
+  'aria-describedby',
+  'aria-expanded',
+  'aria-selected',
+  'aria-checked',
+  'aria-disabled',
+  'alt',
+  'title',
+  'type',
+  'placeholder',
+])
+const styles = z.enum([
+  'display',
+  'visibility',
+  'position',
+  'color',
+  'background-color',
+  'font-family',
+  'font-size',
+  'font-weight',
+  'line-height',
+  'text-align',
+  'border-radius',
+  'padding',
+  'gap',
+  'opacity',
+])
 const element = z.strictObject({
   nodeId,
   sourceId: shortString.nullable(),
@@ -30,32 +66,64 @@ const element = z.strictObject({
   attributes: z.partialRecord(attributes, shortString),
   styles: z.partialRecord(styles, shortString),
   selector: z.string().max(SELECTION_LIMITS.selectorCharacters),
-  ancestors: z.array(z.strictObject({ nodeId, sourceId: shortString.nullable(), tagName: shortString,
-    label: shortString })).max(SELECTION_LIMITS.ancestors),
+  ancestors: z
+    .array(
+      z.strictObject({
+        nodeId,
+        sourceId: shortString.nullable(),
+        tagName: shortString,
+        label: shortString,
+      }),
+    )
+    .max(SELECTION_LIMITS.ancestors),
   rects: z.array(rectangle).max(SELECTION_LIMITS.rects),
   viewport,
   scroll,
-  instance: z.strictObject({ label: z.string().max(SELECTION_LIMITS.instanceCharacters),
-    context: z.string().max(SELECTION_LIMITS.instanceCharacters) }),
+  instance: z.strictObject({
+    label: z.string().max(SELECTION_LIMITS.instanceCharacters),
+    context: z.string().max(SELECTION_LIMITS.instanceCharacters),
+  }),
 })
 const selected = z.strictObject({ kind: z.literal('element'), element })
-const evidence = z.discriminatedUnion('kind', [selected, z.strictObject({
-  kind: z.literal('region'), rectangle, elements: z.array(element).max(SELECTION_LIMITS.regionMembers),
-  focus: element.nullable(), viewport, scroll, truncated: z.boolean(),
-})])
+const evidence = z.discriminatedUnion('kind', [
+  selected,
+  z.strictObject({
+    kind: z.literal('region'),
+    rectangle,
+    elements: z.array(element).max(SELECTION_LIMITS.regionMembers),
+    focus: element.nullable(),
+    viewport,
+    scroll,
+    truncated: z.boolean(),
+  }),
+])
 const resultSchemas = {
   enable: z.strictObject({ enabled: z.boolean() }),
-  children: z.strictObject({ parentNodeId: nodeId.nullable(), children: z.array(z.strictObject({
-    nodeId, tagName: shortString, label: shortString, sourceId: shortString.nullable(),
-    hasChildren: z.boolean(), hidden: z.boolean(),
-  })).max(SELECTION_LIMITS.children), nextCursor: z.string().max(1000).nullable() }),
+  children: z.strictObject({
+    parentNodeId: nodeId.nullable(),
+    children: z
+      .array(
+        z.strictObject({
+          nodeId,
+          tagName: shortString,
+          label: shortString,
+          sourceId: shortString.nullable(),
+          hasChildren: z.boolean(),
+          hidden: z.boolean(),
+        }),
+      )
+      .max(SELECTION_LIMITS.children),
+    nextCursor: z.string().max(1000).nullable(),
+  }),
   select: selected,
   hover: z.null(),
   parent: selected.nullable(),
   capture: evidence.nullable(),
   clear: z.null(),
   dispose: z.null(),
-} satisfies { [Command in keyof SelectionCommandResults]: z.ZodType<SelectionCommandResults[Command]> }
+} satisfies {
+  [Command in keyof SelectionCommandResults]: z.ZodType<SelectionCommandResults[Command]>
+}
 const eventSchemas = {
   ready: z.strictObject({ enabled: z.boolean() }),
   selected,
@@ -64,12 +132,26 @@ const eventSchemas = {
   error: z.strictObject({ code: z.string().max(200), message: z.string().max(1000) }),
 }
 const envelope = z.strictObject({
-  protocol: z.literal(SELECTION_PROTOCOL), protocolVersion: z.literal(SELECTION_PROTOCOL_VERSION),
-  sessionId: z.string().min(1).max(200), requestId: z.string().min(1).max(200).nullable(),
-  type: z.enum(['ready', 'result', 'selected', 'cleared', 'invalidated', 'error']), payload: z.unknown(),
+  protocol: z.literal(SELECTION_PROTOCOL),
+  protocolVersion: z.literal(SELECTION_PROTOCOL_VERSION),
+  sessionId: z.string().min(1).max(200),
+  requestId: z.string().min(1).max(200).nullable(),
+  type: z.enum(['ready', 'result', 'selected', 'cleared', 'invalidated', 'error']),
+  payload: z.unknown(),
 })
-const resultPayload = z.strictObject({ command: z.enum(['enable', 'children', 'select', 'hover',
-  'parent', 'capture', 'clear', 'dispose']), value: z.unknown() })
+const resultPayload = z.strictObject({
+  command: z.enum([
+    'enable',
+    'children',
+    'select',
+    'hover',
+    'parent',
+    'capture',
+    'clear',
+    'dispose',
+  ]),
+  value: z.unknown(),
+})
 
 export interface PreviewSelectionBridgeOptions extends PreviewSelectionConfig {
   onEvent?: (event: SelectionEvent) => void
@@ -82,14 +164,20 @@ export interface PreviewSelectionBridge {
   enable(enabled: boolean): Promise<SelectionCommandResults['enable']>
   /** Null lists body children. Offscreen rows remain; hidden rows require includeHidden.
    * Continue with nextCursor and identical options; a DOM mutation can reject cursor-stale. */
-  children(parentNodeId: string | null, options?: { cursor?: string | null; includeHidden?: boolean }): Promise<SelectionCommandResults['children']>
+  children(
+    parentNodeId: string | null,
+    options?: { cursor?: string | null; includeHidden?: boolean },
+  ): Promise<SelectionCommandResults['children']>
   select(nodeId: string): Promise<SelectionCommandResults['select']>
   hover(nodeId: string | null): Promise<null>
   parent(): Promise<SelectionCommandResults['parent']>
   /** CSS viewport coordinates, positive-area intersection, deepest descendants first.
    * Overlapping siblings remain distinct; truncated reports node/byte/work limits.
    * This captures DOM context only, never screenshot pixels or application state. */
-  capture(options?: { region?: SelectionRect; focusNodeId?: string | null }): Promise<SelectionCommandResults['capture']>
+  capture(options?: {
+    region?: SelectionRect
+    focusNodeId?: string | null
+  }): Promise<SelectionCommandResults['capture']>
   clear(): Promise<null>
   dispose(): void
 }
@@ -104,8 +192,13 @@ export function createPreviewSelectionBridge(
   frame: HTMLIFrameElement,
   options: PreviewSelectionBridgeOptions,
 ): PreviewSelectionBridge {
-  if (!frame.contentWindow || !options.sessionId || options.sessionId.length > 200 ||
-    options.editorOrigin !== window.location.origin) throw new Error('invalid-selection-config')
+  if (
+    !frame.contentWindow ||
+    !options.sessionId ||
+    options.sessionId.length > 200 ||
+    options.editorOrigin !== window.location.origin
+  )
+    throw new Error('invalid-selection-config')
   const child = frame.contentWindow
   const host = frame.ownerDocument.defaultView
   if (!host) throw new Error('preview-host-missing')
@@ -114,18 +207,34 @@ export function createPreviewSelectionBridge(
   let desiredEnabled = false
   let sequence = 0
   let loaded = false
-  const pending = new Map<string, {
-    command: keyof SelectionCommandPayloads
-    payload: SelectionCommandPayloads[keyof SelectionCommandPayloads]
-    resolve: (value: unknown) => void
-    reject: (error: Error) => void
-    timer: number
-    sent: boolean
-  }>()
+  const pending = new Map<
+    string,
+    {
+      command: keyof SelectionCommandPayloads
+      payload: SelectionCommandPayloads[keyof SelectionCommandPayloads]
+      resolve: (value: unknown) => void
+      reject: (error: Error) => void
+      timer: number
+      sent: boolean
+    }
+  >()
   const timeout = options.requestTimeoutMs ?? 10000
-  function post(type: keyof SelectionCommandPayloads, payload: SelectionCommandPayloads[keyof SelectionCommandPayloads], requestId: string) {
-    child.postMessage({ protocol: SELECTION_PROTOCOL, protocolVersion: SELECTION_PROTOCOL_VERSION,
-      sessionId: options.sessionId, requestId, type, payload }, '*')
+  function post(
+    type: keyof SelectionCommandPayloads,
+    payload: SelectionCommandPayloads[keyof SelectionCommandPayloads],
+    requestId: string,
+  ) {
+    child.postMessage(
+      {
+        protocol: SELECTION_PROTOCOL,
+        protocolVersion: SELECTION_PROTOCOL_VERSION,
+        sessionId: options.sessionId,
+        requestId,
+        type,
+        payload,
+      },
+      '*',
+    )
   }
   function flush() {
     for (const [requestId, request] of pending) {
@@ -146,10 +255,17 @@ export function createPreviewSelectionBridge(
       pending.delete(requestId)
       reject(new Error('selection-timeout'))
     }, timeout)
-    pending.set(requestId, { command, payload, timer, sent: false, reject, resolve(value) {
-      // The command-indexed schema checks this before settling the matching request.
-      resolve(value as SelectionCommandResults[Command])
-    } })
+    pending.set(requestId, {
+      command,
+      payload,
+      timer,
+      sent: false,
+      reject,
+      resolve(value) {
+        // The command-indexed schema checks this before settling the matching request.
+        resolve(value as SelectionCommandResults[Command])
+      },
+    })
     if (ready) flush()
     return promise
   }
@@ -168,7 +284,11 @@ export function createPreviewSelectionBridge(
   function receive(event: MessageEvent) {
     if (disposed || event.source !== child || event.origin !== 'null') return
     let size: number
-    try { size = new TextEncoder().encode(JSON.stringify(event.data)).byteLength } catch { return }
+    try {
+      size = new TextEncoder().encode(JSON.stringify(event.data)).byteLength
+    } catch {
+      return
+    }
     if (size > SELECTION_LIMITS.metadataBytes) return
     const parsed = envelope.safeParse(event.data)
     if (!parsed.success || parsed.data.sessionId !== options.sessionId) return
@@ -211,9 +331,14 @@ export function createPreviewSelectionBridge(
   function loadedFrame() {
     if (loaded && ready) {
       dispose('document-replaced')
-      options.onEvent?.({ protocol: SELECTION_PROTOCOL, protocolVersion: SELECTION_PROTOCOL_VERSION,
-        sessionId: options.sessionId, requestId: null, type: 'error',
-        payload: { code: 'document-replaced', message: 'Preview document replaced' } })
+      options.onEvent?.({
+        protocol: SELECTION_PROTOCOL,
+        protocolVersion: SELECTION_PROTOCOL_VERSION,
+        sessionId: options.sessionId,
+        requestId: null,
+        type: 'error',
+        payload: { code: 'document-replaced', message: 'Preview document replaced' },
+      })
       return
     }
     loaded = true
@@ -225,13 +350,30 @@ export function createPreviewSelectionBridge(
   probe()
   return {
     sessionId: options.sessionId,
-    enable(enabled) { desiredEnabled = enabled; return request('enable', { enabled }) },
-    children(parentNodeId, childOptions = {}) { return request('children', { parentNodeId, ...childOptions }) },
-    select(nodeId) { return request('select', { nodeId }) },
-    hover(nodeId) { return request('hover', { nodeId }) },
-    parent() { return request('parent', {}) },
-    capture(captureOptions = {}) { return request('capture', captureOptions) },
-    clear() { return request('clear', {}) },
-    dispose() { dispose() },
+    enable(enabled) {
+      desiredEnabled = enabled
+      return request('enable', { enabled })
+    },
+    children(parentNodeId, childOptions = {}) {
+      return request('children', { parentNodeId, ...childOptions })
+    },
+    select(nodeId) {
+      return request('select', { nodeId })
+    },
+    hover(nodeId) {
+      return request('hover', { nodeId })
+    },
+    parent() {
+      return request('parent', {})
+    },
+    capture(captureOptions = {}) {
+      return request('capture', captureOptions)
+    },
+    clear() {
+      return request('clear', {})
+    },
+    dispose() {
+      dispose()
+    },
   }
 }

@@ -1,9 +1,3 @@
-import {
-  SELECTION_LIMITS,
-  SELECTION_PROTOCOL,
-  SELECTION_PROTOCOL_VERSION,
-  SELECTION_SOURCE_ATTRIBUTE,
-} from '@atoms-demo/core/selection'
 import type {
   SelectionChildrenPage,
   SelectionCommand,
@@ -11,6 +5,12 @@ import type {
   SelectionElementEvidence,
   SelectionEvidence,
   SelectionRect,
+} from '@atoms-demo/core/selection'
+import {
+  SELECTION_LIMITS,
+  SELECTION_PROTOCOL,
+  SELECTION_PROTOCOL_VERSION,
+  SELECTION_SOURCE_ATTRIBUTE,
 } from '@atoms-demo/core/selection'
 
 export interface PreviewSelectionConfig {
@@ -44,21 +44,69 @@ function installRuntime(
   const nodes = new Map<string, WeakRef<Element>>()
   const observed = new WeakSet<Node>()
   const cleanups: (() => void)[] = []
-  const technical: Record<string, true> = { script: true, style: true, link: true, meta: true,
-    head: true, title: true, template: true, noscript: true }
-  const attributes = ['id', 'class', 'role', 'aria-label', 'aria-labelledby', 'aria-describedby',
-    'aria-expanded', 'aria-selected', 'aria-checked', 'aria-disabled', 'alt', 'title', 'type', 'placeholder']
-  const styles = ['display', 'visibility', 'position', 'color', 'background-color', 'font-family',
-    'font-size', 'font-weight', 'line-height', 'text-align', 'border-radius', 'padding', 'gap', 'opacity']
+  const technical: Record<string, true> = {
+    script: true,
+    style: true,
+    link: true,
+    meta: true,
+    head: true,
+    title: true,
+    template: true,
+    noscript: true,
+  }
+  const attributes = [
+    'id',
+    'class',
+    'role',
+    'aria-label',
+    'aria-labelledby',
+    'aria-describedby',
+    'aria-expanded',
+    'aria-selected',
+    'aria-checked',
+    'aria-disabled',
+    'alt',
+    'title',
+    'type',
+    'placeholder',
+  ]
+  const styles = [
+    'display',
+    'visibility',
+    'position',
+    'color',
+    'background-color',
+    'font-family',
+    'font-size',
+    'font-weight',
+    'line-height',
+    'text-align',
+    'border-radius',
+    'padding',
+    'gap',
+    'opacity',
+  ]
   const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength
   const bounded = (value: string | null, length: number) => (value ?? '').slice(0, length)
-  const tag = (element: Element) => element.localName.toLowerCase().slice(0, limits.attributeCharacters)
-  const usable = (element: Element) => element !== overlay && !Object.hasOwn(technical, tag(element))
+  const tag = (element: Element) =>
+    element.localName.toLowerCase().slice(0, limits.attributeCharacters)
+  const usable = (element: Element) =>
+    element !== overlay && !Object.hasOwn(technical, tag(element))
   const rect = (value: DOMRect): SelectionRect => ({
-    x: value.x, y: value.y, width: value.width, height: value.height,
+    x: value.x,
+    y: value.y,
+    width: value.width,
+    height: value.height,
   })
   function send(type: string, payload: unknown, requestId: string | null = null) {
-    const message = { protocol, protocolVersion, sessionId: config.sessionId, requestId, type, payload }
+    const message = {
+      protocol,
+      protocolVersion,
+      sessionId: config.sessionId,
+      requestId,
+      type,
+      payload,
+    }
     if (bytes(message) > limits.metadataBytes) throw new Error('metadata-too-large')
     parent.postMessage(message, config.editorOrigin)
   }
@@ -89,7 +137,12 @@ function installRuntime(
   function observe(root: Node) {
     if (observed.has(root)) return
     observed.add(root)
-    observer.observe(root, { childList: true, subtree: true, attributes: true, characterData: true })
+    observer.observe(root, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true,
+    })
     if (root instanceof ShadowRoot) listen(root, 'scroll', schedule, true)
   }
   function children(element: Element): Element[] {
@@ -106,19 +159,32 @@ function installRuntime(
   }
   function hidden(element: Element) {
     const style = getComputedStyle(element)
-    return style.display === 'none' || style.visibility === 'hidden' ||
-      style.visibility === 'collapse' || element.getClientRects().length === 0
+    return (
+      style.display === 'none' ||
+      style.visibility === 'hidden' ||
+      style.visibility === 'collapse' ||
+      element.getClientRects().length === 0
+    )
   }
-  function text(element: Element, maximum = limits.textCharacters) {
+  function text(element: Element, maximum: number = limits.textCharacters) {
     let result = ''
     let visited = 0
-    const walker = document.createTreeWalker(element, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        if (node instanceof Element && (!usable(node) ||
-          ['input', 'textarea', 'select'].includes(tag(node)))) return NodeFilter.FILTER_REJECT
-        return node.nodeType === Node.TEXT_NODE ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+      {
+        acceptNode(node) {
+          if (
+            node instanceof Element &&
+            (!usable(node) || ['input', 'textarea', 'select'].includes(tag(node)))
+          )
+            return NodeFilter.FILTER_REJECT
+          return node.nodeType === Node.TEXT_NODE
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_SKIP
+        },
       },
-    })
+    )
     if (['input', 'textarea', 'select'].includes(tag(element))) return ''
     while (result.length < maximum && visited++ < 4000) {
       const next = walker.nextNode()
@@ -128,19 +194,31 @@ function installRuntime(
     return result.replace(/\s+/g, ' ').trim().slice(0, maximum)
   }
   function label(element: Element) {
-    return bounded(element.getAttribute('aria-label') || element.getAttribute('alt') ||
-      text(element, 160) || element.getAttribute('title') || tag(element), 160)
+    return bounded(
+      element.getAttribute('aria-label') ||
+        element.getAttribute('alt') ||
+        text(element, 160) ||
+        element.getAttribute('title') ||
+        tag(element),
+      160,
+    )
   }
   function sourceId(element: Element) {
     return element.hasAttribute(sourceAttribute)
-      ? bounded(element.getAttribute(sourceAttribute), limits.attributeCharacters) : null
+      ? bounded(element.getAttribute(sourceAttribute), limits.attributeCharacters)
+      : null
   }
   function context(element: Element): SelectionElementContext {
     const ancestry: SelectionElementContext['ancestors'] = []
     let ancestor = parentElement(element)
     while (ancestor && ancestry.length < limits.ancestors) {
-      if (usable(ancestor)) ancestry.push({ nodeId: id(ancestor), sourceId: sourceId(ancestor),
-        tagName: tag(ancestor), label: label(ancestor) })
+      if (usable(ancestor))
+        ancestry.push({
+          nodeId: id(ancestor),
+          sourceId: sourceId(ancestor),
+          tagName: tag(ancestor),
+          label: label(ancestor),
+        })
       ancestor = parentElement(ancestor)
     }
     const attrs: Record<string, string> = {}
@@ -160,17 +238,26 @@ function installRuntime(
       selector += `[role="${CSS.escape(element.getAttribute('role') ?? '')}"]`
     }
     const result: SelectionElementContext = {
-      nodeId: id(element), sourceId: sourceId(element), tagName: tag(element),
+      nodeId: id(element),
+      sourceId: sourceId(element),
+      tagName: tag(element),
       role: element.getAttribute('role')?.slice(0, limits.attributeCharacters) ?? null,
-      text: text(element), attributes: attrs, styles: style,
-      selector: bounded(selector, limits.selectorCharacters), ancestors: ancestry,
+      text: text(element),
+      attributes: attrs,
+      styles: style,
+      selector: bounded(selector, limits.selectorCharacters),
+      ancestors: ancestry,
       rects: Array.from(element.getClientRects()).slice(0, limits.rects).map(rect),
-      viewport: { width: innerWidth, height: innerHeight }, scroll: { x: scrollX, y: scrollY },
-      instance: { label: label(element), context: bounded(ancestry.map(item => item.label).join(' / '),
-        limits.instanceCharacters) },
+      viewport: { width: innerWidth, height: innerHeight },
+      scroll: { x: scrollX, y: scrollY },
+      instance: {
+        label: label(element),
+        context: bounded(ancestry.map((item) => item.label).join(' / '), limits.instanceCharacters),
+      },
     }
     // Preserve identity and geometry first when long Unicode fields exhaust the wire budget.
-    while (bytes(result) > limits.metadataBytes - 1024 && result.ancestors.length) result.ancestors.pop()
+    while (bytes(result) > limits.metadataBytes - 1024 && result.ancestors.length)
+      result.ancestors.pop()
     for (const name of [...attributes].reverse()) {
       if (bytes(result) <= limits.metadataBytes - 1024) break
       delete result.attributes[name]
@@ -221,7 +308,8 @@ function installRuntime(
       overlay = document.createElement('div')
       overlay.setAttribute('aria-hidden', 'true')
       overlay.setAttribute('popover', 'manual')
-      overlay.style.cssText = 'all:initial!important;position:fixed!important;inset:0!important;' +
+      overlay.style.cssText =
+        'all:initial!important;position:fixed!important;inset:0!important;' +
         'width:100vw!important;height:100vh!important;margin:0!important;border:0!important;' +
         'padding:0!important;background:transparent!important;pointer-events:none!important;' +
         'overflow:visible!important;z-index:2147483647!important;'
@@ -229,8 +317,10 @@ function installRuntime(
       document.documentElement.append(overlay)
     }
     // A manual popover participates in the top layer above modal dialogs and popovers.
-    if (typeof overlay.showPopover === 'function' &&
-      (topLayerChanged || !overlay.matches(':popover-open'))) {
+    if (
+      typeof overlay.showPopover === 'function' &&
+      (topLayerChanged || !overlay.matches(':popover-open'))
+    ) {
       if (overlay.matches(':popover-open')) overlay.hidePopover()
       overlay.showPopover()
       topLayerChanged = false
@@ -248,7 +338,8 @@ function installRuntime(
       drawing?.replaceChildren()
       for (const { box, active } of fragments) {
         const outline = document.createElement('div')
-        outline.style.cssText = `position:fixed;pointer-events:none;box-sizing:border-box;` +
+        outline.style.cssText =
+          `position:fixed;pointer-events:none;box-sizing:border-box;` +
           `left:${box.x}px;top:${box.y}px;width:${box.width}px;height:${box.height}px;` +
           `border:2px ${active ? 'solid' : 'dashed'} #0284c7;`
         drawing?.append(outline)
@@ -260,41 +351,64 @@ function installRuntime(
   function schedule() {
     if (!scheduled && !disposed) scheduled = requestAnimationFrame(draw)
   }
-  const observer = new MutationObserver(records => {
-    if (records.some(record => record.target !== overlay &&
-      !(record.type === 'childList' && [...record.addedNodes, ...record.removedNodes]
-        .every(node => node === overlay)))) {
+  const observer = new MutationObserver((records) => {
+    if (
+      records.some(
+        (record) =>
+          record.target !== overlay &&
+          !(
+            record.type === 'childList' &&
+            [...record.addedNodes, ...record.removedNodes].every((node) => node === overlay)
+          ),
+      )
+    ) {
       revision++
       nodesChanged = true
       schedule()
     }
   })
   observe(document)
-  function list(payload: Extract<SelectionCommand, { type: 'children' }>['payload']): SelectionChildrenPage {
+  function list(
+    payload: Extract<SelectionCommand, { type: 'children' }>['payload'],
+  ): SelectionChildrenPage {
     const root = payload.parentNodeId === null ? document.body : resolve(payload.parentNodeId)
     const items = root ? children(root) : []
     let offset = 0
     if (payload.cursor) {
       const match = /^(\d+):(\d+):(.*)$/.exec(payload.cursor)
       const key = `${payload.parentNodeId ?? ''}:${payload.includeHidden === true}`
-      if (!match || Number(match[1]) !== revision || match[3] !== key) throw new Error('cursor-stale')
+      if (!match || Number(match[1]) !== revision || match[3] !== key)
+        throw new Error('cursor-stale')
       offset = Number(match[2])
       if (!Number.isSafeInteger(offset) || offset > items.length) throw new Error('cursor-invalid')
     }
-    const page: SelectionChildrenPage = { parentNodeId: payload.parentNodeId, children: [], nextCursor: null }
+    const page: SelectionChildrenPage = {
+      parentNodeId: payload.parentNodeId,
+      children: [],
+      nextCursor: null,
+    }
     for (; offset < items.length; offset++) {
       const element = items[offset]
       if (!element) continue
       const isHidden = hidden(element)
       if (isHidden && !payload.includeHidden) continue
-      const row = { nodeId: id(element), tagName: tag(element), label: label(element),
-        sourceId: sourceId(element), hasChildren: children(element).length > 0, hidden: isHidden }
+      const row = {
+        nodeId: id(element),
+        tagName: tag(element),
+        label: label(element),
+        sourceId: sourceId(element),
+        hasChildren: children(element).length > 0,
+        hidden: isHidden,
+      }
       page.children.push(row)
       if (bytes(page) > limits.metadataBytes - 1024) {
         page.children.pop()
         break
       }
-      if (page.children.length === limits.children) { offset++; break }
+      if (page.children.length === limits.children) {
+        offset++
+        break
+      }
     }
     if (offset < items.length) {
       page.nextCursor = `${revision}:${offset}:${payload.parentNodeId ?? ''}:${payload.includeHidden === true}`
@@ -303,16 +417,28 @@ function installRuntime(
   }
   function region(rectangle: SelectionRect, focusNodeId?: string | null): SelectionEvidence {
     const result: Extract<SelectionEvidence, { kind: 'region' }> = {
-      kind: 'region', rectangle, elements: [], focus: focusNodeId ? context(resolve(focusNodeId)) : null,
-      viewport: { width: innerWidth, height: innerHeight }, scroll: { x: scrollX, y: scrollY }, truncated: false,
+      kind: 'region',
+      rectangle,
+      elements: [],
+      focus: focusNodeId ? context(resolve(focusNodeId)) : null,
+      viewport: { width: innerWidth, height: innerHeight },
+      scroll: { x: scrollX, y: scrollY },
+      truncated: false,
     }
     // Positive-area intersections only. Deepest rendered descendants win over their ancestors;
     // overlapping siblings both remain, in composed-tree order. Offscreen/hidden boxes are excluded.
-    const intersects = (element: Element) => !hidden(element) && Array.from(element.getClientRects()).some(box =>
-      Math.max(box.left, rectangle.x, 0) < Math.min(box.right, rectangle.x + rectangle.width, innerWidth) &&
-      Math.max(box.top, rectangle.y, 0) < Math.min(box.bottom, rectangle.y + rectangle.height, innerHeight))
+    const intersects = (element: Element) =>
+      !hidden(element) &&
+      Array.from(element.getClientRects()).some(
+        (box) =>
+          Math.max(box.left, rectangle.x, 0) <
+            Math.min(box.right, rectangle.x + rectangle.width, innerWidth) &&
+          Math.max(box.top, rectangle.y, 0) <
+            Math.min(box.bottom, rectangle.y + rectangle.height, innerHeight),
+      )
     const stack: { element: Element; expanded: boolean }[] = document.body
-      ? [{ element: document.body, expanded: false }] : []
+      ? [{ element: document.body, expanded: false }]
+      : []
     const covered = new WeakSet<Element>()
     let visited = 0
     while (stack.length) {
@@ -320,7 +446,10 @@ function installRuntime(
       if (!entry) break
       const { element, expanded } = entry
       if (!expanded) {
-        if (++visited > 20000) { result.truncated = true; break }
+        if (++visited > 20000) {
+          result.truncated = true
+          break
+        }
         stack.push({ element, expanded: true })
         const descendants = children(element)
         for (let index = descendants.length - 1; index >= 0; index--) {
@@ -350,7 +479,7 @@ function installRuntime(
     disposed = true
     enabled = false
     observer.disconnect()
-    cleanups.splice(0).forEach(cleanup => cleanup())
+    for (const cleanup of cleanups.splice(0)) cleanup()
     cancelAnimationFrame(scheduled)
     overlay?.remove()
     nodes.clear()
@@ -382,39 +511,65 @@ function installRuntime(
     const ancestors = new Set<Element>()
     for (const element of hits) {
       let ancestor = parentElement(element)
-      while (ancestor) { ancestors.add(ancestor); ancestor = parentElement(ancestor) }
+      while (ancestor) {
+        ancestors.add(ancestor)
+        ancestor = parentElement(ancestor)
+      }
     }
-    const targets = hits.filter(element => !ancestors.has(element))
+    const targets = hits.filter((element) => !ancestors.has(element))
     const index = selected ? targets.indexOf(selected) : -1
     return targets[(index + 1) % targets.length] ?? target(event)
   }
   function intercept(event: Event) {
     if (!enabled && event.type === 'pointerdown' && !gesture) cancelled = false
     if (!enabled && !gesture && !cancelled) return
-    if (event.type === 'pointerdown') { gesture = true; cancelled = false }
-    if (event.type === 'pointercancel') { gesture = false; cancelled = true }
+    if (event.type === 'pointerdown') {
+      gesture = true
+      cancelled = false
+    }
+    if (event.type === 'pointercancel') {
+      gesture = false
+      cancelled = true
+    }
     event.stopImmediatePropagation()
     // Let native touch panning and wheel scrolling continue while blocking app listeners.
     if (!event.type.startsWith('touch') && event.cancelable) event.preventDefault()
     if (event.type === 'click') {
-      const element = event instanceof MouseEvent && event.altKey ? overlapTarget(event) : target(event)
+      const element =
+        event instanceof MouseEvent && event.altKey ? overlapTarget(event) : target(event)
       if (enabled && !cancelled && element) choose(element)
       gesture = false
       cancelled = false
     }
   }
-  for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'mousedown', 'mouseup',
-    'click', 'dblclick', 'auxclick', 'contextmenu', 'dragstart', 'touchstart', 'touchend', 'touchcancel', 'touchmove']) {
+  for (const type of [
+    'pointerdown',
+    'pointerup',
+    'pointercancel',
+    'mousedown',
+    'mouseup',
+    'click',
+    'dblclick',
+    'auxclick',
+    'contextmenu',
+    'dragstart',
+    'touchstart',
+    'touchend',
+    'touchcancel',
+    'touchmove',
+  ]) {
     listen(window, type, intercept)
   }
-  listen(window, 'pointermove', event => {
+  listen(window, 'pointermove', (event) => {
     if (!enabled) return
     hovered = target(event)
     event.stopImmediatePropagation()
     schedule()
   })
-  listen(window, 'mousemove', event => { if (enabled) event.stopImmediatePropagation() })
-  listen(window, 'keydown', event => {
+  listen(window, 'mousemove', (event) => {
+    if (enabled) event.stopImmediatePropagation()
+  })
+  listen(window, 'keydown', (event) => {
     if (!enabled || !(event instanceof KeyboardEvent)) return
     event.stopImmediatePropagation()
     if (['Escape', 'Enter', ' ', 'ArrowUp'].includes(event.key)) {
@@ -425,18 +580,25 @@ function installRuntime(
         if (ancestor) choose(ancestor)
       } else {
         const focused = target(event)
-        const candidate = focused && !['html', 'body'].includes(tag(focused)) ? focused : hovered || selected
+        const candidate =
+          focused && !['html', 'body'].includes(tag(focused)) ? focused : hovered || selected
         if (candidate) choose(candidate)
       }
     }
   })
-  listen(window, 'keyup', event => {
-    if (enabled) { event.stopImmediatePropagation(); event.preventDefault() }
+  listen(window, 'keyup', (event) => {
+    if (enabled) {
+      event.stopImmediatePropagation()
+      event.preventDefault()
+    }
   })
   for (const type of ['beforetoggle', 'toggle']) {
-    listen(window, type, event => {
+    listen(window, type, (event) => {
       if (event.target === overlay) event.stopImmediatePropagation()
-      else { topLayerChanged = true; schedule() }
+      else {
+        topLayerChanged = true
+        schedule()
+      }
     })
   }
   listen(window, 'scroll', schedule, true)
@@ -449,37 +611,73 @@ function installRuntime(
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false
     // The portable frame has no schema-library dependency. Narrow every command field here.
     const message = value as Record<string, unknown>
-    if (message.protocol !== protocol || message.protocolVersion !== protocolVersion ||
-      message.sessionId !== config.sessionId || typeof message.requestId !== 'string' ||
-      message.requestId.length > 200 || !message.requestId || !message.payload ||
-      typeof message.payload !== 'object' || Array.isArray(message.payload)) return false
+    if (
+      message.protocol !== protocol ||
+      message.protocolVersion !== protocolVersion ||
+      message.sessionId !== config.sessionId ||
+      typeof message.requestId !== 'string' ||
+      message.requestId.length > 200 ||
+      !message.requestId ||
+      !message.payload ||
+      typeof message.payload !== 'object' ||
+      Array.isArray(message.payload)
+    )
+      return false
     const payload = message.payload as Record<string, unknown>
     switch (message.type) {
-      case 'enable': return typeof payload.enabled === 'boolean'
-      case 'select': return typeof payload.nodeId === 'string' && payload.nodeId.length <= 200
-      case 'hover': return payload.nodeId === null ||
-        (typeof payload.nodeId === 'string' && payload.nodeId.length <= 200)
+      case 'enable':
+        return typeof payload.enabled === 'boolean'
+      case 'select':
+        return typeof payload.nodeId === 'string' && payload.nodeId.length <= 200
+      case 'hover':
+        return (
+          payload.nodeId === null ||
+          (typeof payload.nodeId === 'string' && payload.nodeId.length <= 200)
+        )
       case 'children':
-        return (payload.parentNodeId === null || typeof payload.parentNodeId === 'string') &&
+        return (
+          (payload.parentNodeId === null || typeof payload.parentNodeId === 'string') &&
           (payload.cursor == null || typeof payload.cursor === 'string') &&
           (payload.includeHidden === undefined || typeof payload.includeHidden === 'boolean')
+        )
       case 'capture': {
         if (payload.focusNodeId != null && typeof payload.focusNodeId !== 'string') return false
         if (payload.region === undefined) return true
         if (!payload.region || typeof payload.region !== 'object') return false
         const box = payload.region as Record<string, unknown>
-        return typeof box.x === 'number' && Number.isFinite(box.x) &&
-          typeof box.y === 'number' && Number.isFinite(box.y) &&
-          typeof box.width === 'number' && Number.isFinite(box.width) && box.width > 0 &&
-          typeof box.height === 'number' && Number.isFinite(box.height) && box.height > 0
+        return (
+          typeof box.x === 'number' &&
+          Number.isFinite(box.x) &&
+          typeof box.y === 'number' &&
+          Number.isFinite(box.y) &&
+          typeof box.width === 'number' &&
+          Number.isFinite(box.width) &&
+          box.width > 0 &&
+          typeof box.height === 'number' &&
+          Number.isFinite(box.height) &&
+          box.height > 0
+        )
       }
-      case 'parent': case 'clear': case 'dispose': return Object.keys(payload).length === 0
-      default: return false
+      case 'parent':
+      case 'clear':
+      case 'dispose':
+        return Object.keys(payload).length === 0
+      default:
+        return false
     }
   }
-  listen(window, 'message', event => {
-    if (!(event instanceof MessageEvent) || event.source !== parent || event.origin !== config.editorOrigin) return
-    try { if (bytes(event.data) > limits.metadataBytes) return } catch { return }
+  listen(window, 'message', (event) => {
+    if (
+      !(event instanceof MessageEvent) ||
+      event.source !== parent ||
+      event.origin !== config.editorOrigin
+    )
+      return
+    try {
+      if (bytes(event.data) > limits.metadataBytes) return
+    } catch {
+      return
+    }
     if (!validCommand(event.data)) return
     const message = event.data
     try {
@@ -493,24 +691,45 @@ function installRuntime(
           cancelAnimationFrame(scheduled)
           draw()
           break
-        case 'children': value = list(message.payload); break
-        case 'select': value = choose(resolve(message.payload.nodeId)); break
-        case 'hover': hovered = message.payload.nodeId ? resolve(message.payload.nodeId) : null; schedule(); break
+        case 'children':
+          value = list(message.payload)
+          break
+        case 'select':
+          value = choose(resolve(message.payload.nodeId))
+          break
+        case 'hover':
+          hovered = message.payload.nodeId ? resolve(message.payload.nodeId) : null
+          schedule()
+          break
         case 'parent': {
           const ancestor = selected ? parentElement(selected) : null
           value = ancestor ? choose(ancestor) : null
           break
         }
-        case 'capture': value = message.payload.region
-          ? region(message.payload.region, message.payload.focusNodeId)
-          : selected?.isConnected ? evidence(selected) : null; break
-        case 'clear': value = clear(); break
-        case 'dispose': dispose(); break
+        case 'capture':
+          value = message.payload.region
+            ? region(message.payload.region, message.payload.focusNodeId)
+            : selected?.isConnected
+              ? evidence(selected)
+              : null
+          break
+        case 'clear':
+          value = clear()
+          break
+        case 'dispose':
+          dispose()
+          break
       }
       send('result', { command: message.type, value }, message.requestId)
     } catch (error) {
-      send('error', { code: error instanceof Error ? error.message : 'runtime-error',
-        message: 'Selection command failed' }, message.requestId)
+      send(
+        'error',
+        {
+          code: error instanceof Error ? error.message : 'runtime-error',
+          message: 'Selection command failed',
+        },
+        message.requestId,
+      )
     }
   })
   listen(window, 'pagehide', () => {
@@ -523,14 +742,27 @@ function installRuntime(
 /** Insert before application scripts; the runtime begins disabled and never reloads on enable. */
 export function createPreviewSelectionScript(config: PreviewSelectionConfig): string {
   const origin = new URL(config.editorOrigin)
-  if (!['http:', 'https:'].includes(origin.protocol) || origin.origin !== config.editorOrigin ||
-    !config.sessionId || config.sessionId.length > 200) throw new Error('invalid-selection-config')
-  const args = JSON.stringify([config, SELECTION_PROTOCOL, SELECTION_PROTOCOL_VERSION,
-    SELECTION_SOURCE_ATTRIBUTE, SELECTION_LIMITS]).replace(/</g, '\\u003c')
+  if (
+    !['http:', 'https:'].includes(origin.protocol) ||
+    origin.origin !== config.editorOrigin ||
+    !config.sessionId ||
+    config.sessionId.length > 200
+  )
+    throw new Error('invalid-selection-config')
+  const args = JSON.stringify([
+    config,
+    SELECTION_PROTOCOL,
+    SELECTION_PROTOCOL_VERSION,
+    SELECTION_SOURCE_ATTRIBUTE,
+    SELECTION_LIMITS,
+  ]).replace(/</g, '\\u003c')
   return `;(${installRuntime.toString()})(...${args});`
 }
 
-export function injectPreviewSelectionRuntime(html: string, config: PreviewSelectionConfig): string {
+export function injectPreviewSelectionRuntime(
+  html: string,
+  config: PreviewSelectionConfig,
+): string {
   const doctype = /^\s*<!doctype[^>]*>/i.exec(html)
   const prefix = doctype?.[0] ?? '<!doctype html>'
   return `${prefix}<script>${createPreviewSelectionScript(config)}</script>${html.slice(doctype?.[0].length ?? 0)}`

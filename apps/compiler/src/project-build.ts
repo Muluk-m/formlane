@@ -129,11 +129,12 @@ export async function compileEditorProject(
     entries = Object.fromEntries(
       Object.entries(attribution.entries).sort(([left], [right]) => left.localeCompare(right)),
     )
-    diagnostics = attribution.diagnostics.sort((left, right) =>
-      (left.path ?? '').localeCompare(right.path ?? '') ||
-      (left.startLine ?? 0) - (right.startLine ?? 0) ||
-      (left.startColumn ?? 0) - (right.startColumn ?? 0) ||
-      left.code.localeCompare(right.code),
+    diagnostics = attribution.diagnostics.sort(
+      (left, right) =>
+        (left.path ?? '').localeCompare(right.path ?? '') ||
+        (left.startLine ?? 0) - (right.startLine ?? 0) ||
+        (left.startColumn ?? 0) - (right.startColumn ?? 0) ||
+        left.code.localeCompare(right.code),
     )
   } catch (error) {
     signal.throwIfAborted()
@@ -178,7 +179,9 @@ async function compile(
   signal.throwIfAborted()
   validateProjectSource(source)
   const sourceHash = canonicalSourceHash ?? (await projectSourceHash(source))
-  const document = parse(source.files['index.html'] ?? '', { sourceCodeLocationInfo: !!attribution })
+  const document = parse(source.files['index.html'] ?? '', {
+    sourceCodeLocationInfo: !!attribution,
+  })
   attribution?.html(document)
   const virtual = new Map<string, VirtualFile>()
   const imports: string[] = []
@@ -265,9 +268,10 @@ async function compile(
                 ? 'dataurl'
                 : loaders[posix.extname(path)]
           if (!loader) throw new Error(`Unsupported module type: ${path}`)
-          const contents = attribution && (loader === 'jsx' || loader === 'tsx')
-            ? attribution.jsx(path, content)
-            : content
+          const contents =
+            attribution && (loader === 'jsx' || loader === 'tsx')
+              ? attribution.jsx(path, content)
+              : content
           return { contents, loader }
         })
       },

@@ -35,7 +35,12 @@ describe('editor compiler source attribution', () => {
     const headingId = sourceId(elements(editor.editorHtml).find((node) => node.tagName === 'h1'))
     expect(headingId).toBeTruthy()
     expect(editor.manifest.entries[headingId ?? '']).toEqual({
-      path: 'index.html', startLine: 4, startColumn: 1, endLine: 4, endColumn: 15, tagName: 'h1',
+      path: 'index.html',
+      startLine: 4,
+      startColumn: 1,
+      endLine: 4,
+      endColumn: 15,
+      tagName: 'h1',
     })
     expect(editor.html).toBe(canonical.html)
     expect(editor.sourceHash).toBe(canonical.sourceHash)
@@ -59,7 +64,11 @@ describe('editor compiler source attribution', () => {
     }
     const image = sourceId(nodes.find((node) => node.tagName === 'img'))
     expect(editor.manifest.entries[image ?? '']).toMatchObject({
-      path: 'index.html', startLine: 2, startColumn: 6, endLine: 2, endColumn: 19,
+      path: 'index.html',
+      startLine: 2,
+      startColumn: 6,
+      endLine: 2,
+      endColumn: 19,
     })
   })
 
@@ -74,7 +83,9 @@ describe('editor compiler source attribution', () => {
     expect(first.manifest).toEqual(second.manifest)
     source.files['index.html'] += '<p>A new source snapshot</p>'
     const changed = await compileEditorProject(source, signal())
-    expect(Object.keys(first.manifest.entries).some((id) => id in changed.manifest.entries)).toBe(false)
+    expect(Object.keys(first.manifest.entries).some((id) => id in changed.manifest.entries)).toBe(
+      false,
+    )
     expect(first.editorHtml).not.toContain('index.html')
   })
 
@@ -91,10 +102,26 @@ export default function App() {
       .filter((entry) => entry.path === 'src/App.tsx')
       .sort((left, right) => left.startLine - right.startLine)
     expect(entries).toEqual([
-      { path: 'src/App.tsx', startLine: 2, startColumn: 26, endLine: 2, endColumn: 51, tagName: 'button' },
-      { path: 'src/App.tsx', startLine: 4, startColumn: 10, endLine: 4, endColumn: 80, tagName: 'main' },
+      {
+        path: 'src/App.tsx',
+        startLine: 2,
+        startColumn: 26,
+        endLine: 2,
+        endColumn: 51,
+        tagName: 'button',
+      },
+      {
+        path: 'src/App.tsx',
+        startLine: 4,
+        startColumn: 10,
+        endLine: 4,
+        endColumn: 80,
+        tagName: 'main',
+      },
     ])
-    expect(Object.values(editor.manifest.entries).some((entry) => entry.tagName === 'aside')).toBe(false)
+    expect(Object.values(editor.manifest.entries).some((entry) => entry.tagName === 'aside')).toBe(
+      false,
+    )
     expect(editor.html).not.toContain(SELECTION_SOURCE_ATTRIBUTE)
   })
 
@@ -109,17 +136,28 @@ export default function App() {
       '}',
     ].join('\r\n')
     const editor = await compileEditorProject(source, signal())
-    expect(Object.values(editor.manifest.entries).find((entry) => entry.tagName === 'button')).toEqual({
-      path: 'src/App.tsx', startLine: 3, startColumn: 22, endLine: 4, endColumn: 31, tagName: 'button',
+    expect(
+      Object.values(editor.manifest.entries).find((entry) => entry.tagName === 'button'),
+    ).toEqual({
+      path: 'src/App.tsx',
+      startLine: 3,
+      startColumn: 22,
+      endLine: 4,
+      endColumn: 31,
+      tagName: 'button',
     })
   })
 
   it('preserves reserved HTML attributes and never treats their values as compiler authority', async () => {
     const source = legacyProjectSource('<div DATA-FORMLANE-SOURCE="spoofed"><h1>Safe</h1></div>')
     const editor = await compileEditorProject(source, signal())
-    expect(sourceId(elements(editor.editorHtml).find((node) => node.tagName === 'div'))).toBe('spoofed')
+    expect(sourceId(elements(editor.editorHtml).find((node) => node.tagName === 'div'))).toBe(
+      'spoofed',
+    )
     expect(editor.manifest.entries.spoofed).toBeUndefined()
-    expect(editor.diagnostics).toContainEqual(expect.objectContaining({ code: 'reserved-marker', path: 'index.html' }))
+    expect(editor.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'reserved-marker', path: 'index.html' }),
+    )
   })
 
   it('preserves JSX attributes and spreads without overriding their application semantics', async () => {
@@ -134,7 +172,9 @@ export default function App() {
     expect(entries.some((entry) => entry.tagName === 'span')).toBe(true)
     expect(editor.manifest.entries['from-spread']).toBeUndefined()
     expect(editor.manifest.entries.owned).toBeUndefined()
-    expect(editor.diagnostics.map((item) => item.code)).toEqual(expect.arrayContaining(['jsx-spread', 'reserved-marker']))
+    expect(editor.diagnostics.map((item) => item.code)).toEqual(
+      expect.arrayContaining(['jsx-spread', 'reserved-marker']),
+    )
   })
 
   it('does not transform raw imports or turn JavaScript-created markup into exact mappings', async () => {
@@ -144,16 +184,23 @@ document.getElementById('root').innerHTML = markup
 const node = document.createElement('button'); node.textContent = 'Dynamic'; document.body.append(node)`
     source.files['src/content.jsx'] = '<section>Runtime text</section>'
     const editor = await compileEditorProject(source, signal())
-    expect(Object.values(editor.manifest.entries).every((entry) => entry.path === 'index.html')).toBe(true)
+    expect(
+      Object.values(editor.manifest.entries).every((entry) => entry.path === 'index.html'),
+    ).toBe(true)
   })
 
   it('does not execute configuration or application code on the compiler host', async () => {
     const source = createProjectSource('react-ts')
     source.files['vite.config.ts'] = 'throw new Error("configuration ran on compiler host")'
-    source.files['src/App.tsx'] = 'throw new Error("application ran on compiler host"); export default () => <h1>Safe</h1>'
+    source.files['src/App.tsx'] =
+      'throw new Error("application ran on compiler host"); export default () => <h1>Safe</h1>'
     const editor = await compileEditorProject(source, signal())
-    expect(Object.values(editor.manifest.entries).some((entry) => entry.tagName === 'h1')).toBe(true)
-    expect(Object.values(editor.manifest.entries).some((entry) => entry.path === 'vite.config.ts')).toBe(false)
+    expect(Object.values(editor.manifest.entries).some((entry) => entry.tagName === 'h1')).toBe(
+      true,
+    )
+    expect(
+      Object.values(editor.manifest.entries).some((entry) => entry.path === 'vite.config.ts'),
+    ).toBe(false)
   })
 
   it('falls back explicitly to canonical selection when annotation exceeds the manifest budget', async () => {
@@ -176,7 +223,9 @@ const node = document.createElement('button'); node.textContent = 'Dynamic'; doc
   it('honors cancellation and rejects invalid canonical sources before editor instrumentation', async () => {
     const controller = new AbortController()
     controller.abort(new Error('Cancelled editor build'))
-    await expect(compileEditorProject(createProjectSource('react-ts'), controller.signal)).rejects.toThrow('Cancelled editor build')
+    await expect(
+      compileEditorProject(createProjectSource('react-ts'), controller.signal),
+    ).rejects.toThrow('Cancelled editor build')
     const source = createProjectSource('react-ts')
     source.files['src/App.tsx'] = 'export default () => <main>'
     await expect(compileEditorProject(source, signal())).rejects.toThrow()

@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import sync_playwright
 
+from formlane.compiler import safe_environment
+
 ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -29,6 +31,7 @@ process.stdout.write(result.outputFiles[0].text);
         ["node", "-e", script, str(entry)],
         cwd=ROOT / "apps/compiler",
         text=True,
+        env=safe_environment(),
     )
 
 
@@ -38,6 +41,7 @@ def preview(browser_bundle):
         browser = playwright.chromium.launch(
             executable_path=os.environ.get("BROWSER_EXECUTABLE_PATH"),
             chromium_sandbox=True,
+            env=safe_environment(),
         )
         page = browser.new_page(viewport={"width": 1000, "height": 800})
         page.route("https://selection.test/**", lambda route: route.fulfill(

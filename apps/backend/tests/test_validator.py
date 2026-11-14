@@ -586,7 +586,8 @@ def test_seeded_randomness_makes_random_apps_reproducible():
         check(name, actions=spawn, assertions=[assertion(selector="#tile", expected=first[0])])
         for name in ("one", "two")
     ]
-    assert validate(RANDOM_HTML, seeded)["valid"]
+    report = validate(RANDOM_HTML, seeded)
+    assert report["valid"], report
     assert not validate(RANDOM_HTML, [dict(item, seed=2) for item in seeded])["valid"]
 
 

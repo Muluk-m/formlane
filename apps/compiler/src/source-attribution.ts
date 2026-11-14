@@ -33,7 +33,10 @@ export class SourceAttribution {
   private readonly transformed = new Map<string, string>()
   private manifestBytes = 4096
 
-  constructor(private readonly signal: AbortSignal, private readonly sourceHash: string) {}
+  constructor(
+    private readonly signal: AbortSignal,
+    private readonly sourceHash: string,
+  ) {}
 
   private exceedLimit(): never {
     this.limitExceeded = true
@@ -58,7 +61,10 @@ export class SourceAttribution {
     return id
   }
 
-  private diagnose(code: 'reserved-marker' | 'jsx-spread', location: SelectionSourceLocation): void {
+  private diagnose(
+    code: 'reserved-marker' | 'jsx-spread',
+    location: SelectionSourceLocation,
+  ): void {
     if (this.diagnostics.length >= MAX_DIAGNOSTICS) this.exceedLimit()
     this.diagnostics.push({
       code,
@@ -94,7 +100,9 @@ export class SourceAttribution {
         endColumn: range.endCol,
         tagName: node.tagName,
       }
-      if (node.attrs.some((attribute) => attribute.name.toLowerCase() === SELECTION_SOURCE_ATTRIBUTE)) {
+      if (
+        node.attrs.some((attribute) => attribute.name.toLowerCase() === SELECTION_SOURCE_ATTRIBUTE)
+      ) {
         this.diagnose('reserved-marker', location)
         continue
       }
@@ -117,9 +125,11 @@ export class SourceAttribution {
       })
       if (!ts.isJsxOpeningElement(node) && !ts.isJsxSelfClosingElement(node)) continue
       const name = node.tagName
-      if (!ts.isJsxNamespacedName(name) && (!ts.isIdentifier(name) || !/^[a-z]|-/.test(name.text))) continue
+      if (!ts.isJsxNamespacedName(name) && (!ts.isIdentifier(name) || !/^[a-z]|-/.test(name.text)))
+        continue
       const tagName = name.getText(file)
-      const element = ts.isJsxOpeningElement(node) && ts.isJsxElement(node.parent) ? node.parent : node
+      const element =
+        ts.isJsxOpeningElement(node) && ts.isJsxElement(node.parent) ? node.parent : node
       const start = file.getLineAndCharacterOfPosition(element.getStart(file))
       const end = file.getLineAndCharacterOfPosition(element.end)
       const location: SelectionSourceLocation = {
@@ -131,7 +141,13 @@ export class SourceAttribution {
         tagName,
       }
       const attributes = node.attributes.properties
-      if (attributes.some((attribute) => ts.isJsxAttribute(attribute) && attribute.name.getText(file).toLowerCase() === SELECTION_SOURCE_ATTRIBUTE)) {
+      if (
+        attributes.some(
+          (attribute) =>
+            ts.isJsxAttribute(attribute) &&
+            attribute.name.getText(file).toLowerCase() === SELECTION_SOURCE_ATTRIBUTE,
+        )
+      ) {
         this.diagnose('reserved-marker', location)
         continue
       }
@@ -141,7 +157,10 @@ export class SourceAttribution {
         this.diagnose('jsx-spread', location)
         continue
       }
-      insertions.push({ offset: name.end, text: ` ${SELECTION_SOURCE_ATTRIBUTE}="${this.add(location)}"` })
+      insertions.push({
+        offset: name.end,
+        text: ` ${SELECTION_SOURCE_ATTRIBUTE}="${this.add(location)}"`,
+      })
     }
     insertions.sort((left, right) => left.offset - right.offset)
     const chunks: string[] = []
