@@ -497,7 +497,11 @@ class Runtime:
                 raise ValueError("Acceptance requires " + "; ".join(missing) + ".")
         current["review"] = {
             **args,
-            "findings": "\n\n".join(part for part in (args["findings"], args.get("scene_limitations")) if part),
+            "findings": "\n\n".join(part for part in (
+                args["findings"], args.get("scene_limitations"),
+                *(f"{item['node_id']} ({item['disposition']}): {item['justification']}"
+                  for item in args.get("structural_changes", [])),
+            ) if part),
             "sourceHash": built["sourceHash"] if built else "",
             "artifactHash": built["artifactHash"] if built else "",
             "checksHash": checks_hash(current["checks"]),
@@ -575,6 +579,50 @@ class Runtime:
         source = self.require_source()
         return search_source(source, args["query"], args["ignore_case"])
 
+    def selection_visual_requirements(self, evidence: list[dict], assessment: dict) -> list[str]:
+        """Keep observed identities intact while David assesses intentional structural edits."""
+        selected = [item for item in evidence if item.get("selectionId") == self.selection["selectionId"]]
+        if not selected:
+            return ["current selection visual evidence"]
+        expected = {item["nodeId"] for item in contexts(self.selection)}
+        changes = assessment.get("structural_changes", [])
+        by_node = {item["node_id"]: item for item in changes}
+        changed_paths = {item["path"] for item in source_changes(self.workspace["source"], self.previous)
+                         if item["status"] != "unchanged"}
+        if len(by_node) != len(changes) or not set(by_node) <= expected:
+            return ["unique structural visual assessments naming frozen selection nodes"]
+        for change in changes:
+            if (not change["request_quote"].strip() or change["request_quote"] not in self.context["request"]
+                    or not set(change["source_paths"]) <= changed_paths
+                    or not set(change["source_paths"]) <= set(self.workspace["reviewedPaths"])):
+                return ["structural visual justifications citing the original comment and inspected changed source paths"]
+        for item in selected:
+            if item.get("actionFailure"):
+                return ["current visual evidence without failed reproduction actions"]
+            replacement = item.get("replacementResolution")
+            if replacement and replacement["status"] != "resolved":
+                return ["a unique replacement target exposed in the current native visual evidence"]
+            outcomes = {outcome["nodeId"]: outcome for outcome in item.get("selectionResolutions", [])}
+            if item.get("focusResolution"):
+                outcomes[item["focusResolution"]["nodeId"]] = item["focusResolution"]
+            if not expected <= set(outcomes):
+                return ["visual observations of every original selection member and focus"]
+            for node in expected:
+                status = outcomes[node]["status"]
+                change = by_node.get(node)
+                if change and change["disposition"] == "removed":
+                    if status != "missing":
+                        return ["native visual evidence that a declared removed target is absent"]
+                elif not change and status != "resolved":
+                    return ["exposed surviving targets or explicit requested removal/replacement visual assessments"]
+        for change in changes:
+            if change["disposition"] == "replaced" and not any(
+                (item.get("replacementResolution") or {}).get("selector") == change["replacement_selector"]
+                for item in selected
+            ):
+                return ["exposed replacement visual evidence for each declared replacement selector"]
+        return []
+
     def visual_requirements(self, ids: list[str], assessment: dict) -> list[str]:
         built = current_build(self.workspace)
         evidence = [self.workspace["visualEvidence"].get(key) for key in ids]
@@ -583,7 +631,7 @@ class Runtime:
                  and item["sourceHash"] == built["sourceHash"]
                  and item["artifactHash"] == built["artifactHash"]
                  and item["image"]["provenance"] == "server-reconstructed"
-                 and item["resolution"]["status"] == "resolved"
+                 and (item.get("selectionId") is not None or item["resolution"]["status"] == "resolved")
                  and item["role"] == "david"
                  and item["stage"] == self.scope["path"]
                  and self.workspace["visualReceipts"].get(item["id"]) == self.scope["path"]]
@@ -592,9 +640,12 @@ class Runtime:
         widths = [item["image"]["width"] for item in valid]
         if not any(320 <= width <= 480 for width in widths) or not any(width >= 1024 for width in widths):
             return ["visual evidence at both mobile and desktop viewports"]
-        if self.selection and not any(item.get("selectionId") == self.selection["selectionId"]
-                                      and item["resolution"]["status"] == "resolved" for item in valid):
-            return ["resolved current selection visual evidence; unreproduced scenes cannot be approved"]
+        if self.selection:
+            missing = self.selection_visual_requirements(valid, assessment)
+            if missing:
+                return missing
+        elif assessment.get("structural_changes"):
+            return ["a frozen selection for structural visual assessments"]
         if self.selection:
             original = [item for item in self.workspace["visualEvidence"].values()
                         if item["target"] == "baseline" and item.get("selectionId") == self.selection["selectionId"]
@@ -648,10 +699,9 @@ class Runtime:
             if primary and (target == "baseline" or not args.get("selector")):
                 request["selector"] = primary["selector"]
                 request["selectionContext"] = primary
-            elif args.get("selector") and selection["evidence"]["kind"] == "element":
-                # A new single-element candidate cannot establish the original scene.
-                # Region members remain mandatory even when focus is retargeted.
-                request["selectionTargets"] = []
+            elif args.get("selector"):
+                # Observe replacement exposure separately; retain every original outcome.
+                request["replacementSelector"] = args["selector"]
             if target == "baseline" or not request.get("viewport"):
                 viewport = selection["evidence"].get("viewport", (primary or {}).get("viewport"))
                 if (viewport and all(1 <= viewport[key] <= 16384 for key in ("width", "height"))

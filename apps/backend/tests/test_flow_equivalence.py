@@ -282,6 +282,12 @@ class ExternalOutcomes:
                 artifactHash=artifact_hash(payload["html"]),
                 resolution={"status": "resolved", "matches": 1},
                 scene={"status": "observed-context-matches", "originalSceneVerified": False},
+                selectionResolutions=[{"nodeId": target["nodeId"], "status": "resolved", "matches": 1}
+                                      for target in payload["request"].get("selectionTargets", [])],
+                focusResolution=({"nodeId": payload["request"]["selectionFocus"]["nodeId"], "status": "resolved", "matches": 1}
+                                 if payload["request"].get("selectionFocus") else None),
+                replacementResolution=({"selector": payload["request"]["replacementSelector"], "status": "resolved", "matches": 1}
+                                       if payload["request"].get("replacementSelector") else None),
                 image={"provenance": "server-reconstructed", "mimeType": "image/png",
                        "base64": base64.b64encode(pixels.getvalue()).decode("ascii"), **viewport},
             )

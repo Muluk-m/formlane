@@ -104,12 +104,32 @@ class ChecksArgs(NoArgs):
     checks: list[BrowserCheck] = Field(min_length=2, max_length=15)
 
 
+class StructuralChange(NoArgs):
+    node_id: str = Field(min_length=1, max_length=128)
+    disposition: Literal["removed", "replaced"]
+    request_quote: str = Field(min_length=1, max_length=300)
+    source_paths: list[str] = Field(min_length=1, max_length=8)
+    justification: str = Field(min_length=1, max_length=600)
+    replacement_selector: str | None = Field(default=None, min_length=1, max_length=1000)
+
+    @model_validator(mode="after")
+    def supported_change(self):
+        if not self.request_quote.strip() or not self.justification.strip():
+            raise ValueError("Explain the requested structural change using the original comment and inspected source.")
+        if any(not is_project_path(path) for path in self.source_paths):
+            raise ValueError("Use safe relative source paths.")
+        if (self.disposition == "replaced") != bool(self.replacement_selector):
+            raise ValueError("Only replacement changes require a replacement_selector.")
+        return self
+
+
 class ReviewArgs(NoArgs):
     accepted: bool
     findings: str = Field(min_length=1, max_length=6000)
     visual_evidence_ids: list[str] = Field(default_factory=list, max_length=6)
     original_scene_status: Literal["observed-context-matches", "not-reproduced"] | None = None
     scene_limitations: str | None = Field(default=None, min_length=1, max_length=2000)
+    structural_changes: list[StructuralChange] = Field(default_factory=list, max_length=33)
 
     @field_validator("visual_evidence_ids")
     @classmethod

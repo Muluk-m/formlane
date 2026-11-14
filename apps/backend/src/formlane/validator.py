@@ -435,7 +435,7 @@ async def _observe_selection(frame, target: dict, selector: str) -> dict:
         observer.observe(element);
     })"""), timeout=3)
     observation["exposed"] = exposed
-    if tag.lower() != target["tagName"].lower() or not exposed:
+    if (target.get("tagName") and tag.lower() != target["tagName"].lower()) or not exposed:
         result["status"] = "state-not-reproduced"
     observation["text"] = await locator.evaluate("""element => {
         if (['input', 'textarea', 'select'].includes(element.localName)) return '';
@@ -489,6 +489,10 @@ async def _inspect_browser(html: str, request: dict, settings) -> dict:
                     status = "state-not-reproduced"
                 resolutions, observations = [], []
                 focus_resolution = None
+                replacement_resolution = None
+                if request.get("replacementSelector"):
+                    replacement = await _observe_selection(session.frame, {}, request["replacementSelector"])
+                    replacement_resolution = {**replacement["resolution"], "selector": request["replacementSelector"]}
                 if request.get("selectionContext"):
                     selected = await _observe_selection(session.frame, request["selectionContext"], selector)
                     if status == "resolved":
@@ -503,7 +507,7 @@ async def _inspect_browser(html: str, request: dict, settings) -> dict:
                     selected = await _observe_selection(session.frame, focus, focus["selector"])
                     focus_resolution = selected["resolution"]
                     observations.append(selected["observation"])
-                outcomes = resolutions + ([focus_resolution] if focus_resolution else [])
+                outcomes = resolutions + ([focus_resolution] if focus_resolution else []) + ([replacement_resolution] if replacement_resolution else [])
                 if status == "resolved":
                     status = next((item["status"] for item in outcomes if item["status"] != "resolved"), "resolved")
                 scene_status = "unestablished"
@@ -529,6 +533,7 @@ async def _inspect_browser(html: str, request: dict, settings) -> dict:
                                    "reason": request.get("unreproducedReason") or failure},
                     "selectionResolutions": resolutions,
                     "focusResolution": focus_resolution,
+                    "replacementResolution": replacement_resolution,
                     "scene": {"status": scene_status, "observations": observations,
                               "originalSceneVerified": False, "scope": "captured-observable-context-only",
                               "limitation": "Unique targets and matching bounded text/state do not establish arbitrary application memory. Current-build differences may be intended edits; establish the original observable scene against baseline separately."},
@@ -603,6 +608,8 @@ def validate_inspection(request: dict) -> dict:
         "selectionTargets": targets,
         "scroll": scroll,
         "selectionContext": context,
+        "replacementSelector": _string(request["replacementSelector"], "Replacement selector", 1, 1000)
+        if request.get("replacementSelector") else None,
         "unreproducedReason": _string(request["unreproducedReason"], "Reproduction limit", 1, 500)
         if request.get("unreproducedReason") else None,
         "viewport": viewport,

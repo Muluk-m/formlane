@@ -118,3 +118,14 @@ def test_region_focus_cannot_hide_a_missing_neighbor():
     assert {item["nodeId"]: item["status"] for item in result["selectionResolutions"]} == {
         "focus": "resolved", "neighbor": "missing",
     }
+
+
+@pytest.mark.parametrize("style", ["display:none", "position:absolute;left:-5000px", "margin-top:200px"])
+def test_explicit_replacement_candidates_require_native_viewport_and_clip_exposure(style):
+    original = {"nodeId": "original", "selector": "#original", "tagName": "button", "text": "Old"}
+    html = f'<!doctype html><div style="height:40px;overflow:hidden"><button id="replacement" style="{style}">New</button></div>'
+    result = inspect(html, target="current", selector="#replacement", replacementSelector="#replacement",
+                     selectionTargets=[original])
+    assert result["replacementResolution"]["status"] == "state-not-reproduced"
+    assert result["replacementResolution"]["selector"] == "#replacement"
+    assert result["selectionResolutions"] == [{"nodeId": "original", "status": "missing", "matches": 0}]

@@ -41,17 +41,20 @@ def element(node, tag, text):
             "instance": {"label": text, "context": "Counter"}}
 
 
-@pytest.mark.parametrize("remove_region_neighbor", [False, True])
-def test_scene_limitations_allow_intended_text_edits_but_focus_does_not_hide_deletions(
-    monkeypatch, remove_region_neighbor
-):
+@pytest.mark.parametrize("case", ["text", "unintended-removal", "requested-removal",
+                                  "hidden-replacement", "clipped-replacement", "visible-replacement"])
+def test_scene_and_structural_changes_require_explicit_independent_assessment(monkeypatch, case):
+    remove_region_neighbor = case.endswith("removal")
+    replacement = case.endswith("replacement")
+    rejected_change = case in {"unintended-removal", "hidden-replacement", "clipped-replacement"}
     settings = compiler_settings()
     settings.openai_api_key = "controlled-provider"
     settings.model = "gpt-5.4"
     settings.endpoint = "http://127.0.0.1:1/v1"
     source = legacy_source(ORIGINAL)
     baseline = compile_project(source, settings, lambda: False)
-    selected = element("title", "h1", "0" if remove_region_neighbor else "3")
+    selected = (element("neighbor", "button", "Keep me") if replacement else
+                element("title", "h1", "0" if remove_region_neighbor else "3"))
     neighbor = element("neighbor", "button", "Keep me")
     evidence = ({"kind": "region", "elements": [selected, neighbor], "focus": selected,
                  "rectangle": {"x": 0, "y": 0, "width": 400, "height": 200},
@@ -65,25 +68,49 @@ def test_scene_limitations_allow_intended_text_edits_but_focus_does_not_hide_del
                   "image": None}
     changed = (ORIGINAL.replace('<button id="neighbor">Keep me</button>', "")
                if remove_region_neighbor else ORIGINAL.replace('id="title">0', 'id="title">Ready'))
+    if replacement:
+        button = '<button id="replacement">Replacement</button>'
+        if case == "hidden-replacement":
+            button = button.replace('id="replacement"', 'id="replacement" style="display:none"')
+        if case == "clipped-replacement":
+            button = '<div style="height:30px;overflow:hidden"><div style="height:200px"></div>' + button + '</div>'
+        changed = ORIGINAL.replace('<button id="neighbor">Keep me</button>', button)
+    request = ("Remove the neighboring button; preserve the heading and counting." if case == "requested-removal"
+               else "Replace the neighboring button with a button labeled Replacement; preserve counting." if replacement
+               else "Make the heading smaller; preserve counting and the neighboring control." if remove_region_neighbor
+               else "Change the initial heading label to Ready; preserve counting and the neighboring control.")
+    structural = {"node_id": "neighbor", "disposition": "replaced" if replacement else "removed",
+                  "request_quote": "Replace the neighboring button" if replacement else "Remove the neighboring button",
+                  "source_paths": ["index.html"],
+                  "justification": "The requested neighboring control change is present in the inspected index.html diff and current native images; the heading and counting survive.",
+                  "replacement_selector": "#replacement" if replacement else None}
     limitation = "The original counter value 3 was not reconstructed. I separately verified the requested Ready label and counting behavior in the current build."
     verdict = {"accepted": True, "findings": "Current behavior and pixels reviewed.",
                "original_scene_status": "observed-context-matches"}
-    final_verdict = ({"accepted": False, "findings": "The focused heading remains but its selected neighbor is missing."}
-                     if remove_region_neighbor else
+    final_verdict = ({"accepted": False, "findings": "The selected neighbor is missing without authorization, or its replacement is not exposed."}
+                     if rejected_change else
+                     {"accepted": True, "findings": "The requested structural change preserves counting.",
+                      "original_scene_status": "observed-context-matches", "structural_changes": [structural]}
+                     if remove_region_neighbor or replacement else
                      {"accepted": True, "findings": "The new label preserves counting and neighboring controls.",
                       "original_scene_status": "not-reproduced", "scene_limitations": limitation})
+    if replacement and rejected_change:
+        verdict["structural_changes"] = [structural]
+    if case == "requested-removal":
+        verdict["structural_changes"] = [{**structural, "request_quote": "Remove all controls"}]
+    candidate = {"selector": "#replacement"} if replacement else {}
     steps = [
         [("choose_route", {"route": "quick_edit", "reason": "Change the label and preserve counting."})],
         [("read_selection", {}), ("read_file", {"path": "index.html"})],
-        [("set_acceptance_checks", {"checks": checks("0" if remove_region_neighbor else "Ready")}),
+        [("set_acceptance_checks", {"checks": checks("Ready" if case == "text" else "0")}),
          ("edit_file", {"path": "index.html", "edits": [{"find": source["files"]["index.html"], "replacement": changed}]}),
          ("build_project", {})],
         [("validate_preview", {})],
         [("submit_candidate", {"summary": "Updated the label."})],
         [("read_review_files", {"paths": list(source["files"])}),
          ("inspect_preview", {"target": "baseline", "selection_id": "frozen"})],
-        [("inspect_preview", {"target": "current", "selection_id": "frozen", "viewport": {"width": 1280, "height": 720}}),
-         ("inspect_preview", {"target": "current", "selection_id": "frozen", "viewport": {"width": 375, "height": 812}})],
+        [("inspect_preview", {"target": "current", "selection_id": "frozen", **candidate, "viewport": {"width": 1280, "height": 720}}),
+         ("inspect_preview", {"target": "current", "selection_id": "frozen", **candidate, "viewport": {"width": 375, "height": 812}})],
         [("validate_preview", {})],
         [("record_review", verdict)],
         [("record_review", final_verdict)],
@@ -119,28 +146,35 @@ def test_scene_limitations_allow_intended_text_edits_but_focus_does_not_hide_del
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=transport)))
     monkeypatch.setattr(OpenAICompletion, "_get_sync_client", lambda _: client)
     context = {"runId": "scene-run", "projectId": "project", "idea": "Counter",
-               "request": ("Make the heading smaller; preserve counting and the neighboring control."
-                           if remove_region_neighbor else
-                           "Change the initial heading label to Ready; preserve counting and the neighboring control."),
+               "request": request,
                "previousSource": source, "previousChecks": checks("0"), "selection": attachment}
-    if remove_region_neighbor:
+    if rejected_change:
         with pytest.raises((CancelledError, RuntimeAbort)) as stopped:
             execute_harness(settings, context, Checkpoints(), emit, lambda: cancelled)
         assert isinstance(getattr(stopped.value, "cause", stopped.value), CancelledError)
-        current = [item for item in metadata if item["target"] == "current"]
-        assert current and all(item["resolution"]["status"] == "missing" for item in current)
-        assert all(item["focusResolution"]["status"] == "resolved" for item in current)
-        assert all(any(member["nodeId"] == "neighbor" and member["status"] == "missing"
-                       for member in item["selectionResolutions"]) for item in current)
     else:
         result = execute_harness(settings, context, Checkpoints(), emit, lambda: cancelled)
-        assert "Ready" in result["html"] and 'id="neighbor"' in result["source"]["files"]["index.html"]
-        assert limitation in result["summary"]
-        assert any(item["target"] == "baseline" and item["scene"]["status"] == "state-not-reproduced" for item in metadata)
-        assert any(item["target"] == "current" and item["scene"]["status"] == "changed" for item in metadata)
-        assert all(item["scene"]["originalSceneVerified"] is False for item in metadata)
+        if case == "text":
+            assert "Ready" in result["html"] and 'id="neighbor"' in result["source"]["files"]["index.html"]
+            assert limitation in result["summary"]
+            assert any(item["target"] == "baseline" and item["scene"]["status"] == "state-not-reproduced" for item in metadata)
+            assert any(item["target"] == "current" and item["scene"]["status"] == "changed" for item in metadata)
+        else:
+            assert 'id="neighbor"' not in result["source"]["files"]["index.html"]
+            assert structural["justification"] in result["summary"]
+    current = [item for item in metadata if item["target"] == "current"]
+    if remove_region_neighbor or replacement:
+        assert current and all(any(member["nodeId"] == "neighbor" and member["status"] == "missing"
+                                   for member in item["selectionResolutions"]) for item in current)
+    if remove_region_neighbor:
+        assert all(item["focusResolution"]["status"] == "resolved" for item in current)
+    if replacement:
+        expected = "state-not-reproduced" if rejected_change else "resolved"
+        assert all(item["replacementResolution"]["status"] == expected for item in current)
+        assert all(item["replacementResolution"]["selector"] == "#replacement" for item in current)
+    assert all(item["scene"]["originalSceneVerified"] is False for item in metadata)
     rejected = [data["output"]["error"] for kind, data in events
                 if kind == "tool_end" and data.get("name") == "record_review" and "error" in data["output"]]
     assert len(rejected) == 1
-    assert ("visual" if remove_region_neighbor else "original captured context") in rejected[0]
+    assert ("original captured context" if case == "text" else "visual") in rejected[0]
     assert turn == len(steps)
