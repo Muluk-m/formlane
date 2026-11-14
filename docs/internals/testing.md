@@ -4,6 +4,10 @@
 
 One integration owner runs authorized checks after shared edits land. Select explicit relevant test files and package typechecks; avoid overlapping installations, full builds, suites or watch processes. Delegated editing alone does not authorize verification. Test existence, historical screenshots and HTTP availability do not establish migrated production acceptance.
 
+For local changes, run `pnpm check:changed` from the repository root (or pass an explicit base ref). It checks staged evidence paths, runs Biome on supported changed files, typechecks affected JavaScript packages and selects nearby tests. Python selection covers changed test files and matching top-level backend modules; nested `delivery/` changes still require explicitly selecting their relevant behavior gates below. Documentation-only changes need link/command review; this gate does not validate Markdown links.
+
+[JavaScript CI](../../.github/workflows/checks.yml) runs on every pull request and pushes to `main`/`test`, including documentation changes: tracked-evidence guard, lint, typechecks, tests and build. [Python CI](../../.github/workflows/python-checks.yml) is path-filtered to backend/compiler/core, the pnpm lockfile and its own workflow; a docs-only PR does not trigger the backend suite. A merge does not deploy either runtime; releases use the separate [deployment workflow](../operations/deployment.md#routine-frontend-release).
+
 ## Behavior boundaries
 
 | Boundary             | Required coverage                                                                                                                                                                                                                                                         |
