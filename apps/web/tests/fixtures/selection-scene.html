@@ -20,24 +20,24 @@
 <body>
   <main aria-label="Selection scene">
     <label>Scene input <input id="scene-input"></label>
-    <button id="scene-action"><span>Save scene</span></button>
+    <button type="button" id="scene-action"><span>Save scene</span></button>
     <output id="scene-count">0</output>
     <section class="cards" aria-label="Cards">
-      <button class="selection-card">First card</button>
-      <button class="selection-card">Second card</button>
+      <button type="button" class="selection-card">First card</button>
+      <button type="button" class="selection-card">Second card</button>
     </section>
     <section data-formlane-source="app-owned-marker" aria-label="Application marker">
-      <button id="dynamic-target">Runtime target</button>
+      <button type="button" id="dynamic-target">Runtime target</button>
     </section>
-    <div class="overlap" aria-label="Overlap">
-      <button id="overlap-back">Back target</button>
-      <button id="overlap-front">Front target</button>
-    </div>
-    <button id="open-modal">Open modal</button>
-    <button hidden>Hidden target</button>
-    <button id="scene-offscreen">Offscreen target</button>
+    <section class="overlap" aria-label="Overlap">
+      <button type="button" id="overlap-back">Back target</button>
+      <button type="button" id="overlap-front">Front target</button>
+    </section>
+    <button type="button" id="open-modal">Open modal</button>
+    <button type="button" hidden>Hidden target</button>
+    <button type="button" id="scene-offscreen">Offscreen target</button>
   </main>
-  <dialog><label>Dialog input <input id="dialog-input"></label><button id="close-modal">Close modal</button></dialog>
+  <dialog><label>Dialog input <input id="dialog-input"></label><button type="button" id="close-modal">Close modal</button></dialog>
   <script>
     let count = 0;
     const action = document.querySelector('#scene-action');
@@ -47,6 +47,7 @@
     document.querySelector('#open-modal').onclick = () => document.querySelector('dialog').showModal();
     document.querySelector('#close-modal').onclick = () => document.querySelector('dialog').close();
     const dynamic = document.createElement('button');
+    dynamic.type = 'button';
     dynamic.id = 'dynamic-target';
     dynamic.textContent = 'Runtime target';
     dynamic.setAttribute('data-formlane-source', 'application-runtime-marker');

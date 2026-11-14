@@ -243,7 +243,14 @@ def test_scene_and_structural_changes_require_explicit_independent_assessment(mo
             if part["type"] == "text"
         ]
         metadata.extend(images)
-        assert turn < len(steps), "Unexpected provider call after the controlled verdict"
+        assert turn < len(steps), (
+            "Unexpected provider call after the controlled verdict",
+            [
+                data["output"]["error"]
+                for kind, data in events
+                if kind == "tool_end" and "error" in data.get("output", {})
+            ],
+        )
         calls = []
         for index, (name, arguments) in enumerate(copy.deepcopy(steps[turn])):
             if name == "record_review" and arguments["accepted"]:

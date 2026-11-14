@@ -1,4 +1,4 @@
-export { createPreviewSelectionBridge } from './bridge'
 export type { PreviewSelectionBridge, PreviewSelectionBridgeOptions } from './bridge'
-export { createPreviewSelectionScript, injectPreviewSelectionRuntime } from './runtime'
+export { createPreviewSelectionBridge } from './bridge'
 export type { PreviewSelectionConfig } from './runtime'
+export { createPreviewSelectionScript, injectPreviewSelectionRuntime } from './runtime'
