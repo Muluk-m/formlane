@@ -8,6 +8,7 @@
     "./types": "./src/types.ts",
     "./html": "./src/html.ts",
     "./project": "./src/project.ts",
+    "./selection": "./src/selection.ts",
     "./text": "./src/text.ts"
   },
   "scripts": {
