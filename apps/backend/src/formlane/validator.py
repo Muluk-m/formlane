@@ -1,6 +1,7 @@
 """Native Playwright acceptance checks in fresh, opaque, offline browser contexts."""
 
 import asyncio
+import base64
 import contextlib
 import json
 import re
@@ -79,8 +80,8 @@ WARM_DOCUMENT = "<!doctype html><title>warm</title>"
 def _seed(value) -> int:
     if value is None:
         return DEFAULT_SEED
-    if type(value) is not int or not 0 <= value <= 2**31 - 1:
-        raise ValueError("Seed must be an integer from 0 to 2147483647.")
+    if type(value) is not int or not 0 <= value <= 2**32 - 1:
+        raise ValueError("Seed must be an unsigned 32-bit integer.")
     return value
 
 
@@ -435,16 +436,55 @@ async def _inspect_browser(html: str, request: dict, settings) -> dict:
                     except Exception as error:
                         failure = f"Action {performed + 1} ({action['kind']} {action['selector']}): {str(error)[:300]}"
                         break
+                if request.get("scroll"):
+                    await session.frame.evaluate("position => scrollTo(position.x, position.y)", request["scroll"])
                 await asyncio.sleep(0.2)
                 selector = request["selector"]
+                locator = session.frame.locator(selector)
+                count = await locator.count()
+                status = "missing" if count == 0 else "ambiguous" if count > 1 else "resolved"
+                if failure or request.get("unreproducedReason"):
+                    status = "state-not-reproduced"
+                if count == 1 and request.get("selectionContext"):
+                    target = request["selectionContext"]
+                    tag = await locator.evaluate("element => element.localName")
+                    if tag.lower() != target["tagName"].lower() or not await locator.is_visible():
+                        status = "state-not-reproduced"
+                    for attribute in ("aria-expanded", "aria-selected", "aria-checked", "aria-pressed"):
+                        expected = target.get("attributes", {}).get(attribute)
+                        if expected is not None and await locator.get_attribute(attribute) != expected:
+                            status = "state-not-reproduced"
+                resolutions = []
+                for target in request.get("selectionTargets", []):
+                    candidate = session.frame.locator(target["selector"])
+                    matches = await candidate.count()
+                    outcome = "missing" if matches == 0 else "ambiguous" if matches > 1 else "resolved"
+                    if matches == 1 and (
+                        not await candidate.is_visible()
+                        or (await candidate.evaluate("element => element.localName")).lower() != target["tagName"].lower()
+                    ):
+                        outcome = "state-not-reproduced"
+                    resolutions.append({"nodeId": target["nodeId"], "status": outcome, "matches": matches})
+                if status == "resolved" and resolutions:
+                    status = next((item["status"] for item in resolutions if item["status"] != "resolved"), "resolved")
                 try:
-                    tree = await session.frame.locator(selector).first.aria_snapshot(timeout=3000)
+                    tree = await locator.aria_snapshot(timeout=3000) if count == 1 else ""
                 except Exception as error:
                     tree = f"No accessibility snapshot for {selector}: {str(error)[:200]}"
+                pixels = await session.page.screenshot(type="png", timeout=5000)
+                if len(pixels) > 2_000_000:
+                    raise ValueError("Inspection screenshot exceeds the private image limit.")
+                viewport = request["viewport"] or DEFAULT_VIEWPORT
                 width = await session.frame.evaluate(
                     "() => ({document: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth ?? 0), viewport: document.documentElement.clientWidth})"
                 )
                 return {
+                    "artifactHash": artifact_hash(html),
+                    "resolution": {"status": status, "matches": count,
+                                   "reason": request.get("unreproducedReason") or failure},
+                    "selectionResolutions": resolutions,
+                    "image": {"provenance": "server-reconstructed", "mimeType": "image/png",
+                              "base64": base64.b64encode(pixels).decode("ascii"), **viewport},
                     "actionsPerformed": performed,
                     "actionFailure": failure,
                     "accessibilityTree": tree[:INSPECT_TREE_CHARACTERS],
@@ -462,12 +502,56 @@ async def _inspect_browser(html: str, request: dict, settings) -> dict:
 def validate_inspection(request: dict) -> dict:
     if not isinstance(request, dict):
         raise ValueError("An inspection request object is required.")
+    context = request.get("selectionContext")
+    if context is not None:
+        if not isinstance(context, dict):
+            raise ValueError("Selection context must be an object.")
+        attributes = context.get("attributes", {})
+        if not isinstance(attributes, dict):
+            raise ValueError("Selection attributes must be an object.")
+        context = {
+            "tagName": _string(context.get("tagName"), "Selection tag", 1, 64),
+            "attributes": {
+                name: _string(value, "Selection state", 0, 500)
+                for name, value in attributes.items()
+                if name in ("aria-expanded", "aria-selected", "aria-checked", "aria-pressed")
+            },
+        }
+    targets = request.get("selectionTargets") or []
+    if not isinstance(targets, list) or len(targets) > 32 or any(not isinstance(item, dict) for item in targets):
+        raise ValueError("At most 32 selection targets are supported.")
+    targets = [{"nodeId": _string(item.get("nodeId"), "Selection node", 1, 128),
+                "tagName": _string(item.get("tagName"), "Selection tag", 1, 64),
+                "selector": _string(item.get("selector"), "Selection selector", 1, 1000)}
+               for item in targets]
+    scroll = request.get("scroll")
+    if scroll is not None:
+        if not isinstance(scroll, dict) or any(
+            type(scroll.get(key)) not in (int, float) or not -10_000_000 <= scroll[key] <= 10_000_000
+            for key in ("x", "y")
+        ):
+            raise ValueError("Invalid scene scroll position.")
+        scroll = {key: scroll[key] for key in ("x", "y")}
+    viewport = request.get("viewport")
+    if viewport is not None:
+        if not isinstance(viewport, dict) or any(
+            type(viewport.get(key)) not in (int, float)
+            or not 1 <= viewport[key] <= 16384 or int(viewport[key]) != viewport[key]
+            for key in ("width", "height")
+        ) or viewport["width"] * viewport["height"] > 16_000_000:
+            raise ValueError("Inspection viewport must fit 16384 pixels per edge and 16 million pixels.")
+        viewport = {key: int(viewport[key]) for key in ("width", "height")}
     return {
-        "viewport": _viewport(request.get("viewport")),
+        "selectionTargets": targets,
+        "scroll": scroll,
+        "selectionContext": context,
+        "unreproducedReason": _string(request["unreproducedReason"], "Reproduction limit", 1, 500)
+        if request.get("unreproducedReason") else None,
+        "viewport": viewport,
         "clock": _clock(request.get("clock")),
         "actions": _actions(request.get("actions") or []),
         "seed": _seed(request.get("seed")),
-        "selector": _string(request.get("selector") or "body", "Inspection selector", 1, 300),
+        "selector": _string(request.get("selector") or "body", "Inspection selector", 1, 1000),
     }
 
 
@@ -506,7 +590,7 @@ def _subprocess(payload: dict, cancelled, timeout: int) -> dict:
 
 
 def inspect_artifact(html: str, request: dict, settings, cancelled) -> dict:
-    """Debugging observation for agents; never acceptance evidence."""
+    """Private native pixels and bounded observations, bound to the inspected artifact."""
     normalized = validate_inspection(request)
     result = _subprocess(
         {

@@ -443,7 +443,7 @@ def test_resume_preserves_checkpoint_source_history_and_fences_old_attempt(
     assert claimed["previous_version_id"] == baseline["id"]
     assert claimed["attempt_started_at"] == clock
 
-    assert claimed["execution_version"] == run["execution_version"] == "flow-v2"
+    assert claimed["execution_version"] == run["execution_version"] == "flow-v3"
     assert (
         pg_store.get_checkpoint(run["id"], claimed["lease_token"], "source:committed") == checkpoint
     )

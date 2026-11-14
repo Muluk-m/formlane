@@ -72,6 +72,18 @@ class Viewport(NoArgs):
     height: int = Field(ge=640, le=1200)
 
 
+class InspectionViewport(NoArgs):
+    width: int = Field(ge=1, le=16384)
+    height: int = Field(ge=1, le=16384)
+
+    @model_validator(mode="after")
+    def bounded_pixels(self):
+        if self.width * self.height > 16_000_000:
+            raise ValueError("Inspection viewport exceeds 16 million pixels.")
+        return self
+
+
+
 class Clock(NoArgs):
     now: str = Field(min_length=10, max_length=40)
     timezone: str | None = None
@@ -81,7 +93,7 @@ class BrowserCheck(NoArgs):
     name: str = Field(min_length=1, max_length=160)
     viewport: Viewport | None = None
     clock: Clock | None = None
-    seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    seed: int | None = Field(default=None, ge=0, le=2**32 - 1)
     actions: list[BrowserAction] = Field(max_length=16)
     assertion: BrowserAssertion | None = None
     assertions: list[BrowserAssertion] = Field(default_factory=list, max_length=12)
@@ -95,6 +107,14 @@ class ChecksArgs(NoArgs):
 class ReviewArgs(NoArgs):
     accepted: bool
     findings: str = Field(min_length=1, max_length=6000)
+    visual_evidence_ids: list[str] = Field(default_factory=list, max_length=6)
+
+    @field_validator("visual_evidence_ids")
+    @classmethod
+    def bounded_evidence_ids(cls, values: list[str]) -> list[str]:
+        if any(not 1 <= len(value) <= 128 for value in values):
+            raise ValueError("Visual evidence IDs must contain 1–128 characters.")
+        return values
 
 
 class Criterion(NoArgs):
@@ -129,10 +149,12 @@ class SubmitArgs(NoArgs):
 
 
 class InspectArgs(NoArgs):
-    selector: str = Field(default="body", min_length=1, max_length=300)
-    viewport: Viewport | None = None
+    target: Literal["baseline", "current"] = "current"
+    selection_id: str | None = Field(default=None, min_length=1, max_length=128)
+    selector: str | None = Field(default=None, min_length=1, max_length=1000)
+    viewport: InspectionViewport | None = None
     clock: Clock | None = None
-    seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    seed: int | None = Field(default=None, ge=0, le=2**32 - 1)
     actions: list[BrowserAction] = Field(default_factory=list, max_length=16)
 
 

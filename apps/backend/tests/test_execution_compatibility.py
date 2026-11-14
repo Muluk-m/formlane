@@ -42,7 +42,7 @@ def test_manifest_is_portable_and_ignores_credentials_and_generated_caches(
     relocated = compatibility_manifest(settings)
     assert relocated == original
     assert list(relocated["source"]) == sorted(relocated["source"])
-    assert relocated["version"] == "flow-v2"
+    assert relocated["version"] == "flow-v3"
     assert relocated["endpoint"] == ["https", "provider.example", None, "/v1"]
     serialized = json.dumps(relocated)
     for private in (

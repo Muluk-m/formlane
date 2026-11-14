@@ -56,6 +56,18 @@ class ReadWorkspace(WorkspaceTool):
         return self.execute(self._runtime.read_workspace, kwargs)
 
 
+class ReadSelection(WorkspaceTool):
+    name: str = "read_selection"
+    description: str = (
+        "Read the frozen selection, server-authoritative baseline locations, instance warnings "
+        "and bounded heuristic source candidates. Private pixels arrive as native image content."
+    )
+    args_schema: type[BaseModel] = NoArgs
+
+    def _run(self, **kwargs: Any) -> str:
+        return self.execute(self._runtime.read_selection, kwargs)
+
+
 class ReadPreviousFile(WorkspaceTool):
     name: str = "read_previous_file"
     description: str = "Read a file from the immutable saved application baseline."
@@ -177,9 +189,10 @@ class SubmitCandidate(WorkspaceTool):
 class InspectPreview(WorkspaceTool):
     name: str = "inspect_preview"
     description: str = (
-        "Observe the current build in the sandboxed browser: accessibility tree, console, "
-        "page errors and document width, optionally after actions, viewport and clock. "
-        "Debugging only; not acceptance evidence."
+        "Inspect baseline or current canonical build with supported actions, viewport, clock and seed. "
+        "Pass selection_id to re-resolve frozen context; never assume the first match. "
+        "Returns explicit resolution and private native screenshot evidence. David must inspect "
+        "current desktop/mobile views and approve their evidence IDs after viewing the pixels."
     )
     args_schema: type[BaseModel] = InspectArgs
 
@@ -281,4 +294,5 @@ def tools_for_stage(runtime: Runtime, kind: str) -> list[BaseTool]:
     from .configuration import get_stage_config
 
     initial, follow_up = STAGE_TOOLSETS[get_stage_config(kind).tool_set]
-    return [tool(runtime) for tool in (follow_up if runtime.previous else initial)]
+    classes = follow_up if runtime.previous else initial
+    return [tool(runtime) for tool in (*classes, ReadSelection) if tool is not ReadSelection or runtime.selection]
