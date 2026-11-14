@@ -51,7 +51,9 @@ def test_inspection_reports_unreproduced_scene_and_supported_actions():
         selectionContext=target,
         actions=[{"kind": "click", "selector": "#open", "value": None}],
     )
-    assert opened["resolution"]["status"] == "resolved"
+    assert opened["resolution"]["status"] == "resolved", {
+        key: value for key, value in opened.items() if key != "image"
+    }
     assert opened["actionsPerformed"] == 1
 
 

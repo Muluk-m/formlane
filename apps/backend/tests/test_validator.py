@@ -571,17 +571,19 @@ document.querySelector('#spawn').onclick = () => {
 
 def test_seeded_randomness_makes_random_apps_reproducible():
     spawn = [{"kind": "click", "selector": "#spawn", "value": None}]
+    observations = []
 
     def observe(seed):
         probe = check(
             "probe", actions=spawn, assertions=[assertion(selector="#tile", expected="none")]
         )
         report = validate(RANDOM_HTML, [dict(probe, seed=seed), dict(probe, name="b", seed=seed)])
+        observations.append(report)
         return [item["actual"] for item in report["checks"]]
 
     first, again, other = observe(1), observe(1), observe(2)
-    assert first[0] == first[1] == again[0] and ":" in first[0]
-    assert other[0] != first[0]
+    assert first[0] == first[1] == again[0] and ":" in first[0], observations
+    assert other[0] != first[0], observations
     seeded = [
         check(name, actions=spawn, assertions=[assertion(selector="#tile", expected=first[0])])
         for name in ("one", "two")
