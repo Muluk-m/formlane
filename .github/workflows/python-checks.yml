@@ -5,6 +5,10 @@ on:
     paths:
       - "apps/backend/**"
       - "apps/compiler/**"
+      - "apps/web/**"
+      - "packages/contracts/**"
+      - "packages/ui/**"
+      - "packages/i18n/**"
       - "packages/atoms-core/**"
       - "pnpm-lock.yaml"
       - ".github/workflows/python-checks.yml"
@@ -13,6 +17,10 @@ on:
     paths:
       - "apps/backend/**"
       - "apps/compiler/**"
+      - "apps/web/**"
+      - "packages/contracts/**"
+      - "packages/ui/**"
+      - "packages/i18n/**"
       - "packages/atoms-core/**"
       - "pnpm-lock.yaml"
       - ".github/workflows/python-checks.yml"
@@ -40,6 +48,7 @@ jobs:
       DATABASE_URL: postgresql+psycopg://postgres:${{ github.run_id }}@127.0.0.1:5432/formlane_test
       TEST_DATABASE_URL: postgresql+psycopg://postgres:${{ github.run_id }}@127.0.0.1:5432/formlane_test
       BROWSER_EXECUTABLE_PATH: /opt/google/chrome/chrome
+      FORMLANE_CHROME_VERSION: "156.0.8078.79"
       COMPILER_COMMAND: '["node", "${{ github.workspace }}/apps/compiler/dist/index.js"]'
       OTEL_SDK_DISABLED: "true"
       CREWAI_TELEMETRY_ENABLED: "false"
@@ -61,8 +70,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @formlane/compiler build
       - run: uv sync --frozen --project apps/backend
-      - run: uv run --project apps/backend ruff check apps/backend
-      - name: Flow equivalence and iteration contracts
+      - run: uv run --project apps/backend ruff check apps/backend apps/compiler/tests apps/web/tests
+      - name: Install qualified runtime Chrome
+        run: |
+          archive="$RUNNER_TEMP/formlane-chrome.deb"
+          curl --fail --show-error --silent --location \
+            "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${FORMLANE_CHROME_VERSION}-1_amd64.deb" \
+            --output "$archive"
+          sudo dpkg --install "$archive"
+          test "$("$BROWSER_EXECUTABLE_PATH" --version | awk '{print $3}')" = "$FORMLANE_CHROME_VERSION"
+      - name: Prepare runner Chrome files
+        run: |
+          # Materialize cold image pages before the existing bounded browser launch.
+          find /opt/google/chrome -type f -exec cat {} + > /dev/null
+          "$BROWSER_EXECUTABLE_PATH" --version
+      - name: Recorded acceptance and iteration contracts
         run: uv run --project apps/backend pytest apps/backend/tests/test_flow_equivalence.py apps/backend/tests/test_iteration.py
       - name: Native CrewAI upgrade contracts
         run: uv run --project apps/backend pytest apps/backend/tests/test_runtime_contract.py
@@ -71,11 +93,11 @@ jobs:
           uv run --project apps/backend pytest
           apps/backend/tests/test_durable_execution.py
           apps/backend/tests/test_execution_compatibility.py
-      - name: Prepare runner Chrome files
-        run: |
-          # Materialize cold image pages before the existing bounded browser launch.
-          find /opt/google/chrome -type f -exec cat {} + > /dev/null
-          "$BROWSER_EXECUTABLE_PATH" --version
+      - name: Compiler and preview selection browser boundaries
+        run: >-
+          uv run --project apps/backend pytest
+          apps/compiler/tests/test_editor_artifacts.py
+          apps/web/tests/test_preview_selection.py
       - name: Complete remaining backend regressions
         run: >-
           uv run --project apps/backend pytest apps/backend/tests
@@ -84,3 +106,9 @@ jobs:
           --ignore=apps/backend/tests/test_runtime_contract.py
           --ignore=apps/backend/tests/test_durable_execution.py
           --ignore=apps/backend/tests/test_execution_compatibility.py
+      - name: Owned workspace selection browser scenarios
+        run: uv run --project apps/backend python apps/web/tests/run_selection_workspace.py
+      - name: Development selection lifecycle
+        run: >-
+          uv run --project apps/backend python apps/web/tests/run_selection_workspace.py
+          --dev --pytest-args -k test_edit_keeps_live_scene_and_attachment_replacement_keeps_comment

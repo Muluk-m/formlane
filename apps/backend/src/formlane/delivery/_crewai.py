@@ -67,6 +67,9 @@ class ObservedOpenAI(OpenAICompletion):
         index = scope["llm_index"]
         scope["llm_index"] += 1
         name = f"{scope['path']}/llm-{index}"
+        runtime.check()
+        images = runtime.model_images()
+        provider_messages = runtime.model_messages(messages, images)
 
         def invoke() -> Any:
             runtime.begin_model_call(scope)
@@ -82,7 +85,7 @@ class ObservedOpenAI(OpenAICompletion):
             )
             try:
                 result = super(ObservedOpenAI, self).call(
-                    messages,
+                    provider_messages,
                     tools,
                     callbacks,
                     None,
@@ -99,7 +102,10 @@ class ObservedOpenAI(OpenAICompletion):
         try:
             # This is one DBOS step per native provider call; delegation and
             # crew execution remain workflow orchestration, never enclosing steps.
-            return runtime.durable.run(name, invoke)
+            result = runtime.durable.run(name, invoke)
+            runtime.check()
+            runtime.receive_images(images)
+            return result
         except Exception as error:
             raise RuntimeAbort(error) from None
 

@@ -11,6 +11,7 @@ import re
 import secrets
 import time
 from contextlib import contextmanager
+from copy import deepcopy
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -19,11 +20,12 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from .models import Message, Project, Run, RunCheckpoint, RunEvent, Version
-from .project import MAX_PREVIEW_BYTES, validate_source
+from .project import MAX_PREVIEW_BYTES, artifact_hash, source_hash, validate_source
+from .selection import selection_summary
 
 LEASE_DURATION_MS = 60_000
 # Runs execute only on the worker release that created their durable history.
-EXECUTION_VERSION = "flow-v2"
+EXECUTION_VERSION = "flow-v3"
 TERMINAL = {"completed", "failed", "cancelled"}
 ERRORS = {
     "timeout": "An earlier time limit interrupted this run. Continue from the saved progress.",
@@ -98,8 +100,8 @@ def version_json(row: Version, full: bool = False) -> dict:
     return result
 
 
-def run_json(row: Run) -> dict:
-    return {
+def run_json(row: Run, *, include_selection: bool = False) -> dict:
+    result = {
         "id": row.id,
         "projectId": row.project_id,
         "status": row.status,
@@ -117,7 +119,11 @@ def run_json(row: Run) -> dict:
         "error": row.error,
         "versionId": row.version_id,
         "cursor": row.event_cursor,
+        "selectionSummary": selection_summary(row.selection),
     }
+    if include_selection:
+        result["selection"] = row.selection
+    return result
 
 
 def event_json(row: RunEvent) -> dict:
@@ -138,6 +144,7 @@ def message_json(row: Message) -> dict:
         "agent": row.agent if row.agent in {"mike", "emma", "bob", "alex", "david"} else None,
         "content": row.content,
         "createdAt": row.created_at,
+        "selectionSummary": row.selection_summary,
     }
 
 
@@ -528,6 +535,9 @@ class Store:
         content: str | None = None,
         mode: str = "followup",
         now: int | None = None,
+        *,
+        expected_version_id: str | None = None,
+        selection: dict | None = None,
     ) -> dict:
         with self.sessions.begin() as s:
             project = self._project(s, project_id, owner_id)
@@ -536,6 +546,33 @@ class Store:
                 raise StoreError(400, "This project already has a build. Send a follow-up instead.")
             if project.run_id:
                 raise StoreError(409, "A generation is already running for this project.")
+            if (
+                expected_version_id is not None
+                and project.current_version_id != expected_version_id
+            ):
+                raise StoreError(409, "The current version changed. Select the target again.")
+            frozen_selection = None
+            if selection is not None:
+                if mode != "followup" or not content or expected_version_id is None:
+                    raise StoreError(400, "Selection requires a follow-up and expected version.")
+                baseline = s.scalar(
+                    select(Version).where(
+                        Version.project_id == project_id, Version.id == expected_version_id
+                    )
+                )
+                if (
+                    baseline is None
+                    or selection.get("versionId") != baseline.id
+                    or selection.get("sourceHash") != source_hash(baseline.source)
+                    or selection.get("canonicalArtifactHash") != artifact_hash(baseline.html)
+                ):
+                    raise StoreError(409, "Selection does not match the current version.")
+                frozen_selection = {
+                    **deepcopy(selection),
+                    "selectionId": str(uuid4()),
+                    "projectId": project_id,
+                    "createdAt": clock,
+                }
             s.execute(
                 update(Run).where(Run.project_id == project_id).values(recovery_eligible=False)
             )
@@ -545,6 +582,7 @@ class Store:
                 status="queued",
                 request=content or project.idea,
                 previous_version_id=project.current_version_id,
+                selection=frozen_selection,
                 created_at=clock,
                 attempt=1,
                 attempt_started_at=clock,
@@ -566,6 +604,7 @@ class Store:
                         project_id=project_id,
                         role="user",
                         content=content,
+                        selection_summary=selection_summary(frozen_selection),
                         created_at=clock,
                     )
                 )
@@ -648,6 +687,7 @@ class Store:
                 "request": run.request,
                 "previousSource": version.source if version else None,
                 "previousChecks": version.acceptance_checks if version else None,
+                "selection": run.selection,
                 "attempt": run.attempt,
                 "executionVersion": run.execution_version,
             }
@@ -857,7 +897,7 @@ class Store:
                 if run_id:
                     raise StoreError(404, "Run not found.")
                 return None
-            return run_json(run)
+            return run_json(run, include_selection=True)
 
     def resume_run(
         self, project_id: str, owner_id: str, run_id: str, now: int | None = None

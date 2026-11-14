@@ -443,7 +443,7 @@ def test_resume_preserves_checkpoint_source_history_and_fences_old_attempt(
     assert claimed["previous_version_id"] == baseline["id"]
     assert claimed["attempt_started_at"] == clock
 
-    assert claimed["execution_version"] == run["execution_version"] == "flow-v2"
+    assert claimed["execution_version"] == run["execution_version"] == "flow-v3"
     assert (
         pg_store.get_checkpoint(run["id"], claimed["lease_token"], "source:committed") == checkpoint
     )
@@ -574,7 +574,7 @@ def test_retired_queued_history_is_never_claimed(pg_store, project, owner, retir
         session.get(Run, run["id"]).execution_version = retired
     history = pg_store.list_run_events(project["id"], owner, run["id"], 0)
     assert pg_store.claim_run("new-release") is None
-    assert pg_store.get_run(project["id"], owner, run["id"]) == run
+    assert pg_store.get_run(project["id"], owner, run["id"]) == {**run, "selection": None}
     assert pg_store.list_run_events(project["id"], owner, run["id"], 0) == history
 
 

@@ -1,4 +1,6 @@
+import base64
 import copy
+import io
 import json
 import os
 from concurrent.futures import CancelledError, ThreadPoolExecutor
@@ -14,6 +16,7 @@ import pytest
 from crewai import Task
 from crewai.llms.providers.openai.completion import OpenAICompletion
 from openai.types.chat import ChatCompletionChunk
+from PIL import Image
 
 from formlane.delivery import execute_harness
 from formlane.delivery._crewai import ObservedOpenAI, SourceExecutor
@@ -103,6 +106,25 @@ def accepted_workspace():
         "findings": "Verified",
         "checksHash": checks_hash(state["checks"]),
     }
+    rt.scope = rt.new_scope("flow-v1/review-0", "david")
+    for key, width in (("desktop", 1280), ("mobile", 375)):
+        state["visualEvidence"][key] = {
+            **state["build"],
+            "id": key,
+            "target": "current",
+            "role": "david",
+            "stage": rt.scope["path"],
+            "resolution": {"status": "resolved"},
+            "image": {
+                "provenance": "server-reconstructed",
+                "mimeType": "image/png",
+                "base64": "cGl4ZWxz",
+                "width": width,
+                "height": 812,
+            },
+        }
+        state["visualReceipts"][key] = rt.scope["path"]
+    state["review"]["visualEvidenceIds"] = ["desktop", "mobile"]
     return rt
 
 
@@ -167,7 +189,8 @@ def test_tools_are_role_scoped_and_never_execute_arbitrary_code():
     }
     assert {tool.name for tool in tools_for_stage(rt, "router")} == {"choose_route"}
     assert {tool.name for tool in tools_for_stage(rt, "coordinator")} == {
-        "read_workspace", "schedule_iteration",
+        "read_workspace",
+        "schedule_iteration",
     }
     assert {tool.name for tool in tools_for_stage(rt, "planner")} == {
         "read_workspace",
@@ -185,7 +208,10 @@ def test_tools_are_role_scoped_and_never_execute_arbitrary_code():
         for tool in tools_for_stage(rt, kind)
     )
     fresh, _ = runtime()
-    assert {tool.name for tool in tools_for_stage(fresh, "planner")} == {"read_workspace", "submit_plan"}
+    assert {tool.name for tool in tools_for_stage(fresh, "planner")} == {
+        "read_workspace",
+        "submit_plan",
+    }
     assert SourceExecutor._should_parallelize_native_tool_calls(None, [1, 2]) is False
 
 
@@ -207,7 +233,9 @@ def test_review_requires_own_browser_and_changed_file_inspection():
     rt = accepted_workspace()
     rt.workspace["source"]["files"]["index.html"] += "<!-- requested change -->"
     rt.workspace["build"]["sourceHash"] = source_hash(rt.workspace["source"])
-    args = {"accepted": True, "findings": "Accepted"}
+    for value in rt.workspace["visualEvidence"].values():
+        value["sourceHash"] = rt.workspace["build"]["sourceHash"]
+    args = {"accepted": True, "findings": "Accepted", "visual_evidence_ids": ["desktop", "mobile"]}
     with pytest.raises(ValueError, match="inspection"):
         rt.record_review(args)
     rt.read_review_files({"paths": ["index.html"]})
@@ -223,6 +251,8 @@ def test_native_review_recovers_missing_files_and_replays_without_provider(monke
     state = rt.workspace
     state["source"] = create_source("react-ts")
     state["build"]["sourceHash"] = source_hash(state["source"])
+    for value in state["visualEvidence"].values():
+        value["sourceHash"] = state["build"]["sourceHash"]
     state["implementationValidation"] = dict(state["build"])
     state["review"] = None
     missing = ["package.json", "tsconfig.json"]
@@ -237,29 +267,53 @@ def test_native_review_recovers_missing_files_and_replays_without_provider(monke
             name, args = "record_review", {"accepted": True, "findings": "Browser passed"}
         elif turns == 2:
             feedback = next(
-                item["content"] for item in reversed(kwargs["messages"])
-                if item["role"] == "tool"
+                item["content"] for item in reversed(kwargs["messages"]) if item["role"] == "tool"
             )
             assert all(path in feedback for path in missing)
             name, args = "read_review_files", {"paths": missing}
         elif turns == 3:
-            name, args = "record_review", {"accepted": True, "findings": "Reviewed all files"}
+            name, args = (
+                "record_review",
+                {
+                    "accepted": True,
+                    "findings": "Reviewed all files",
+                    "visual_evidence_ids": ["desktop", "mobile"],
+                },
+            )
         else:
             pytest.fail("A recorded verdict must end the review stage")
         yield ChatCompletionChunk(
-            id=f"review-{turns}", created=0, model="review-model",
+            id=f"review-{turns}",
+            created=0,
+            model="review-model",
             object="chat.completion.chunk",
-            choices=[{"index": 0, "delta": {"tool_calls": [{
-                "index": 0, "id": f"call-{turns}", "type": "function",
-                "function": {"name": name, "arguments": json.dumps(args)},
-            }]}, "finish_reason": "tool_calls"}],
+            choices=[
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": f"call-{turns}",
+                                "type": "function",
+                                "function": {"name": name, "arguments": json.dumps(args)},
+                            }
+                        ]
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
         )
 
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=transport)))
     monkeypatch.setattr(OpenAICompletion, "_get_sync_client", lambda _: client)
     model = ObservedOpenAI(
-        model="review-model", api_key="recorded-transport", base_url="http://127.0.0.1:1/v1",
-        custom_openai=True, stream=True, max_retries=0,
+        model="review-model",
+        api_key="recorded-transport",
+        base_url="http://127.0.0.1:1/v1",
+        custom_openai=True,
+        stream=True,
+        max_retries=0,
         additional_params={"parallel_tool_calls": False},
     ).bind(rt)
     delivery = Delivery(rt, lambda effort: model)
@@ -437,7 +491,7 @@ def test_plan_initializes_template_once_with_binding_checks():
     assert rt.invoke(rt.submit_candidate, {"summary": "Done"})["error"].startswith("Build")
 
 
-def test_independent_review_checks_preserve_current_implementation_evidence():
+def test_independent_review_checks_preserve_current_implementation_evidence(monkeypatch):
     rt = accepted_workspace()
     checks = [
         {
@@ -462,14 +516,42 @@ def test_independent_review_checks_preserve_current_implementation_evidence():
     assert set(completion_status(rt.workspace)["missing"]) == {
         "david_validation",
         "david_acceptance",
+        "david_visual_approval",
     }
     assert rt.workspace["checks"][0]["name"] == SMOKE_CHECK_NAME
     rt.settings.browser_executable = os.environ.get("BROWSER_EXECUTABLE_PATH")
     rt.scope = rt.new_scope("independent-review", "david")
     report = rt.validate_preview({})
     assert report["valid"], report["issues"]
+    screenshots = [
+        rt.invoke(rt.inspect_preview, {"viewport": viewport})["id"]
+        for viewport in (
+            {"width": 1280, "height": 720},
+            {"width": 375, "height": 812},
+        )
+    ]
+
+    def provider(llm, messages, *args):
+        images = [
+            part
+            for message in messages
+            if isinstance(message.get("content"), list)
+            for part in message["content"]
+            if part["type"] == "image_url"
+        ]
+        assert len(images) == 2
+        assert all(part["image_url"]["url"].startswith("data:image/png;base64,") for part in images)
+        return "Viewed both current viewport images."
+
+    monkeypatch.setattr(OpenAICompletion, "call", provider)
+    model = ObservedOpenAI(model="test", api_key="controlled").bind(rt)
+    model.call("Inspect the current visual evidence.")
     review = rt.record_review(
-        {"accepted": True, "findings": "Independent browser checks passed."}
+        {
+            "accepted": True,
+            "findings": "Independent browser checks passed.",
+            "visual_evidence_ids": screenshots,
+        }
     )
     assert review["completion"]["ready"]
     # Re-running implementation evidence on unchanged source keeps the independent verdict.
@@ -581,9 +663,25 @@ def test_search_files_returns_literal_matches_with_lines():
     assert search_source(source, "(.*)*", False) == {"matches": [], "truncated": False}
 
 
+def inspection_report(html, *_):
+    pixels = io.BytesIO()
+    Image.new("RGB", (1, 1), "white").save(pixels, format="PNG")
+    return {
+        "artifactHash": artifact_hash(html),
+        "resolution": {"status": "resolved"},
+        "image": {
+            "provenance": "server-reconstructed",
+            "mimeType": "image/png",
+            "base64": base64.b64encode(pixels.getvalue()).decode(),
+            "width": 1,
+            "height": 1,
+        },
+    }
+
+
 @pytest.fixture
 def native_inspections(monkeypatch):
-    """Record transport only; run stage hooks and tools through the native executor."""
+    """Run native hooks and tools with controlled provider and browser outcomes."""
     clients = {}
     monkeypatch.setattr(OpenAICompletion, "_get_sync_client", lambda model: clients[model.model])
 
@@ -593,7 +691,9 @@ def native_inspections(monkeypatch):
 
         def chunk(delta, finish_reason=None):
             return ChatCompletionChunk(
-                id="budget-response", created=0, model="budget-model",
+                id="budget-response",
+                created=0,
+                model="budget-model",
                 object="chat.completion.chunk",
                 choices=[{"index": 0, "delta": delta, "finish_reason": finish_reason}],
             )
@@ -603,10 +703,21 @@ def native_inspections(monkeypatch):
             if not requested:
                 requested = True
                 for index, args in enumerate(arguments):
-                    yield chunk({"tool_calls": [{
-                        "index": index, "id": f"inspect-{index}", "type": "function",
-                        "function": {"name": "inspect_preview", "arguments": json.dumps(args)},
-                    }]})
+                    yield chunk(
+                        {
+                            "tool_calls": [
+                                {
+                                    "index": index,
+                                    "id": f"inspect-{index}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "inspect_preview",
+                                        "arguments": json.dumps(args),
+                                    },
+                                }
+                            ]
+                        }
+                    )
                 yield chunk({}, "tool_calls")
                 if before_tools is not None:
                     before_tools()
@@ -623,8 +734,12 @@ def native_inspections(monkeypatch):
         )
         model_type = ObservedOpenAI if durable_model else OpenAICompletion
         model = model_type(
-            model=model_name, api_key="recorded-transport", base_url="http://127.0.0.1:1/v1",
-            custom_openai=True, stream=True, max_retries=0,
+            model=model_name,
+            api_key="recorded-transport",
+            base_url="http://127.0.0.1:1/v1",
+            custom_openai=True,
+            stream=True,
+            max_retries=0,
             additional_params={"parallel_tool_calls": False},
         )
         if durable_model:
@@ -648,12 +763,11 @@ def test_stage_tool_budgets_force_a_decision(monkeypatch, native_inspections):
     calls = []
     monkeypatch.setattr(
         "formlane.delivery.workspace.inspect_artifact",
-        lambda *args: calls.append(args) or {"ok": True},
+        lambda *args: calls.append(args) or inspection_report(*args),
     )
     arguments = [{"selector": f"#item-{index}"} for index in range(7)]
     outputs = native_inspections(rt, "review", arguments)
     assert len(calls) == 6
-    assert all(json.loads(output) == {"ok": True} for output in outputs[:6])
     assert json.loads(outputs[-1]) == {
         "error": "inspect_preview budget of 6 for this stage is used up. "
         "Decide with the evidence you have and call record_review now."
@@ -670,7 +784,7 @@ def test_malformed_native_arguments_preserve_validation_and_budget(monkeypatch, 
     calls = []
     monkeypatch.setattr(
         "formlane.delivery.workspace.inspect_artifact",
-        lambda *args: calls.append(args) or {"ok": True},
+        lambda *args: calls.append(args) or inspection_report(*args),
     )
     arguments = [{"selector": 123}]
     arguments.extend({"selector": f"#item-{index}"} for index in range(6))
@@ -681,7 +795,6 @@ def test_malformed_native_arguments_preserve_validation_and_budget(monkeypatch, 
         assert "validation error" in outputs[index]
         assert "selector" in outputs[index]
         assert "budget" not in outputs[index]
-    assert all(json.loads(output) == {"ok": True} for output in outputs[1:7])
     assert "budget of 6" in outputs[8]
 
 
@@ -692,13 +805,15 @@ def test_stage_hooks_clean_up_after_authority_abort(monkeypatch, native_inspecti
     calls = []
     monkeypatch.setattr(
         "formlane.delivery.workspace.inspect_artifact",
-        lambda *args: calls.append(args) or {"ok": True},
+        lambda *args: calls.append(args) or inspection_report(*args),
     )
     with pytest.raises(RuntimeAbort) as aborted:
         # Use the installed provider directly so cancellation first reaches PRE,
         # rather than the durable provider's earlier end-of-call authority check.
         native_inspections(
-            rt, "review", [{"selector": "body"}],
+            rt,
+            "review",
+            [{"selector": "body"}],
             before_tools=lambda: cancelled.__setitem__(0, True),
             durable_model=False,
         )
@@ -706,27 +821,33 @@ def test_stage_hooks_clean_up_after_authority_abort(monkeypatch, native_inspecti
     assert calls == []
     # Outside a stage scope the native executor must not retain the aborted runtime's hook.
     arguments = [{"selector": f"#item-{index}"} for index in range(7)]
-    outputs = native_inspections(accepted_workspace(), "unscoped", arguments, scoped=False)
+    native_inspections(accepted_workspace(), "unscoped", arguments, scoped=False)
     assert len(calls) == 7
-    assert all(json.loads(output) == {"ok": True} for output in outputs)
 
 
 def test_concurrent_native_stages_keep_independent_budgets(monkeypatch, native_inspections):
-    monkeypatch.setattr("formlane.delivery.workspace.inspect_artifact", lambda *args: {"ok": True})
+    calls = []
+    monkeypatch.setattr(
+        "formlane.delivery.workspace.inspect_artifact",
+        lambda *args: calls.append(args) or inspection_report(*args),
+    )
     barrier = Barrier(2)
     arguments = [{"selector": f"#item-{index}"} for index in range(7)]
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures = [
             pool.submit(
-                native_inspections, accepted_workspace(), "review", arguments,
+                native_inspections,
+                accepted_workspace(),
+                "review",
+                arguments,
                 before_tools=lambda: barrier.wait(timeout=10),
             )
             for _ in range(2)
         ]
         results = [future.result(timeout=30) for future in futures]
+    assert len(calls) == 12
     for outputs in results:
         assert len(outputs) == 7
-        assert all(json.loads(output) == {"ok": True} for output in outputs[:6])
         assert "budget of 6" in outputs[-1]
-    outputs = native_inspections(accepted_workspace(), "unscoped", arguments, scoped=False)
-    assert all(json.loads(output) == {"ok": True} for output in outputs)
+    native_inspections(accepted_workspace(), "unscoped", arguments, scoped=False)
+    assert len(calls) == 19

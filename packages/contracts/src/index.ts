@@ -1,6 +1,30 @@
 import { validateProjectSource } from '@atoms-demo/core/project'
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
+import {
+  editorArtifactSchema,
+  selectionAttachmentSchema,
+  selectionSubmissionSchema,
+  selectionSummarySchema,
+} from './selection'
+
+export {
+  type EditorArtifact,
+  editorArtifactSchema,
+  type SelectionAttachment,
+  type SelectionSubmission,
+  type SelectionSummary,
+  selectionAttachmentSchema,
+  selectionElementContextSchema,
+  selectionEvidenceSchema,
+  selectionImageSchema,
+  selectionRectSchema,
+  selectionSourceLocationSchema,
+  selectionSourceManifestSchema,
+  selectionSourceResolutionSchema,
+  selectionSubmissionSchema,
+  selectionSummarySchema,
+} from './selection'
 
 export const projectTemplateSchema = z.enum(['vanilla', 'react-ts'])
 export const projectSourceSchema = z
@@ -37,6 +61,7 @@ export const messageSchema = z.object({
   agent: agentIdSchema.nullable(),
   content: z.string(),
   createdAt: z.number(),
+  selectionSummary: selectionSummarySchema.nullable().optional(),
 })
 export const versionSchema = z.object({
   id: z.uuid(),
@@ -58,7 +83,21 @@ export const projectCandidateSchema = z.object({
 export type ProjectCandidate = z.infer<typeof projectCandidateSchema>
 export const ideaSchema = z.string().trim().min(1).max(4000)
 export const createProjectSchema = z.object({ idea: ideaSchema })
-export const followupSchema = z.object({ content: ideaSchema })
+export const followupSchema = z
+  .strictObject({
+    content: ideaSchema,
+    expectedVersionId: z.uuid().nullable().optional(),
+    selection: selectionSubmissionSchema.nullable().optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.selection && !value.expectedVersionId) {
+      context.addIssue({
+        code: 'custom',
+        path: ['expectedVersionId'],
+        message: 'Selection requires an expected version',
+      })
+    }
+  })
 export const generateSchema = z.object({ content: ideaSchema.optional() })
 export const runStatusSchema = z.enum(['queued', 'running', 'completed', 'failed', 'cancelled'])
 export const runErrorCodeSchema = z.enum([
@@ -82,6 +121,9 @@ export const runSchema = z.object({
   error: z.string().nullable(),
   versionId: z.uuid().nullable(),
   cursor: z.number().int().nonnegative(),
+  selectionSummary: selectionSummarySchema.nullable().optional(),
+  // Owner snapshots only; lifecycle events and admission receipts carry the summary.
+  selection: selectionAttachmentSchema.nullable().optional(),
 })
 export const runEventSchema = z.object({
   runId: z.uuid(),
@@ -155,6 +197,10 @@ export const contract = {
           version: versionSchema.extend({ html: z.string(), source: projectSourceSchema }),
         }),
       ),
+    editorVersion: api
+      .route({ method: 'GET', path: '/projects/{id}/versions/{versionId}/editor' })
+      .input(versionId)
+      .output(editorArtifactSchema),
     publish: api
       .route({ method: 'POST', path: '/projects/{id}/publish' })
       .input(id)

@@ -1,8 +1,7 @@
-"""Semantic replacements for four immutable, superseded bounded-repair recordings.
+"""Native semantic contracts for iteration and flow-v3 visual acceptance.
 
-The eight compatible paths still compare every golden byte in test_flow_equivalence.
-These contracts use the same native harness, HTTP/SSE transport and process seams;
-no Delivery stage, Runtime operation, executor or completion predicate is replaced.
+Historical recordings remain immutable. These tests use HTTP/SSE and process
+boundaries; no stage, Runtime operation, executor or completion gate is replaced.
 """
 
 from __future__ import annotations
@@ -40,40 +39,85 @@ class IterationTape:
 
     def implement(self, revision=0, validate=True, defect=False):
         source = INPUTS["source"] + (f"// Iteration {revision}.\n" if revision else "")
-        self.responses.append(turn(
-            call("write_file", {"path": "src/main.js", "content": source}),
-            call("build_project"),
-        ))
+        self.responses.append(
+            turn(
+                call("write_file", {"path": "src/main.js", "content": source}),
+                call("build_project"),
+            )
+        )
         if validate:
             self.responses.append(turn(call("validate_preview")))
             self.browser.append("defect" if defect else "pass")
-            self.responses.append(turn(call("submit_candidate", {
-                "summary": f"Candidate {revision}.",
-                "check_defects": ["increment tomorrow"] if defect else [],
-            })))
+            self.responses.append(
+                turn(
+                    call(
+                        "submit_candidate",
+                        {
+                            "summary": f"Candidate {revision}.",
+                            "check_defects": ["increment tomorrow"] if defect else [],
+                        },
+                    )
+                )
+            )
         else:
             self.responses.append(turn(text="The build needs independent assessment."))
 
     def review(self, accepted=True, outcome="pass", correct_checks=False, findings=None):
-        self.responses.append(turn(call("read_review_files", {
-            "paths": ["index.html", "package.json", "src/main.js", "src/styles.css"],
-        })))
+        self.responses.append(
+            turn(
+                call(
+                    "read_review_files",
+                    {
+                        "paths": ["index.html", "package.json", "src/main.js", "src/styles.css"],
+                    },
+                )
+            )
+        )
         if correct_checks:
-            self.responses.append(turn(call("set_acceptance_checks", {
-                "checks": clone(INPUTS["checks"]),
-            })))
+            self.responses.append(
+                turn(
+                    call(
+                        "set_acceptance_checks",
+                        {
+                            "checks": clone(INPUTS["checks"]),
+                        },
+                    )
+                )
+            )
+        self.responses.append(
+            turn(call("inspect_preview", {"viewport": {"width": 1280, "height": 720}}))
+        )
+        self.responses.append(
+            turn(call("inspect_preview", {"viewport": {"width": 375, "height": 812}}))
+        )
         self.responses.append(turn(call("validate_preview")))
         self.browser.append(outcome)
-        self.responses.append(turn(call("record_review", {
-            "accepted": accepted,
-            "findings": findings or ("Accepted current evidence." if accepted else "Repair counter."),
-        })))
+        self.responses.append(
+            turn(
+                call(
+                    "record_review",
+                    {
+                        "accepted": accepted,
+                        "findings": findings
+                        or ("Accepted current evidence." if accepted else "Repair counter."),
+                    },
+                )
+            )
+        )
 
     def coordinate(self, next_step, instructions):
         self.responses.append(turn(call("read_workspace")))
-        self.responses.append(turn(call("schedule_iteration", {
-            "next_step": next_step, "instructions": instructions,
-        })))
+        self.responses.append(
+            turn(
+                call(
+                    "schedule_iteration",
+                    {
+                        "next_step": next_step,
+                        "instructions": instructions,
+                    },
+                )
+            )
+        )
 
 
 class IterationProvider(ProviderRecording):
@@ -93,7 +137,9 @@ def run_iteration(monkeypatch, tape, interrupt_after=None):
     freeze_inputs(monkeypatch)
     provider = IterationProvider(tape.responses)
     external = ExternalOutcomes(tape.browser)
-    monkeypatch.setattr(httpx.Client, "send", lambda client, request, **kw: provider.send(request, **kw))
+    monkeypatch.setattr(
+        httpx.Client, "send", lambda client, request, **kw: provider.send(request, **kw)
+    )
     original_compile = compiler.compile_project
     for module_name, module in list(sys.modules.items()):
         if module and module_name.startswith("formlane"):
@@ -108,8 +154,11 @@ def run_iteration(monkeypatch, tape, interrupt_after=None):
         browser_executable=None,
     )
     context = {
-        "runId": INPUTS["runId"], "request": INPUTS["request"],
-        "idea": "Build a dated counter.", "previousSource": None, "previousChecks": [],
+        "runId": INPUTS["runId"],
+        "request": INPUTS["request"],
+        "idea": "Build a dated counter.",
+        "previousSource": None,
+        "previousChecks": [],
     }
     original_context = clone(context)
     attempts = []
@@ -131,23 +180,29 @@ def run_iteration(monkeypatch, tape, interrupt_after=None):
                     raise
                 cancelled = True
             committed = clone(journal.committed)
-            attempts.append({
-                "result": result, "cancelled": cancelled, "events": events,
-                "steps": journal.steps, "committed": committed,
-                "provider_count": provider.index, "external_count": len(external.calls),
-            })
+            attempts.append(
+                {
+                    "result": result,
+                    "cancelled": cancelled,
+                    "events": events,
+                    "steps": journal.steps,
+                    "committed": committed,
+                    "provider_count": provider.index,
+                    "external_count": len(external.calls),
+                }
+            )
         assert provider.index == len(tape.responses), "Unused iteration HTTP responses"
         assert external.index == len(tape.browser), "Unused iteration browser outcomes"
         assert not attempts[-1]["cancelled"]
         assert attempts[-1]["result"]["html"] == INPUTS["html"]
         assert context == original_context
         final_reviews = [
-            saved["workspace"] for key, saved in committed.items()
-            if key.endswith("-record_review")
+            saved["workspace"] for key, saved in committed.items() if key.endswith("-record_review")
         ]
         # Deterministic Alex restoration can follow David's accepted verdict.
         final_workspace = next(
-            saved["workspace"] for saved in reversed(list(committed.values()))
+            saved["workspace"]
+            for saved in reversed(list(committed.values()))
             if isinstance(saved, dict) and "workspace" in saved
         )
         assert final_reviews[-1]["review"]["accepted"]
@@ -182,7 +237,8 @@ def repair_tape(rounds, failed_verification=False):
 )
 def test_mike_arranges_repairs_until_david_accepts(monkeypatch, rounds, failed_verification):
     attempts, provider, external = run_iteration(
-        monkeypatch, repair_tape(rounds, failed_verification),
+        monkeypatch,
+        repair_tape(rounds, failed_verification),
     )
     committed = attempts[-1]["committed"]
     steps = list(committed)
@@ -202,8 +258,10 @@ def test_mike_arranges_repairs_until_david_accepts(monkeypatch, rounds, failed_v
         request for request in provider.requests if "schedule_iteration" in request["tools"]
     ]
     assert coordinator_requests
-    assert all(set(request["tools"]) == {"read_workspace", "schedule_iteration"}
-               for request in coordinator_requests)
+    assert all(
+        set(request["tools"]) == {"read_workspace", "schedule_iteration"}
+        for request in coordinator_requests
+    )
     assert all(request["reasoning_effort"] == "medium" for request in coordinator_requests)
     for request, messages in zip(provider.requests, provider.messages):
         if "schedule_iteration" in request["tools"]:
@@ -211,7 +269,8 @@ def test_mike_arranges_repairs_until_david_accepts(monkeypatch, rounds, failed_v
             assert INPUTS["request"] in prompt
             assert "Repair counter." in prompt
     mike_messages = [
-        event["data"]["content"] for event in attempts[-1]["events"]
+        event["data"]["content"]
+        for event in attempts[-1]["events"]
         if event["type"] == "message_done" and event["data"].get("agent") == "mike"
     ]
     for round in range(rounds):
@@ -262,7 +321,7 @@ def test_stale_accepted_verdict_and_iteration_decision_cannot_advance_a_new_stag
     committed = attempts[-1]["committed"]
     assert "flow-v1/iteration-1-0/llm-0" in committed
     assert "flow-v1/iteration-1-1/tool-1-schedule_iteration" in committed
-    assert "flow-v1/review-2/tool-2-record_review" in committed
+    assert "flow-v1/review-2/tool-4-record_review" in committed
     decision = committed["flow-v1/iteration-1-1/tool-1-schedule_iteration"]["output"]
     assert decision["stage"] == "flow-v1/iteration-1-1"
     assert not any("review-repair-" in key for key in committed)
@@ -271,19 +330,24 @@ def test_stale_accepted_verdict_and_iteration_decision_cannot_advance_a_new_stag
     assert sum("schedule_iteration" in request["tools"] for request in provider.requests) == 5
 
 
-@pytest.mark.parametrize("interrupt_after", [
-    "flow-v1/iteration-0-0/tool-1-schedule_iteration",
-    "flow-v1/review-repair-0/tool-0-write_file",
-    "flow-v1/review-repair-0/tool-1-build_project",
-])
-def test_cancelled_iteration_replays_without_repeating_committed_effects(monkeypatch, interrupt_after):
+@pytest.mark.parametrize(
+    "interrupt_after",
+    [
+        "flow-v1/iteration-0-0/tool-1-schedule_iteration",
+        "flow-v1/review-repair-0/tool-0-write_file",
+        "flow-v1/review-repair-0/tool-1-build_project",
+    ],
+)
+def test_cancelled_iteration_replays_without_repeating_committed_effects(
+    monkeypatch, interrupt_after
+):
     tape = repair_tape(2)
     attempts, provider, external = run_iteration(monkeypatch, tape, interrupt_after)
     first, resumed = attempts
     assert first["cancelled"] and first["result"] is None
     assert interrupt_after in first["committed"]
     assert first["steps"][-1]["name"] == interrupt_after
-    replayed = resumed["steps"][:len(first["steps"])]
+    replayed = resumed["steps"][: len(first["steps"])]
     assert [step["name"] for step in replayed] == [step["name"] for step in first["steps"]]
     assert all(step["cached"] for step in replayed)
     for key, value in first["committed"].items():
@@ -294,7 +358,9 @@ def test_cancelled_iteration_replays_without_repeating_committed_effects(monkeyp
     assert len({item["result"]["sourceHash"] for item in compilations}) == 3
     # Replayed public observations are expected; actual tool executions must be unique.
     executed_tools = [
-        event["data"]["id"] for attempt in attempts for event in attempt["events"]
+        event["data"]["id"]
+        for attempt in attempts
+        for event in attempt["events"]
         if event["type"] == "tool_start" and "/tool-" in event["data"]["id"]
     ]
     assert len(executed_tools) == len(set(executed_tools))
@@ -314,7 +380,7 @@ def test_missing_coordinator_decisions_keep_requesting_a_fresh_stage_and_can_res
     attempts, _, external = run_iteration(monkeypatch, tape, interrupted)
     first, resumed = attempts
     assert first["cancelled"] and first["steps"][-1]["name"] == interrupted
-    assert all(step["cached"] for step in resumed["steps"][:len(first["steps"])])
+    assert all(step["cached"] for step in resumed["steps"][: len(first["steps"])])
     committed = resumed["committed"]
     for attempt in range(11):
         assert f"flow-v1/iteration-0-{attempt}/llm-0" in committed

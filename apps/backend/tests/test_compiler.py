@@ -193,3 +193,90 @@ def test_compiler_stdout_is_bounded():
         compile_project(
             create_source("vanilla"), settings([sys.executable, "-c", script]), lambda: False
         )
+
+
+@pytest.mark.parametrize("template", ["vanilla", "react-ts"])
+def test_editor_adapter_reproduces_canonical_build_and_private_manifest(template):
+    from formlane.compiler import compile_editor_project
+    from formlane.project import artifact_hash
+
+    source = create_source(template)
+    canonical = compile_project(source, settings(), lambda: False)
+    first = compile_editor_project(source, settings(), lambda: False)
+    second = compile_editor_project(source, settings(), lambda: False)
+    assert first == second
+    assert first["html"] == canonical["html"]
+    assert first["manifest"]["sourceHash"] == canonical["sourceHash"]
+    assert first["manifest"]["canonicalArtifactHash"] == artifact_hash(canonical["html"])
+    assert first["manifest"]["editorArtifactHash"] == artifact_hash(first["editorHtml"])
+    assert first["manifest"]["entries"]
+    assert "data-formlane-source" not in canonical["html"]
+
+
+def test_editor_adapter_rejects_compiler_manifest_forgery():
+    from formlane.compiler import compile_editor_project
+
+    script = """import sys,json
+request=json.load(sys.stdin)
+assert request['mode']=='editor'
+print(json.dumps({'html':'<h1>Saved</h1>','editorHtml':'<h1>Saved</h1>',
+    'sourceHash':'0'*64,'manifest':{'sourceHash':'0'*64},'diagnostics':[]}))
+"""
+    with pytest.raises(ValueError, match="hash does not match"):
+        compile_editor_project(
+            create_source("vanilla"), settings([sys.executable, "-c", script]), lambda: False
+        )
+
+
+def test_editor_wire_allows_bounded_escaped_artifacts_beyond_legacy_stdout_limit():
+    from formlane.compiler import compile_editor_project
+
+    source = create_source("vanilla")
+    script = f"""import sys,json,hashlib
+request=json.load(sys.stdin)
+assert request['mode']=='editor'
+html='\\x01' * 400000
+digest=hashlib.sha256(html.encode()).hexdigest()
+print(json.dumps({{'html':html,'editorHtml':html,'sourceHash':{source_hash(source)!r},
+ 'manifest':{{'instrumentationVersion':'formlane-source-v1','sourceHash':{source_hash(source)!r},
+ 'canonicalArtifactHash':digest,'editorArtifactHash':digest,'entries':{{}}}},'diagnostics':[]}}))
+"""
+    result = compile_editor_project(source, settings([sys.executable, "-c", script]), lambda: False)
+    assert len(result["html"]) == len(result["editorHtml"]) == 400000
+
+
+@pytest.mark.parametrize("fault", ["path", "range", "artifact-hash", "oversized-editor"])
+def test_editor_adapter_rejects_unusable_source_locations_and_artifacts(fault, tmp_path):
+    from formlane.compiler import compile_editor_project
+
+    source = legacy_source("<h1>Original</h1>")
+    compiled = compile_editor_project(source, settings(), lambda: False)
+    entry = next(iter(compiled["manifest"]["entries"].values()))
+    if fault == "path":
+        entry["path"] = "../outside.html"
+    elif fault == "range":
+        entry["endLine"] = 1000000
+    elif fault == "artifact-hash":
+        compiled["manifest"]["editorArtifactHash"] = "0" * 64
+    else:
+        compiled["editorHtml"] = "x" * (512 * 1024 + 1)
+    script = (
+        "import sys,json;json.load(sys.stdin);sys.stdout.write(" + repr(json.dumps(compiled)) + ")"
+    )
+    executable = tmp_path / "compiler_fault.py"
+    executable.write_text(script)
+    with pytest.raises(ValueError):
+        compile_editor_project(source, settings([sys.executable, str(executable)]), lambda: False)
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r", "\r\n"])
+def test_editor_adapter_preserves_original_html_line_coordinates(newline):
+    from formlane.compiler import compile_editor_project
+
+    source = legacy_source(f"<!doctype html>{newline}<h1>Original heading</h1>")
+    compiled = compile_editor_project(source, settings(), lambda: False)
+    heading = next(
+        row for row in compiled["manifest"]["entries"].values() if row["tagName"] == "h1"
+    )
+    assert heading["startLine"] == heading["endLine"] == 2
+    assert heading["startColumn"] == 1

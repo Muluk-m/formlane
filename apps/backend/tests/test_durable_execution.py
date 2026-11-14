@@ -5,7 +5,10 @@ DBOS tables each use disposable, independently named schemas. Only provider
 transport is synthetic; the native CrewAI stage executor and tool execution are real.
 """
 
+import base64
 import copy
+import hashlib
+import io
 import json
 import multiprocessing
 import time
@@ -17,8 +20,12 @@ from uuid import uuid4
 import pytest
 from dbos import DBOS, DBOSClient
 from dbos import error as dbos_error
+from PIL import Image
 from sqlalchemy import event, text
 from sqlalchemy.exc import DBAPIError
+from test_api import auth
+from test_compiler import settings as compiler_settings
+from test_selection_api import selection_api as selection_api
 from test_storage import start
 
 from formlane.durable_execution import (
@@ -96,7 +103,8 @@ def _native_child(settings_data, job, connection, mode):
 
         def invoke():
             context = store.harness_context(job["id"], job["lease_token"])
-            context["previousSource"] = create_source("vanilla")
+            if not context.get("previousSource"):
+                context["previousSource"] = create_source("vanilla")
             runtime = Runtime(settings, context, durable, durable.emit, lambda: False)
             original_write_file = runtime.write_file
 
@@ -105,12 +113,69 @@ def _native_child(settings_data, job, connection, mode):
                 return original_write_file(args)
 
             runtime.write_file = write_file
+            original_inspect = runtime.inspect_preview
+
+            def inspect_preview(args):
+                _record(store, "inspect_preview")
+                return original_inspect(args)
+
+            runtime.inspect_preview = inspect_preview
 
             def provider(llm, *args, **kwargs):
                 index = runtime.scope["llm_index"] - 1
+                if context.get("selection"):
+                    messages = args[0]
+                    images = [
+                        part
+                        for message in messages
+                        if isinstance(message.get("content"), list)
+                        for part in message["content"]
+                        if part["type"] == "image_url"
+                    ]
+                    original = context["selection"]["image"]
+                    assert (
+                        images[0]["image_url"]["url"]
+                        == f"data:{original['mimeType']};base64,{original['base64']}"
+                    )
+                    _record(store, "selection-image")
+                    if index > 0:
+                        assert len(images) == 2
+                        current_url = images[1]["image_url"]["url"]
+                        assert current_url.startswith("data:image/png;base64,")
+                        _record(
+                            store,
+                            "current-image-" + hashlib.sha256(current_url.encode()).hexdigest(),
+                        )
                 _record(store, f"model-{index}")
                 if index == 0:
-                    return copy.deepcopy(TOOL_CALL)
+                    calls = copy.deepcopy(TOOL_CALL)
+                    if context.get("selection"):
+                        calls.insert(
+                            0,
+                            {
+                                "id": "frozen-selection",
+                                "type": "function",
+                                "function": {"name": "read_selection", "arguments": "{}"},
+                            },
+                        )
+                        calls.extend(
+                            [
+                                {
+                                    "id": "build-current",
+                                    "type": "function",
+                                    "function": {"name": "build_project", "arguments": "{}"},
+                                },
+                                {
+                                    "id": "inspect-current",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "inspect_preview",
+                                        "arguments": json.dumps({"target": "current"}),
+                                    },
+                                },
+                            ]
+                        )
+                    return calls
                 if mode == "kill-model":
                     _block(connection, "unfinished-model")
                 if mode == "provider-failure":
@@ -145,6 +210,7 @@ def _native_child(settings_data, job, connection, mode):
                     "html": "<!doctype html><html><body>Durably saved</body></html>",
                     "summary": output,
                     "revision": runtime.workspace["revision"],
+                    "selection": runtime.read_selection({}),
                 }
             finally:
                 for llm in llms:
@@ -243,6 +309,56 @@ def test_process_death_replays_native_model_and_tool_without_repeating_saved_eff
     assert all(row.error is None for row in rows)
 
 
+def test_selection_images_and_context_survive_native_process_death(
+    selection_api, pg_store, project, owner, durable_database
+):
+    client, route, editor, payload = selection_api
+    durable_database = durable_database.model_copy(
+        update={"compiler_command": compiler_settings().compiler_command}
+    )
+    pixels = io.BytesIO()
+    Image.new("RGB", (3, 2), "blue").save(pixels, format="PNG")
+    payload["selection"]["image"] = {
+        "provenance": "client-captured",
+        "mimeType": "image/png",
+        "base64": base64.b64encode(pixels.getvalue()).decode(),
+        "width": 3,
+        "height": 2,
+    }
+    submitted = client.post(route + "/chat", json=payload, headers=auth(owner))
+    assert submitted.status_code == 202
+    job = pg_store.claim_run("selection-durable")
+    original = pg_store.harness_context(job["id"], job["lease_token"])["selection"]
+    with _producer(durable_database, job, "kill-model") as (process, receive):
+        assert _receive(receive) == {"state": "unfinished-model"}
+        process.kill()
+        process.join(timeout=10)
+    payload["selection"]["evidence"]["element"]["text"] = "Browser changed after submission"
+    replacement = _reclaim(pg_store, job)
+    with pytest.raises(LeaseLost):
+        pg_store.check_authority(job["id"], job["lease_token"])
+    with _producer(durable_database, replacement, "finish") as (_, receive):
+        receipt = _receive(receive)
+    assert receipt["state"] == "result", receipt
+    recovered = receipt["result"]["selection"]["selection"]
+    assert recovered["evidence"] == original["evidence"]
+    assert recovered["sourceResolutions"] == original["sourceResolutions"]
+    assert "base64" not in recovered["image"]
+    counts = _effect_counts(pg_store)
+    assert counts["write_file"] == counts["model-0"] == 1
+    assert counts["selection-image"] == 3
+    assert counts["inspect_preview"] == 1
+    image_effects = [count for name, count in counts.items() if name.startswith("current-image-")]
+    assert image_effects == [2]
+    assert pg_store.harness_context(job["id"], replacement["lease_token"])["selection"] == original
+    pg_store.cancel_run(project["id"], owner, job["id"])
+    public = client.get(route + f"/runs/{job['id']}/events", headers=auth(owner)).text
+    assert original["image"]["base64"] not in public
+    assert original["evidence"]["element"]["text"] not in public
+    detail = pg_store.get_project(project["id"], owner)
+    assert detail["project"]["currentVersionId"] == editor["versionId"]
+
+
 def test_process_death_before_dispatch_recovers_unscheduled_workflow(
     pg_store, project, owner, durable_database
 ):
@@ -304,7 +420,7 @@ def test_lost_scheduling_connection_cannot_overwrite_replacement_queue(
         client.destroy()
 
 
-@pytest.mark.parametrize("retired", ["flow-v1", "crew-v1", "dbos-v1"])
+@pytest.mark.parametrize("retired", ["flow-v2", "flow-v1", "crew-v1", "dbos-v1"])
 def test_retired_execution_versions_fail_closed_before_running_work(
     pg_store, project, owner, durable_database, retired
 ):
@@ -473,7 +589,9 @@ def test_changed_replay_source_rejects_history_before_reusing_operations(
     assert incompatible.value.status == 409
 
 
-def test_committed_result_recovers_with_unchanged_manifest(pg_store, project, owner, durable_database):
+def test_committed_result_recovers_with_unchanged_manifest(
+    pg_store, project, owner, durable_database
+):
     job = start(pg_store, project, owner)
     with _producer(durable_database, job, "finish") as (_, receive):
         original = _receive(receive)

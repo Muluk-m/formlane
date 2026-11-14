@@ -12,6 +12,7 @@ from ._crewai import ObservedOpenAI, SourceExecutor
 from .configuration import get_persona_config, get_stage_config
 from .errors import HarnessFailure, RuntimeAbort
 from .hooks import stage_tool_hooks
+from .selection import summary
 from .tools import tools_for_stage
 from .workspace import FLOW_VERSION, Runtime, completion_status, current_build
 
@@ -77,9 +78,19 @@ class Delivery:
                 self.rt.emit(
                     "agent_start", {"id": persona, "name": config.display_name, "task": label}
                 )
+            if kind == "reviewer" and self.rt.selection:
+                task = {**task, "frozenSelection": self.rt.read_selection({})}
             agent = self.agent(kind)
             native = Task(
-                description=json.dumps({"stage": label, **task}, ensure_ascii=False),
+                description=json.dumps(
+                    {
+                        "stage": label,
+                        **task,
+                        "selection": summary(self.rt.selection),
+                        "workspace": self.rt.workspace_info(),
+                    },
+                    ensure_ascii=False,
+                ),
                 expected_output="Call your terminal tool with the stage result.",
                 agent=agent,
             )
@@ -185,9 +196,7 @@ class Delivery:
         if (
             built
             and implementation
-            and all(
-                implementation.get(key) == built[key] for key in ("sourceHash", "artifactHash")
-            )
+            and all(implementation.get(key) == built[key] for key in ("sourceHash", "artifactHash"))
         ):
             return
         self.check_candidate("verify-0")
