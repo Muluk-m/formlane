@@ -304,7 +304,9 @@ def test_original_selection_is_database_immutable_and_cancel_fences_late_complet
     assert pg_store.get_run(project["id"], owner, admitted["id"])["selection"] == original
     pg_store.resume_run(project["id"], owner, admitted["id"])
     resumed = pg_store.claim_run("failed-validation-selection")
-    assert pg_store.finish_run(resumed["id"], resumed["lease_token"], "failed", "validation")
+    assert pg_store.finish_run(
+        resumed["id"], resumed["lease_token"], "failed", "validation", "Validation failed"
+    )
     assert pg_store.get_run(project["id"], owner, admitted["id"])["selection"] == original
     detail = pg_store.get_project(project["id"], owner)
     assert detail["project"]["currentVersionId"] == detail["project"]["publishedVersionId"] == editor["versionId"]

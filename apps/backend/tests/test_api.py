@@ -229,7 +229,9 @@ def test_resume_receipt_preserves_run_and_messages_and_replays_both_attempts(
     assert "lease_token" not in resumed
     assert client.get(route, headers=auth(owner)).json()["messages"] == before["messages"]
     assert client.post(run_route + "/resume", headers=auth(owner)).json() == {"run": resumed}
-    assert client.get(route + "/runs/latest", headers=auth(owner)).json() == {"run": resumed}
+    assert client.get(route + "/runs/latest", headers=auth(owner)).json() == {
+        "run": {**resumed, "selection": None}
+    }
     pg_store.claim_run("api-attempt-two")
     client.post(run_route + "/cancel", headers=auth(owner))
     replay = client.get(run_route + "/events", headers=auth(owner))
