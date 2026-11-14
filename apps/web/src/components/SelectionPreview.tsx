@@ -289,7 +289,7 @@ export function SelectionPreview({ artifact, device, selection, onSelection, onI
                 const y = Math.max(0, Math.min(bounds.height, event.clientY - bounds.top))
                 setRectangle({ x: Math.min(x, drag.current.x), y: Math.min(y, drag.current.y), width: Math.abs(x - drag.current.x), height: Math.abs(y - drag.current.y) })
               }}
-              onPointerUp={() => { drag.current = null; if (rectangle) void chooseRegion(rectangle) }}
+              onPointerUp={() => { if (!drag.current) return; drag.current = null; if (rectangle) void chooseRegion(rectangle) }}
               onPointerCancel={cancelRegion}
               onKeyDown={(event) => {
                 if (event.key === 'Escape') { cancelRegion(); return }
