@@ -1,5 +1,5 @@
 import type { MessageStatus, ThreadMessageLike } from '@assistant-ui/react'
-import type { Run, RunEvent } from '@atoms-demo/contracts'
+import type { Run, RunEvent, SelectionSummary } from '@atoms-demo/contracts'
 import type { AppVersion, ChatMessage } from '@atoms-demo/core/types'
 
 export type ConversationMessage = Omit<ChatMessage, 'agent'> & {
@@ -7,6 +7,7 @@ export type ConversationMessage = Omit<ChatMessage, 'agent'> & {
   pending?: boolean
   runId?: Run['id']
   attempt?: Run['attempt']
+  selectionSummary?: SelectionSummary | null
 }
 
 type Activity = {

@@ -2,6 +2,7 @@ import {
   contract,
   type Run,
   type RunEvent,
+  type SelectionSubmission,
   runEventSchema,
   runReceiptSchema,
   runSchema,
@@ -110,10 +111,15 @@ export async function latestRun(id: string, signal?: AbortSignal): Promise<Run |
   return runSchema.nullable().parse(result.run)
 }
 
-export async function startRun(id: string, initial: boolean, content?: string): Promise<Run> {
+export async function startRun(
+  id: string,
+  initial: boolean,
+  content?: string,
+  selection?: SelectionSubmission | null,
+): Promise<Run> {
   const response = await request(`/api/projects/${id}/${initial ? 'generate' : 'chat'}`, {
     method: 'POST',
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, ...(selection ? { expectedVersionId: selection.versionId, selection } : {}) }),
   })
   if (!response.ok) throw new RunConnectionError(await readError(response), response.status)
   const result = runReceiptSchema.parse(await response.json())

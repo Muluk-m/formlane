@@ -4,7 +4,7 @@ import {
   type ThreadMessageLike,
   useExternalStoreRuntime,
 } from '@assistant-ui/react'
-import type { RunEvent as HarnessEvent, Run as HarnessRun } from '@atoms-demo/contracts'
+import type { RunEvent as HarnessEvent, Run as HarnessRun, SelectionSubmission } from '@atoms-demo/contracts'
 import { AGENT_ORDER, type AgentId, type AppVersion } from '@atoms-demo/core/types'
 import { useI18n } from '@atoms-demo/i18n/react'
 import {
@@ -20,6 +20,7 @@ import {
   groupExecutionMessages,
   toAssistantMessages,
 } from '../features/assistant/messages'
+import { SelectionAttachment, SelectionMessageSummary } from './SelectionAttachment'
 
 const convertMessage = (message: ThreadMessageLike) => message
 
@@ -39,6 +40,10 @@ export function ChatPane({
   onOpenVersion,
   onSend,
   onStop,
+  selection,
+  selectionStale,
+  sendBlocked,
+  onSelection,
 }: {
   messages: ConversationMessage[]
   running: boolean
@@ -49,8 +54,12 @@ export function ChatPane({
   activity: HarnessEvent[]
   versions: AppVersion[]
   onOpenVersion: (versionId: string, mode: 'preview' | 'changes') => void
-  onSend: (text: string) => void
+  onSend: (text: string) => Promise<void>
   onStop: () => void
+  selection: SelectionSubmission | null
+  selectionStale: boolean
+  sendBlocked: boolean
+  onSelection: (selection: SelectionSubmission | null) => void
 }) {
   const { t } = useI18n()
   const converted = useMemo(
@@ -67,9 +76,9 @@ export function ChatPane({
     convertMessage,
     isRunning: running,
     isDisabled: disabled && !running,
-    isSendDisabled: disabled || running || stopping,
+    isSendDisabled: disabled || running || stopping || sendBlocked,
     onNew: async (message) => {
-      if (disabled || running || stopping) {
+      if (disabled || running || stopping || sendBlocked) {
         throw new MessageNotSentError(t('ui.assistant.composerUnavailable'))
       }
       const text = message.content
@@ -80,7 +89,11 @@ export function ChatPane({
       if (!parsed.success) {
         throw new MessageNotSentError(parsed.error.issues[0]?.message ?? t('atoms.messageRequired'))
       }
-      onSend(parsed.data)
+      try {
+        await onSend(parsed.data)
+      } catch (error) {
+        throw new MessageNotSentError(error instanceof Error ? error.message : t('atoms.requestError'))
+      }
     },
     onCancel: async () => {
       if (running && !stopping) onStop()
@@ -104,6 +117,11 @@ export function ChatPane({
         resolveAgent={resolveAgent}
         disabled={disabled}
         stopping={stopping}
+        composerAttachment={selection ? <SelectionAttachment selection={selection} stale={selectionStale} disabled={running || stopping} onChange={onSelection} /> : undefined}
+        renderMessageAttachment={(messageId) => {
+          const summary = messages.find((message) => message.id === messageId)?.selectionSummary
+          return summary ? <SelectionMessageSummary summary={summary} /> : null
+        }}
         renderSavedVersion={(versionId) => {
           const version = versions.find((item) => item.id === versionId)
           return version ? (

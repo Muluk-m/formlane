@@ -1,4 +1,4 @@
-import type { RunEvent as HarnessEvent, Run as HarnessRun } from '@atoms-demo/contracts'
+import { selectionSubmissionSchema, selectionSummarySchema, type RunEvent as HarnessEvent, type Run as HarnessRun, type SelectionSubmission } from '@atoms-demo/contracts'
 import { slugify } from '@atoms-demo/core/html'
 import type { ProjectSource } from '@atoms-demo/core/project'
 import type { AppVersion, Project } from '@atoms-demo/core/types'
@@ -53,6 +53,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import {
   type PointerEvent as ReactPointerEvent,
+  useCallback,
   useEffect,
   useEffectEvent,
   useMemo,
@@ -141,6 +142,18 @@ export function ProjectPage() {
     (AppVersion & { html: string; source: ProjectSource }) | null
   >(null)
   const [candidateRunId, setCandidateRunId] = useState<string | null>(null)
+  const [visualSelection, setVisualSelection] = useState<SelectionSubmission | null>(null)
+  const visualSelectionRef = useRef<SelectionSubmission | null>(null)
+  const [selectionInvalidated, setSelectionInvalidated] = useState(false)
+  const [uncertainDelivery, setUncertainDelivery] = useState(false)
+  const prepareSelection = useRef<(() => Promise<SelectionSubmission>) | null>(null)
+  const changeSelection = useCallback((next: SelectionSubmission | null) => {
+    if (!next || next.evidence !== visualSelectionRef.current?.evidence) setSelectionInvalidated(false)
+    visualSelectionRef.current = next
+    setVisualSelection(next)
+  }, [])
+  const invalidateSelection = useCallback(() => setSelectionInvalidated(true), [])
+  const registerSelection = useCallback((prepare: (() => Promise<SelectionSubmission>) | null) => { prepareSelection.current = prepare }, [])
   const [share, setShare] = useState<{ slug: string; url: string; versionId: string } | null>(null)
   const [copied, setCopied] = useState(false)
   const [split, setSplit] = useState(
@@ -219,14 +232,30 @@ export function ProjectPage() {
 
   async function begin(content?: string) {
     if (startPending.current || undoPending.current || running || reconciliationPending.current)
-      return
+      throw new Error(t('ui.assistant.composerUnavailable'))
+    if (content && (viewing || candidateSelected)) throw new Error(t('atoms.selection.noncurrent'))
+    if (uncertainDelivery) throw new Error(t('atoms.selection.uncertain'))
+    let submitted = visualSelection
+    if (submitted) {
+      if (selectionInvalidated || submitted.versionId !== project?.currentVersionId || !prepareSelection.current)
+        throw new Error(t('atoms.selection.stale'))
+      startPending.current = true
+      setStarting(true)
+      try {
+        submitted = selectionSubmissionSchema.parse(await prepareSelection.current())
+      } catch {
+        startPending.current = false
+        setStarting(false)
+        invalidateSelection()
+        throw new Error(t('atoms.selection.invalidated'))
+      }
+    }
     startPending.current = true
     setStarting(true)
     setBanner(null)
     setFailedAction(null)
-    selectCurrentVersion()
-    try {
-      const receipt = await startRun(id, !project?.currentVersionId, content)
+    const startedAt = Date.now()
+    const accept = (receipt: HarnessRun) => {
       if (!mounted.current) return
       setActivity([])
       setActiveAgents({})
@@ -241,20 +270,38 @@ export function ProjectPage() {
             agent: null,
             content,
             createdAt: receipt.createdAt,
+            selectionSummary: receipt.selectionSummary,
           },
         ])
+      changeSelection(null)
+      setUncertainDelivery(false)
       setConnection('connected')
+      setBanner(t('atoms.selection.queued'))
+    }
+    try {
+      accept(await startRun(id, !project?.currentVersionId, content, submitted))
     } catch (error) {
-      if (!mounted.current) return
-      setBanner(error instanceof Error ? error.message : t('atoms.requestError'))
-      // A lost start receipt must attach to the accepted run, not submit it again.
+      if (!mounted.current) throw error
+      if (error instanceof RunConnectionError && error.status < 500) {
+        const message = submitted && error.status === 409 ? t('atoms.selection.conflict') : t('atoms.requestError')
+        setBanner(message)
+        if (submitted && error.status === 409) {
+          invalidateSelection()
+          await refresh().catch(() => {})
+        }
+        throw new Error(message)
+      }
+      // Observe an uncertain admission once. Never retry POST automatically.
+      setUncertainDelivery(true)
+      setBanner(t('atoms.selection.uncertain'))
       try {
         const accepted = await latestRun(id)
-        if (mounted.current && accepted && (isActiveRun(accepted) || accepted.id !== run?.id))
-          applyRun(accepted)
-      } catch {
-        /* Keep the actionable request error. */
-      }
+        if (mounted.current && accepted && accepted.id !== run?.id && accepted.createdAt >= startedAt && accepted.request === content && (!submitted || accepted.selection?.documentId === submitted.documentId && accepted.selection.sessionId === submitted.sessionId)) {
+          accept(accepted)
+          return
+        }
+      } catch { /* The draft stays intact while delivery remains unknown. */ }
+      throw new Error(t('atoms.selection.uncertain'))
     } finally {
       startPending.current = false
       if (mounted.current) setStarting(false)
@@ -382,6 +429,7 @@ export function ProjectPage() {
         agent: typeof data.agent === 'string' ? data.agent : null,
         content: typeof data.content === 'string' ? data.content : '',
         createdAt: event.createdAt,
+        selectionSummary: selectionSummarySchema.nullable().catch(null).parse(data.selectionSummary),
         pending: true,
       }
       setMessages((current) => [...current.filter((item) => item.id !== message.id), message])
@@ -407,6 +455,7 @@ export function ProjectPage() {
           content: String(data.content ?? ''),
           createdAt: existing?.createdAt ?? event.createdAt,
           pending: event.type !== 'message_done',
+          selectionSummary: existing?.selectionSummary ?? selectionSummarySchema.nullable().catch(null).parse(data.selectionSummary),
         }
         return existing
           ? current.map((item) => (item.id === message.id ? message : item))
@@ -566,6 +615,8 @@ export function ProjectPage() {
       reconciliationPending.current = false
       setReconciling(false)
       setConnection('connected')
+      if (uncertainDelivery) setBanner(t('atoms.selection.deliveryChecked'))
+      setUncertainDelivery(false)
       setReconnect((value) => value + 1)
     } catch (error) {
       setBanner(error instanceof Error ? error.message : t('atoms.requestError'))
@@ -765,6 +816,8 @@ export function ProjectPage() {
     viewing ?? versions.find((version) => version.id === project.currentVersionId)
   const currentVersion = versions.find((version) => version.id === project.currentVersionId)
   const undoVersion = versions.find((version) => version.id === currentVersion?.parentVersionId)
+  const selectionStale = Boolean(visualSelection && (selectionInvalidated || visualSelection.versionId !== project.currentVersionId || viewing || candidateSelected))
+  const noncurrentView = Boolean(viewing || candidateSelected)
   return (
     <div className="flex h-dvh min-h-0 flex-col bg-background">
       <header className="flex min-h-16 shrink-0 items-center gap-2 px-3 py-3 sm:gap-3 sm:px-5">
@@ -996,7 +1049,12 @@ export function ProjectPage() {
               }}
             />
           </div>
-          <div className="h-full" hidden={historyOpen}>
+          <div className="flex h-full min-h-0 flex-col" hidden={historyOpen}>
+            {(noncurrentView || uncertainDelivery) && <div role="status" className="mx-6 mb-2 rounded-lg bg-info-bg p-3 text-xs">
+              {t(uncertainDelivery ? 'atoms.selection.uncertain' : 'atoms.selection.noncurrent')}
+              {uncertainDelivery && <Button size="sm" variant="outline" onClick={() => void reconnectRun()}>{t('atoms.selection.checkDelivery')}</Button>}
+              {noncurrentView && <Button size="sm" variant="outline" onClick={selectCurrentVersion}>{t('atoms.backToCurrent')}</Button>}
+            </div>}
             <ChatPane
               messages={messages}
               running={running}
@@ -1005,8 +1063,12 @@ export function ProjectPage() {
               run={run}
               activeAgents={activeAgents}
               activity={activity}
-              onSend={(text) => void begin(text)}
+              onSend={begin}
               onStop={() => void stop()}
+              selection={visualSelection}
+              selectionStale={selectionStale}
+              sendBlocked={selectionStale || noncurrentView || uncertainDelivery}
+              onSelection={changeSelection}
               versions={versions}
               onOpenVersion={(versionId, mode) =>
                 void selectHistoryVersion(versionId, 'preview', mode)
@@ -1039,6 +1101,12 @@ export function ProjectPage() {
         )}
         <div className="min-h-0 min-w-0 flex-1" hidden={!wide && mobilePanel !== 'preview'}>
           <Stage
+            projectId={id}
+            versionId={candidateSelected ? null : viewing?.id ?? project.currentVersionId}
+            selection={visualSelection}
+            onSelection={changeSelection}
+            onSelectionInvalidated={invalidateSelection}
+            onPrepareSelection={registerSelection}
             html={displayHtml}
             source={displaySource}
             drafts={observingWorkspace ? workspace.drafts : {}}
