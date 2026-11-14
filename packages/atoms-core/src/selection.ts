@@ -120,7 +120,7 @@ export interface SelectionCommandPayloads {
 }
 
 export interface SelectionCommandResults {
-  enable: { enabled: boolean }
+  enable: { enabled: boolean; documentId: string }
   children: SelectionChildrenPage
   select: SelectionElementEvidence
   hover: null
@@ -154,7 +154,7 @@ export type SelectionResult = {
 }[keyof SelectionCommandResults]
 
 export type SelectionEvent =
-  | SelectionEnvelope<'ready', { enabled: boolean }>
+  | SelectionEnvelope<'ready', { enabled: boolean; documentId: string }>
   | SelectionEnvelope<'selected', SelectionElementEvidence>
   | SelectionEnvelope<'cleared', null>
   | SelectionEnvelope<'invalidated', { nodeId: string }>

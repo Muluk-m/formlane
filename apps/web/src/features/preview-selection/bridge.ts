@@ -98,7 +98,7 @@ const evidence = z.discriminatedUnion('kind', [
   }),
 ])
 const resultSchemas = {
-  enable: z.strictObject({ enabled: z.boolean() }),
+  enable: z.strictObject({ enabled: z.boolean(), documentId: z.string().min(1).max(128) }),
   children: z.strictObject({
     parentNodeId: nodeId.nullable(),
     children: z
@@ -125,7 +125,7 @@ const resultSchemas = {
   [Command in keyof SelectionCommandResults]: z.ZodType<SelectionCommandResults[Command]>
 }
 const eventSchemas = {
-  ready: z.strictObject({ enabled: z.boolean() }),
+  ready: z.strictObject({ enabled: z.boolean(), documentId: z.string().min(1).max(128) }),
   selected,
   cleared: z.null(),
   invalidated: z.strictObject({ nodeId }),
@@ -206,7 +206,13 @@ export function createPreviewSelectionBridge(
   let ready = false
   let desiredEnabled = false
   let sequence = 0
-  let loaded = false
+  let documentId: string | null = null
+  let probing: {
+    requestId: string
+    timer: number
+    messages: MessageEvent[]
+    bytes: number
+  } | null = null
   const pending = new Map<
     string,
     {
@@ -273,6 +279,8 @@ export function createPreviewSelectionBridge(
     if (disposed) return
     post('dispose', {}, `r${++sequence}`)
     disposed = true
+    if (probing) clearTimeout(probing.timer)
+    probing = null
     host?.removeEventListener('message', receive)
     frame.removeEventListener('load', loadedFrame)
     for (const request of pending.values()) {
@@ -280,6 +288,18 @@ export function createPreviewSelectionBridge(
       request.reject(new Error(reason))
     }
     pending.clear()
+  }
+  function invalidate(code = 'document-replaced') {
+    if (disposed) return
+    dispose(code)
+    options.onEvent?.({
+      protocol: SELECTION_PROTOCOL,
+      protocolVersion: SELECTION_PROTOCOL_VERSION,
+      sessionId: options.sessionId,
+      requestId: null,
+      type: 'error',
+      payload: { code, message: 'Preview selection session invalidated' },
+    })
   }
   function receive(event: MessageEvent) {
     if (disposed || event.source !== child || event.origin !== 'null') return
@@ -293,6 +313,42 @@ export function createPreviewSelectionBridge(
     const parsed = envelope.safeParse(event.data)
     if (!parsed.success || parsed.data.sessionId !== options.sessionId) return
     const message = parsed.data
+    if (probing && message.type !== 'ready') {
+      if (message.type === 'result' && message.requestId === probing.requestId) {
+        const result = resultPayload.safeParse(message.payload)
+        if (!result.success || result.data.command !== 'enable') return
+        const identity = resultSchemas.enable.safeParse(result.data.value)
+        if (!identity.success) return
+        if (documentId !== null && identity.data.documentId !== documentId) {
+          invalidate()
+          return
+        }
+        documentId = identity.data.documentId
+        const buffered = probing.messages
+        clearTimeout(probing.timer)
+        probing = null
+        ready = true
+        for (const bufferedEvent of buffered) receive(bufferedEvent)
+        if (!disposed) flush()
+        return
+      }
+      if (message.type === 'error' && message.requestId === null) {
+        const error = eventSchemas.error.safeParse(message.payload)
+        if (error.success && error.data.code === 'document-replaced') {
+          invalidate()
+          return
+        }
+      }
+      // Initial load and a late-attached bridge both require a correlated proof
+      // of the same document. Retain bounded replies until that proof arrives.
+      if (probing.bytes + size > SELECTION_LIMITS.metadataBytes) {
+        invalidate('metadata-too-large')
+        return
+      }
+      probing.bytes += size
+      probing.messages.push(event)
+      return
+    }
     if (message.type === 'result') {
       const result = resultPayload.safeParse(message.payload)
       const waiting = message.requestId ? pending.get(message.requestId) : undefined
@@ -315,8 +371,13 @@ export function createPreviewSelectionBridge(
       waiting.reject(new Error(error.data.code))
     } else if (message.requestId !== null) return
     if (message.type === 'ready') {
-      ready = true
-      flush()
+      const identity = eventSchemas.ready.safeParse(payload.data)
+      if (!identity.success) return
+      if (documentId !== null && identity.data.documentId !== documentId) {
+        invalidate()
+        return
+      }
+      documentId = identity.data.documentId
     }
     if (message.type === 'error' && message.requestId === null) {
       const error = eventSchemas.error.safeParse(payload.data)
@@ -326,22 +387,22 @@ export function createPreviewSelectionBridge(
     options.onEvent?.({ ...message, payload: payload.data } as SelectionEvent)
   }
   function probe() {
-    post('enable', { enabled: desiredEnabled }, `probe${++sequence}`)
+    if (disposed) return
+    if (probing) clearTimeout(probing.timer)
+    ready = false
+    const requestId = `probe${++sequence}`
+    probing = {
+      requestId,
+      timer: window.setTimeout(
+        () => invalidate(documentId === null ? 'selection-timeout' : 'document-replaced'),
+        timeout,
+      ),
+      messages: [],
+      bytes: 0,
+    }
+    post('enable', { enabled: desiredEnabled }, requestId)
   }
   function loadedFrame() {
-    if (loaded && ready) {
-      dispose('document-replaced')
-      options.onEvent?.({
-        protocol: SELECTION_PROTOCOL,
-        protocolVersion: SELECTION_PROTOCOL_VERSION,
-        sessionId: options.sessionId,
-        requestId: null,
-        type: 'error',
-        payload: { code: 'document-replaced', message: 'Preview document replaced' },
-      })
-      return
-    }
-    loaded = true
     probe()
   }
   host.addEventListener('message', receive)

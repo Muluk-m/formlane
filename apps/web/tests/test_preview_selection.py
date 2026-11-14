@@ -394,8 +394,13 @@ def test_outline_is_rendered_above_modal_and_disappears_when_edit_is_disabled(pr
     assert frame.locator("dialog").evaluate("node => node.open") is True
 
 
-def test_document_navigation_invalidates_even_a_late_attached_bridge(preview):
+@pytest.mark.parametrize("instrumented", [False, True])
+def test_document_navigation_invalidates_even_a_late_attached_bridge(preview, instrumented):
     mount(preview, '<button>Before navigation</button>', late=True)
-    preview.locator("iframe").evaluate("frame => frame.srcdoc = '<button>Replacement</button>'")
+    preview.evaluate("""instrumented => {
+      const replacement = '<button>Replacement</button>';
+      document.querySelector('iframe').srcdoc = instrumented
+        ? selectionRuntime.injectPreviewSelectionRuntime(replacement, config) : replacement;
+    }""", instrumented)
     preview.wait_for_function("events.some(event => event.type === 'error' && event.payload.code === 'document-replaced')")
     assert preview.evaluate("() => bridge.capture().catch(error => error.message)") == "bridge-disposed"
