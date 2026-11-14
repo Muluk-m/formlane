@@ -108,6 +108,8 @@ class ReviewArgs(NoArgs):
     accepted: bool
     findings: str = Field(min_length=1, max_length=6000)
     visual_evidence_ids: list[str] = Field(default_factory=list, max_length=6)
+    original_scene_status: Literal["observed-context-matches", "not-reproduced"] | None = None
+    scene_limitations: str | None = Field(default=None, min_length=1, max_length=2000)
 
     @field_validator("visual_evidence_ids")
     @classmethod

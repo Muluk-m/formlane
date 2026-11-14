@@ -71,3 +71,50 @@ def test_region_resolution_keeps_missing_members_explicit():
         {"nodeId": "one", "status": "resolved", "matches": 1},
         {"nodeId": "two", "status": "missing", "matches": 0},
     ]
+
+
+def test_unique_counter_target_does_not_certify_original_transient_state():
+    html = '''<!doctype html><output id="counter">0</output>
+    <button id="increment" onclick="document.querySelector('output').textContent++">Add</button>'''
+    target = {"nodeId": "counter", "selector": "#counter", "tagName": "output",
+              "text": "3", "attributes": {}}
+    fresh = inspect(html, target="baseline", selector="#counter", selectionContext=target)
+    assert fresh["resolution"]["status"] == "resolved"
+    assert fresh["scene"]["status"] == "state-not-reproduced"
+    assert fresh["scene"]["observations"][0]["text"] == "0"
+    replayed = inspect(html, target="baseline", selector="#counter", selectionContext=target,
+                       actions=[{"kind": "click", "selector": "#increment", "value": None}] * 3)
+    assert replayed["scene"]["status"] == "observed-context-matches"
+    assert replayed["scene"]["originalSceneVerified"] is False
+    edited = inspect('<!doctype html><output id="counter">Three items</output>',
+                     target="current", selector="#counter", selectionContext=target)
+    assert edited["resolution"]["status"] == "resolved"
+    assert edited["scene"]["status"] == "changed"
+    assert edited["scene"]["originalSceneVerified"] is False
+
+
+def test_nested_scroll_target_must_be_exposed_before_visual_evidence_is_eligible():
+    html = '''<!doctype html><button id="reveal" onclick="document.querySelector('#scroller').scrollTop=200">Reveal</button>
+    <div id="scroller" style="height:60px;overflow:auto"><div style="height:200px"></div>
+    <button id="target">Selected</button></div>'''
+    target = {"nodeId": "selected", "selector": "#target", "tagName": "button",
+              "text": "Selected", "attributes": {}}
+    clipped = inspect(html, target="baseline", selector="#target", selectionTargets=[target])
+    assert clipped["resolution"]["status"] == "state-not-reproduced"
+    assert clipped["scene"]["status"] == "state-not-reproduced"
+    exposed = inspect(html, target="baseline", selector="#target", selectionTargets=[target],
+                      actions=[{"kind": "click", "selector": "#reveal", "value": None}])
+    assert exposed["resolution"]["status"] == "resolved"
+    assert exposed["scene"]["status"] == "observed-context-matches"
+
+
+def test_region_focus_cannot_hide_a_missing_neighbor():
+    focus = {"nodeId": "focus", "selector": "#focus", "tagName": "h1", "text": "Keep", "attributes": {}}
+    neighbor = {"nodeId": "neighbor", "selector": "#neighbor", "tagName": "button", "text": "Save", "attributes": {}}
+    result = inspect('<!doctype html><h1 id="focus">Keep</h1>', target="current", selector="#focus",
+                     selectionFocus=focus, selectionTargets=[focus, neighbor])
+    assert result["focusResolution"]["status"] == "resolved"
+    assert result["resolution"]["status"] == "missing"
+    assert {item["nodeId"]: item["status"] for item in result["selectionResolutions"]} == {
+        "focus": "resolved", "neighbor": "missing",
+    }

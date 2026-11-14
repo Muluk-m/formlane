@@ -198,6 +198,12 @@ class ProviderRecording:
                 invocation["arguments"]["visual_evidence_ids"] = image_ids
             elif invocation["arguments"].get("visual_evidence_ids") == ["$baseline"]:
                 invocation["arguments"]["visual_evidence_ids"] = baseline_ids
+            if invocation["name"] == "record_review" and invocation["arguments"]["accepted"]:
+                if any(part["type"] == "text" and json.loads(part["text"]).get("selectionId")
+                       for message in body["messages"] if isinstance(message.get("content"), list)
+                       for part in message["content"]):
+                    invocation["arguments"].setdefault("original_scene_status", "not-reproduced")
+                    invocation["arguments"].setdefault("scene_limitations", "Original application memory was not reconstructed; current behavior was reviewed separately.")
         response_index = self.index
         self.index += 1
         # Prompt prose is intentionally outside this behavioral seam. Preserve
@@ -275,6 +281,7 @@ class ExternalOutcomes:
             result.update(
                 artifactHash=artifact_hash(payload["html"]),
                 resolution={"status": "resolved", "matches": 1},
+                scene={"status": "observed-context-matches", "originalSceneVerified": False},
                 image={"provenance": "server-reconstructed", "mimeType": "image/png",
                        "base64": base64.b64encode(pixels.getvalue()).decode("ascii"), **viewport},
             )

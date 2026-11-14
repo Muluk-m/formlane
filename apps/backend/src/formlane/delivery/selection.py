@@ -12,8 +12,20 @@ def elements(selection: dict) -> list[dict]:
     evidence = selection["evidence"]
     if evidence["kind"] == "element":
         return [evidence["element"]]
-    focus = evidence.get("focus")
-    return [focus] if focus else evidence["elements"]
+    return evidence["elements"]
+
+
+def focus(selection: dict) -> dict | None:
+    evidence = selection["evidence"]
+    return evidence.get("focus") if evidence["kind"] == "region" else None
+
+
+def contexts(selection: dict) -> list[dict]:
+    members = elements(selection)
+    focused = focus(selection)
+    if focused and all(item["nodeId"] != focused["nodeId"] for item in members):
+        return [*members, focused]
+    return members
 
 
 def summary(selection: dict | None) -> dict | None:
@@ -26,6 +38,8 @@ def summary(selection: dict | None) -> dict | None:
         "kind": selection["evidence"]["kind"],
         "targets": [{"tagName": item["tagName"], "text": item["text"][:200],
                      "instance": item.get("instance")} for item in targets[:4]],
+        "focus": ({"nodeId": focus(selection)["nodeId"], "tagName": focus(selection)["tagName"],
+                   "text": focus(selection)["text"][:200]} if focus(selection) else None),
         "hasImage": bool(selection.get("image")),
         "sourceHash": selection["sourceHash"],
     }

@@ -16,7 +16,7 @@ from ..project import artifact_hash, create_source, source_hash, validate_source
 from ..validator import inspect_artifact, validate_artifact, validate_checks
 from .errors import HarnessFailure, RuntimeAbort
 from .schemas import Edit
-from .selection import elements, reproduction, summary, without_pixels
+from .selection import contexts, elements, focus, reproduction, summary, without_pixels
 
 FLOW_VERSION = "flow-v1"
 SMOKE_CHECK_NAME = "smoke: 375px render without runtime errors"
@@ -269,7 +269,7 @@ class Runtime:
         baseline = {"template": self.previous["template"], "files": dict(self.previous["files"])} if self.previous else None
         unmapped = {item["nodeId"] for item in selection["sourceResolutions"] if item["status"] == "unmapped"}
         if baseline:
-            for target in elements(selection):
+            for target in contexts(selection):
                 if target["nodeId"] not in unmapped:
                     continue
                 for query in (target["attributes"].get("id"), target["text"][:120]):
@@ -492,11 +492,12 @@ class Runtime:
             unread = sorted(changed - set(current["reviewedPaths"]))
             if unread:
                 missing.append("read_review_files inspection of: " + ", ".join(unread))
-            missing.extend(self.visual_requirements(args.get("visual_evidence_ids", [])))
+            missing.extend(self.visual_requirements(args.get("visual_evidence_ids", []), args))
             if missing:
                 raise ValueError("Acceptance requires " + "; ".join(missing) + ".")
         current["review"] = {
             **args,
+            "findings": "\n\n".join(part for part in (args["findings"], args.get("scene_limitations")) if part),
             "sourceHash": built["sourceHash"] if built else "",
             "artifactHash": built["artifactHash"] if built else "",
             "checksHash": checks_hash(current["checks"]),
@@ -574,7 +575,7 @@ class Runtime:
         source = self.require_source()
         return search_source(source, args["query"], args["ignore_case"])
 
-    def visual_requirements(self, ids: list[str]) -> list[str]:
+    def visual_requirements(self, ids: list[str], assessment: dict) -> list[str]:
         built = current_build(self.workspace)
         evidence = [self.workspace["visualEvidence"].get(key) for key in ids]
         valid = [item for item in evidence if item and built
@@ -594,6 +595,21 @@ class Runtime:
         if self.selection and not any(item.get("selectionId") == self.selection["selectionId"]
                                       and item["resolution"]["status"] == "resolved" for item in valid):
             return ["resolved current selection visual evidence; unreproduced scenes cannot be approved"]
+        if self.selection:
+            original = [item for item in self.workspace["visualEvidence"].values()
+                        if item["target"] == "baseline" and item.get("selectionId") == self.selection["selectionId"]
+                        and item["role"] == "david" and item["stage"] == self.scope["path"]
+                        and item["sourceHash"] == self.selection["sourceHash"]
+                        and item["artifactHash"] == self.selection["canonicalArtifactHash"]
+                        and item.get("scene", {}).get("status") == "observed-context-matches"
+                        and self.workspace["visualReceipts"].get(item["id"]) == self.scope["path"]]
+            claim = assessment.get("original_scene_status")
+            if claim == "observed-context-matches" and not original:
+                return ["baseline evidence for the claimed original captured context; unique targets are not reproduction proof"]
+            if claim != "observed-context-matches" and (
+                claim != "not-reproduced" or not (assessment.get("scene_limitations") or "").strip()
+            ):
+                return ["an explicit original-scene assessment and disclosure of unreproduced state"]
         return []
 
     def inspect_preview(self, args: dict) -> dict:
@@ -624,17 +640,21 @@ class Runtime:
         if reference:
             request = reproduction(selection, request)
             targets = elements(selection)
+            focused = focus(selection)
+            primary = focused or (targets[0] if targets else None)
             request["selectionTargets"] = targets
-            request["scroll"] = (targets[0] if targets else selection["evidence"])["scroll"]
-            if targets and not args.get("selector"):
-                request["selector"] = targets[0]["selector"]
-                request["selectionContext"] = targets[0]
-            elif args.get("selector"):
-                # An explicit semantic candidate is review evidence, not an exact source mapping.
+            request["selectionFocus"] = focused
+            request["scroll"] = selection["evidence"].get("scroll", (primary or {}).get("scroll"))
+            if primary and (target == "baseline" or not args.get("selector")):
+                request["selector"] = primary["selector"]
+                request["selectionContext"] = primary
+            elif args.get("selector") and selection["evidence"]["kind"] == "element":
+                # A new single-element candidate cannot establish the original scene.
+                # Region members remain mandatory even when focus is retargeted.
                 request["selectionTargets"] = []
-            if not request.get("viewport"):
-                viewport = (targets[0] if targets else selection["evidence"])["viewport"]
-                if (all(1 <= viewport[key] <= 16384 for key in ("width", "height"))
+            if target == "baseline" or not request.get("viewport"):
+                viewport = selection["evidence"].get("viewport", (primary or {}).get("viewport"))
+                if (viewport and all(1 <= viewport[key] <= 16384 for key in ("width", "height"))
                         and viewport["width"] * viewport["height"] <= 16_000_000):
                     request["viewport"] = viewport
                 else:

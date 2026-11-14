@@ -419,6 +419,48 @@ async def _run_browser(html: str, checks: list[dict], settings, cancelled, repor
             await _close(browser)
 
 
+async def _observe_selection(frame, target: dict, selector: str) -> dict:
+    locator = frame.locator(selector)
+    count = await locator.count()
+    result = {"nodeId": target.get("nodeId"), "status": "missing" if count == 0 else "ambiguous" if count > 1 else "resolved", "matches": count}
+    observation = {"nodeId": target.get("nodeId"), "text": None, "attributes": {}, "differences": [], "exposed": False}
+    if count != 1:
+        return {"resolution": result, "observation": observation}
+    tag = await locator.evaluate("element => element.localName")
+    exposed = await locator.is_visible() and await asyncio.wait_for(locator.evaluate("""element => new Promise(resolve => {
+        const observer = new IntersectionObserver(entries => {
+            const rect = entries[0].intersectionRect;
+            observer.disconnect(); resolve(rect.width > 0 && rect.height > 0);
+        });
+        observer.observe(element);
+    })"""), timeout=3)
+    observation["exposed"] = exposed
+    if tag.lower() != target["tagName"].lower() or not exposed:
+        result["status"] = "state-not-reproduced"
+    observation["text"] = await locator.evaluate("""element => {
+        if (['input', 'textarea', 'select'].includes(element.localName)) return '';
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+            acceptNode(node) {
+                if (node.nodeType === Node.ELEMENT_NODE && ['script','style','template','noscript','head','input','textarea','select'].includes(node.localName))
+                    return NodeFilter.FILTER_REJECT;
+                return node.nodeType === Node.TEXT_NODE ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+            }
+        });
+        let text = '', visited = 0, next;
+        while (text.length < 2000 && visited++ < 4000 && (next = walker.nextNode())) text += next.textContent.slice(0, 2000 - text.length);
+        return text.replace(/\\s+/g, ' ').trim().slice(0, 2000);
+    }""")
+    if target.get("text") is not None and observation["text"] != re.sub(r"\s+", " ", target["text"]).strip():
+        observation["differences"].append("text")
+    for name, expected in target.get("attributes", {}).items():
+        actual = await locator.get_attribute(name)
+        observation["attributes"][name] = actual
+        if actual != expected:
+            observation["differences"].append(name)
+    observation["hasCapturedState"] = target.get("text") is not None or bool(target.get("attributes"))
+    return {"resolution": result, "observation": observation}
+
+
 async def _inspect_browser(html: str, request: dict, settings) -> dict:
     """Observation only: accessibility tree, console and errors after optional actions."""
     async with async_playwright() as playwright:
@@ -445,28 +487,31 @@ async def _inspect_browser(html: str, request: dict, settings) -> dict:
                 status = "missing" if count == 0 else "ambiguous" if count > 1 else "resolved"
                 if failure or request.get("unreproducedReason"):
                     status = "state-not-reproduced"
-                if count == 1 and request.get("selectionContext"):
-                    target = request["selectionContext"]
-                    tag = await locator.evaluate("element => element.localName")
-                    if tag.lower() != target["tagName"].lower() or not await locator.is_visible():
-                        status = "state-not-reproduced"
-                    for attribute in ("aria-expanded", "aria-selected", "aria-checked", "aria-pressed"):
-                        expected = target.get("attributes", {}).get(attribute)
-                        if expected is not None and await locator.get_attribute(attribute) != expected:
-                            status = "state-not-reproduced"
-                resolutions = []
+                resolutions, observations = [], []
+                focus_resolution = None
+                if request.get("selectionContext"):
+                    selected = await _observe_selection(session.frame, request["selectionContext"], selector)
+                    if status == "resolved":
+                        status = selected["resolution"]["status"]
+                    observations.append(selected["observation"])
                 for target in request.get("selectionTargets", []):
-                    candidate = session.frame.locator(target["selector"])
-                    matches = await candidate.count()
-                    outcome = "missing" if matches == 0 else "ambiguous" if matches > 1 else "resolved"
-                    if matches == 1 and (
-                        not await candidate.is_visible()
-                        or (await candidate.evaluate("element => element.localName")).lower() != target["tagName"].lower()
-                    ):
-                        outcome = "state-not-reproduced"
-                    resolutions.append({"nodeId": target["nodeId"], "status": outcome, "matches": matches})
-                if status == "resolved" and resolutions:
-                    status = next((item["status"] for item in resolutions if item["status"] != "resolved"), "resolved")
+                    selected = await _observe_selection(session.frame, target, target["selector"])
+                    resolutions.append(selected["resolution"])
+                    observations.append(selected["observation"])
+                if request.get("selectionFocus"):
+                    focus = request["selectionFocus"]
+                    selected = await _observe_selection(session.frame, focus, focus["selector"])
+                    focus_resolution = selected["resolution"]
+                    observations.append(selected["observation"])
+                outcomes = resolutions + ([focus_resolution] if focus_resolution else [])
+                if status == "resolved":
+                    status = next((item["status"] for item in outcomes if item["status"] != "resolved"), "resolved")
+                scene_status = "unestablished"
+                if status != "resolved":
+                    scene_status = "state-not-reproduced"
+                elif observations and all(item.get("hasCapturedState") for item in observations):
+                    different = any(item["differences"] for item in observations)
+                    scene_status = ("changed" if request["target"] == "current" else "state-not-reproduced") if different else "observed-context-matches"
                 try:
                     tree = await locator.aria_snapshot(timeout=3000) if count == 1 else ""
                 except Exception as error:
@@ -483,6 +528,10 @@ async def _inspect_browser(html: str, request: dict, settings) -> dict:
                     "resolution": {"status": status, "matches": count,
                                    "reason": request.get("unreproducedReason") or failure},
                     "selectionResolutions": resolutions,
+                    "focusResolution": focus_resolution,
+                    "scene": {"status": scene_status, "observations": observations,
+                              "originalSceneVerified": False, "scope": "captured-observable-context-only",
+                              "limitation": "Unique targets and matching bounded text/state do not establish arbitrary application memory. Current-build differences may be intended edits; establish the original observable scene against baseline separately."},
                     "image": {"provenance": "server-reconstructed", "mimeType": "image/png",
                               "base64": base64.b64encode(pixels).decode("ascii"), **viewport},
                     "actionsPerformed": performed,
@@ -499,31 +548,38 @@ async def _inspect_browser(html: str, request: dict, settings) -> dict:
             await _close(browser)
 
 
+def _selection_context(value: dict, *, located: bool = False) -> dict:
+    if not isinstance(value, dict) or not isinstance(value.get("attributes", {}), dict):
+        raise ValueError("Selection context and attributes must be objects.")
+    result = {
+        "tagName": _string(value.get("tagName"), "Selection tag", 1, 64),
+        "text": _string(value["text"], "Selection text", 0, 2000) if value.get("text") is not None else None,
+        "attributes": {name: _string(item, "Selection state", 0, 500)
+                       for name, item in value.get("attributes", {}).items()
+                       if name in ("aria-expanded", "aria-selected", "aria-checked", "aria-pressed", "aria-label", "title", "alt", "disabled", "checked")},
+    }
+    if located:
+        result.update(nodeId=_string(value.get("nodeId"), "Selection node", 1, 128),
+                      selector=_string(value.get("selector"), "Selection selector", 1, 1000))
+    return result
+
+
 def validate_inspection(request: dict) -> dict:
     if not isinstance(request, dict):
         raise ValueError("An inspection request object is required.")
     context = request.get("selectionContext")
     if context is not None:
-        if not isinstance(context, dict):
-            raise ValueError("Selection context must be an object.")
-        attributes = context.get("attributes", {})
-        if not isinstance(attributes, dict):
-            raise ValueError("Selection attributes must be an object.")
-        context = {
-            "tagName": _string(context.get("tagName"), "Selection tag", 1, 64),
-            "attributes": {
-                name: _string(value, "Selection state", 0, 500)
-                for name, value in attributes.items()
-                if name in ("aria-expanded", "aria-selected", "aria-checked", "aria-pressed")
-            },
-        }
+        context = _selection_context(context)
     targets = request.get("selectionTargets") or []
     if not isinstance(targets, list) or len(targets) > 32 or any(not isinstance(item, dict) for item in targets):
         raise ValueError("At most 32 selection targets are supported.")
-    targets = [{"nodeId": _string(item.get("nodeId"), "Selection node", 1, 128),
-                "tagName": _string(item.get("tagName"), "Selection tag", 1, 64),
-                "selector": _string(item.get("selector"), "Selection selector", 1, 1000)}
-               for item in targets]
+    targets = [_selection_context(item, located=True) for item in targets]
+    focus = request.get("selectionFocus")
+    if focus is not None:
+        focus = _selection_context(focus, located=True)
+    target = request.get("target", "current")
+    if target not in ("current", "baseline"):
+        raise ValueError("Inspection target must be baseline or current.")
     scroll = request.get("scroll")
     if scroll is not None:
         if not isinstance(scroll, dict) or any(
@@ -542,6 +598,8 @@ def validate_inspection(request: dict) -> dict:
             raise ValueError("Inspection viewport must fit 16384 pixels per edge and 16 million pixels.")
         viewport = {key: int(viewport[key]) for key in ("width", "height")}
     return {
+        "target": target,
+        "selectionFocus": focus,
         "selectionTargets": targets,
         "scroll": scroll,
         "selectionContext": context,
