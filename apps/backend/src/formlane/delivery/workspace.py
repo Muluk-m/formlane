@@ -164,14 +164,18 @@ def completion_status(workspace: dict) -> dict:
         missing.append("david_acceptance")
     approved = review.get("visualEvidenceIds", []) if review else []
     evidence = workspace.get("visualEvidence", {})
-    if not approved or not build or any(
-        key not in evidence
-        or evidence[key]["target"] != "current"
-        or evidence[key]["sourceHash"] != build["sourceHash"]
-        or evidence[key]["artifactHash"] != build["artifactHash"]
-        or evidence[key]["image"]["provenance"] != "server-reconstructed"
-        or workspace.get("visualReceipts", {}).get(key) != evidence[key]["stage"]
-        for key in approved
+    if (
+        not approved
+        or not build
+        or any(
+            key not in evidence
+            or evidence[key]["target"] != "current"
+            or evidence[key]["sourceHash"] != build["sourceHash"]
+            or evidence[key]["artifactHash"] != build["artifactHash"]
+            or evidence[key]["image"]["provenance"] != "server-reconstructed"
+            or workspace.get("visualReceipts", {}).get(key) != evidence[key]["stage"]
+            for key in approved
+        )
     ):
         missing.append("david_visual_approval")
     return {"ready": not missing, "missing": missing}
@@ -266,8 +270,16 @@ class Runtime:
             return {"selection": None, "sourceCandidates": [], "warnings": []}
         candidates = []
         seen = set()
-        baseline = {"template": self.previous["template"], "files": dict(self.previous["files"])} if self.previous else None
-        unmapped = {item["nodeId"] for item in selection["sourceResolutions"] if item["status"] == "unmapped"}
+        baseline = (
+            {"template": self.previous["template"], "files": dict(self.previous["files"])}
+            if self.previous
+            else None
+        )
+        unmapped = {
+            item["nodeId"]
+            for item in selection["sourceResolutions"]
+            if item["status"] == "unmapped"
+        }
         if baseline:
             for target in contexts(selection):
                 if target["nodeId"] not in unmapped:
@@ -278,7 +290,9 @@ class Runtime:
                             identity = (target["nodeId"], match["path"], match["line"])
                             if identity not in seen:
                                 seen.add(identity)
-                                candidates.append({**match, "nodeId": target["nodeId"], "confidence": "heuristic"})
+                                candidates.append(
+                                    {**match, "nodeId": target["nodeId"], "confidence": "heuristic"}
+                                )
                     if len(candidates) >= 24:
                         break
                 if len(candidates) >= 24:
@@ -290,9 +304,19 @@ class Runtime:
                 resolutions.append({**item, "status": "exact", "basis": "server-baseline-manifest"})
             else:
                 count = sum(candidate["nodeId"] == item["nodeId"] for candidate in candidates)
-                resolutions.append({**item, "status": "ambiguous" if count > 1 else "heuristic" if count else "unmapped"})
+                resolutions.append(
+                    {
+                        **item,
+                        "status": "ambiguous"
+                        if count > 1
+                        else "heuristic"
+                        if count
+                        else "unmapped",
+                    }
+                )
         return {
-            "selection": without_pixels(selection), "sourceCandidates": candidates,
+            "selection": without_pixels(selection),
+            "sourceCandidates": candidates,
             "sourceResolution": resolutions,
             "warnings": [
                 "Source locations belong to the frozen baseline, not the edited build.",
@@ -306,21 +330,46 @@ class Runtime:
         images = []
         selection = self.selection
         if selection and selection.get("image"):
-            images.append({"id": selection["selectionId"], "target": "baseline",
-                           "image": selection["image"], "selectionId": selection["selectionId"]})
-        current = [value for value in self.workspace["visualEvidence"].values()
-                   if value["stage"] == self.scope["path"]]
+            images.append(
+                {
+                    "id": selection["selectionId"],
+                    "target": "baseline",
+                    "image": selection["image"],
+                    "selectionId": selection["selectionId"],
+                }
+            )
+        current = [
+            value
+            for value in self.workspace["visualEvidence"].values()
+            if value["stage"] == self.scope["path"]
+        ]
         return images + current[-6:]
 
     def model_messages(self, messages: Any, images: list[dict]) -> list[dict]:
-        result = copy.deepcopy(messages) if isinstance(messages, list) else [{"role": "user", "content": messages}]
+        result = (
+            copy.deepcopy(messages)
+            if isinstance(messages, list)
+            else [{"role": "user", "content": messages}]
+        )
         if images:
             content = []
             for evidence in images:
                 image = evidence["image"]
-                content.append({"type": "text", "text": json.dumps(without_pixels(evidence), ensure_ascii=False)})
-                content.append({"type": "image_url", "image_url": {
-                    "url": f"data:{image['mimeType']};base64,{image['base64']}", "detail": "high"}})
+                content.append(
+                    {
+                        "type": "text",
+                        "text": json.dumps(without_pixels(evidence), ensure_ascii=False),
+                    }
+                )
+                content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{image['mimeType']};base64,{image['base64']}",
+                            "detail": "high",
+                        },
+                    }
+                )
             result.append({"role": "user", "content": content})
         return result
 
@@ -329,7 +378,6 @@ class Runtime:
         if self.scope["role"] == "david":
             for evidence in images:
                 self.workspace["visualReceipts"][evidence["id"]] = self.scope["path"]
-
 
     def clear_evidence(self) -> None:
         self.workspace.update(
@@ -356,7 +404,11 @@ class Runtime:
         current = self.workspace
         source = current["source"]
         return {
-            **{key: value for key, value in current.items() if key not in ("source", "html", "visualEvidence", "visualReceipts")},
+            **{
+                key: value
+                for key, value in current.items()
+                if key not in ("source", "html", "visualEvidence", "visualReceipts")
+            },
             "template": source["template"] if source else None,
             "files": [
                 {"path": path, "characters": len(content)}
@@ -366,7 +418,9 @@ class Runtime:
             "sourceChanges": source_changes(source, self.previous),
             "userRequest": self.context["request"],
             "selection": summary(self.selection),
-            "visualEvidence": [without_pixels(value) for value in current["visualEvidence"].values()],
+            "visualEvidence": [
+                without_pixels(value) for value in current["visualEvidence"].values()
+            ],
             "completion": completion_status(current),
             **({} if self.previous else {"originalIdea": self.context["idea"]}),
         }
@@ -387,9 +441,7 @@ class Runtime:
         source = current["source"]
         files = (source or {}).get("files", {})
         baseline = self.previous["files"] if self.previous else {}
-        statuses = {
-            item["path"]: item["status"] for item in source_changes(source, self.previous)
-        }
+        statuses = {item["path"]: item["status"] for item in source_changes(source, self.previous)}
         paths = list(dict.fromkeys(args["paths"]))
         current["reviewedPaths"] = sorted(set(current["reviewedPaths"]) | set(paths))
         return {
@@ -432,8 +484,7 @@ class Runtime:
                 {"source": current["source"], "reason": args["architecture"][:2000]},
             )
         plan = {
-            key: args[key]
-            for key in ("brief", "criteria", "assumptions", "gaps", "architecture")
+            key: args[key] for key in ("brief", "criteria", "assumptions", "gaps", "architecture")
         }
         current.update(
             plan=plan,
@@ -497,11 +548,18 @@ class Runtime:
                 raise ValueError("Acceptance requires " + "; ".join(missing) + ".")
         current["review"] = {
             **args,
-            "findings": "\n\n".join(part for part in (
-                args["findings"], args.get("scene_limitations"),
-                *(f"{item['node_id']} ({item['disposition']}): {item['justification']}"
-                  for item in args.get("structural_changes", [])),
-            ) if part),
+            "findings": "\n\n".join(
+                part
+                for part in (
+                    args["findings"],
+                    args.get("scene_limitations"),
+                    *(
+                        f"{item['node_id']} ({item['disposition']}): {item['justification']}"
+                        for item in args.get("structural_changes", [])
+                    ),
+                )
+                if part
+            ),
             "sourceHash": built["sourceHash"] if built else "",
             "artifactHash": built["artifactHash"] if built else "",
             "checksHash": checks_hash(current["checks"]),
@@ -581,28 +639,40 @@ class Runtime:
 
     def selection_visual_requirements(self, evidence: list[dict], assessment: dict) -> list[str]:
         """Keep observed identities intact while David assesses intentional structural edits."""
-        selected = [item for item in evidence if item.get("selectionId") == self.selection["selectionId"]]
+        selected = [
+            item for item in evidence if item.get("selectionId") == self.selection["selectionId"]
+        ]
         if not selected:
             return ["current selection visual evidence"]
         expected = {item["nodeId"] for item in contexts(self.selection)}
         changes = assessment.get("structural_changes", [])
         by_node = {item["node_id"]: item for item in changes}
-        changed_paths = {item["path"] for item in source_changes(self.workspace["source"], self.previous)
-                         if item["status"] != "unchanged"}
+        changed_paths = {
+            item["path"]
+            for item in source_changes(self.workspace["source"], self.previous)
+            if item["status"] != "unchanged"
+        }
         if len(by_node) != len(changes) or not set(by_node) <= expected:
             return ["unique structural visual assessments naming frozen selection nodes"]
         for change in changes:
-            if (not change["request_quote"].strip() or change["request_quote"] not in self.context["request"]
-                    or not set(change["source_paths"]) <= changed_paths
-                    or not set(change["source_paths"]) <= set(self.workspace["reviewedPaths"])):
-                return ["structural visual justifications citing the original comment and inspected changed source paths"]
+            if (
+                not change["request_quote"].strip()
+                or change["request_quote"] not in self.context["request"]
+                or not set(change["source_paths"]) <= changed_paths
+                or not set(change["source_paths"]) <= set(self.workspace["reviewedPaths"])
+            ):
+                return [
+                    "structural visual justifications citing the original comment and inspected changed source paths"
+                ]
         for item in selected:
             if item.get("actionFailure"):
                 return ["current visual evidence without failed reproduction actions"]
             replacement = item.get("replacementResolution")
             if replacement and replacement["status"] != "resolved":
                 return ["a unique replacement target exposed in the current native visual evidence"]
-            outcomes = {outcome["nodeId"]: outcome for outcome in item.get("selectionResolutions", [])}
+            outcomes = {
+                outcome["nodeId"]: outcome for outcome in item.get("selectionResolutions", [])
+            }
             if item.get("focusResolution"):
                 outcomes[item["focusResolution"]["nodeId"]] = item["focusResolution"]
             if not expected <= set(outcomes):
@@ -614,31 +684,49 @@ class Runtime:
                     if status != "missing":
                         return ["native visual evidence that a declared removed target is absent"]
                 elif not change and status != "resolved":
-                    return ["exposed surviving targets or explicit requested removal/replacement visual assessments"]
+                    return [
+                        "exposed surviving targets or explicit requested removal/replacement visual assessments"
+                    ]
         for change in changes:
-            if change["disposition"] == "replaced" and not any(
-                (item.get("replacementResolution") or {}).get("selector") == change["replacement_selector"]
+            if change["disposition"] != "replaced":
+                continue
+            widths = [
+                item["image"]["width"]
                 for item in selected
+                if (item.get("replacementResolution") or {}).get("selector")
+                == change["replacement_selector"]
+            ]
+            if not any(320 <= width <= 480 for width in widths) or not any(
+                width >= 1024 for width in widths
             ):
-                return ["exposed replacement visual evidence for each declared replacement selector"]
+                return [
+                    "exposed replacement visual evidence at both mobile and desktop viewports for each declared replacement selector"
+                ]
         return []
 
     def visual_requirements(self, ids: list[str], assessment: dict) -> list[str]:
         built = current_build(self.workspace)
         evidence = [self.workspace["visualEvidence"].get(key) for key in ids]
-        valid = [item for item in evidence if item and built
-                 and item["target"] == "current"
-                 and item["sourceHash"] == built["sourceHash"]
-                 and item["artifactHash"] == built["artifactHash"]
-                 and item["image"]["provenance"] == "server-reconstructed"
-                 and (item.get("selectionId") is not None or item["resolution"]["status"] == "resolved")
-                 and item["role"] == "david"
-                 and item["stage"] == self.scope["path"]
-                 and self.workspace["visualReceipts"].get(item["id"]) == self.scope["path"]]
+        valid = [
+            item
+            for item in evidence
+            if item
+            and built
+            and item["target"] == "current"
+            and item["sourceHash"] == built["sourceHash"]
+            and item["artifactHash"] == built["artifactHash"]
+            and item["image"]["provenance"] == "server-reconstructed"
+            and (item.get("selectionId") is not None or item["resolution"]["status"] == "resolved")
+            and item["role"] == "david"
+            and item["stage"] == self.scope["path"]
+            and self.workspace["visualReceipts"].get(item["id"]) == self.scope["path"]
+        ]
         if not valid or len(valid) != len(ids):
             return ["visual approval of your own current-build native images after viewing them"]
         widths = [item["image"]["width"] for item in valid]
-        if not any(320 <= width <= 480 for width in widths) or not any(width >= 1024 for width in widths):
+        if not any(320 <= width <= 480 for width in widths) or not any(
+            width >= 1024 for width in widths
+        ):
             return ["visual evidence at both mobile and desktop viewports"]
         if self.selection:
             missing = self.selection_visual_requirements(valid, assessment)
@@ -647,20 +735,29 @@ class Runtime:
         elif assessment.get("structural_changes"):
             return ["a frozen selection for structural visual assessments"]
         if self.selection:
-            original = [item for item in self.workspace["visualEvidence"].values()
-                        if item["target"] == "baseline" and item.get("selectionId") == self.selection["selectionId"]
-                        and item["role"] == "david" and item["stage"] == self.scope["path"]
-                        and item["sourceHash"] == self.selection["sourceHash"]
-                        and item["artifactHash"] == self.selection["canonicalArtifactHash"]
-                        and item.get("scene", {}).get("status") == "observed-context-matches"
-                        and self.workspace["visualReceipts"].get(item["id"]) == self.scope["path"]]
+            original = [
+                item
+                for item in self.workspace["visualEvidence"].values()
+                if item["target"] == "baseline"
+                and item.get("selectionId") == self.selection["selectionId"]
+                and item["role"] == "david"
+                and item["stage"] == self.scope["path"]
+                and item["sourceHash"] == self.selection["sourceHash"]
+                and item["artifactHash"] == self.selection["canonicalArtifactHash"]
+                and item.get("scene", {}).get("status") == "observed-context-matches"
+                and self.workspace["visualReceipts"].get(item["id"]) == self.scope["path"]
+            ]
             claim = assessment.get("original_scene_status")
             if claim == "observed-context-matches" and not original:
-                return ["baseline evidence for the claimed original captured context; unique targets are not reproduction proof"]
+                return [
+                    "baseline evidence for the claimed original captured context; unique targets are not reproduction proof"
+                ]
             if claim != "observed-context-matches" and (
                 claim != "not-reproduced" or not (assessment.get("scene_limitations") or "").strip()
             ):
-                return ["an explicit original-scene assessment and disclosure of unreproduced state"]
+                return [
+                    "an explicit original-scene assessment and disclosure of unreproduced state"
+                ]
         return []
 
     def inspect_preview(self, args: dict) -> dict:
@@ -668,7 +765,9 @@ class Runtime:
         selection = self.selection
         reference = args.get("selection_id")
         if reference and (not selection or reference != selection["selectionId"]):
-            return {"resolution": {"status": "stale", "reason": "Unknown frozen selection reference."}}
+            return {
+                "resolution": {"status": "stale", "reason": "Unknown frozen selection reference."}
+            }
         target = args.get("target", "current")
         if target == "baseline":
             if not self.previous:
@@ -678,9 +777,16 @@ class Runtime:
             html = result["html"]
             built = {"sourceHash": source_hash(source), "artifactHash": artifact_hash(html)}
             if result["sourceHash"] != built["sourceHash"]:
-                return {"resolution": {"status": "stale", "reason": "Baseline compiler identity changed."}}
-            if selection and (built["sourceHash"] != selection["sourceHash"] or
-                              built["artifactHash"] != selection["canonicalArtifactHash"]):
+                return {
+                    "resolution": {
+                        "status": "stale",
+                        "reason": "Baseline compiler identity changed.",
+                    }
+                }
+            if selection and (
+                built["sourceHash"] != selection["sourceHash"]
+                or built["artifactHash"] != selection["canonicalArtifactHash"]
+            ):
                 return {"resolution": {"status": "stale", "reason": "Baseline identity changed."}}
         else:
             built = current_build(self.workspace)
@@ -704,27 +810,54 @@ class Runtime:
                 request["replacementSelector"] = args["selector"]
             if target == "baseline" or not request.get("viewport"):
                 viewport = selection["evidence"].get("viewport", (primary or {}).get("viewport"))
-                if (viewport and all(1 <= viewport[key] <= 16384 for key in ("width", "height"))
-                        and viewport["width"] * viewport["height"] <= 16_000_000):
+                if (
+                    viewport
+                    and all(1 <= viewport[key] <= 16384 for key in ("width", "height"))
+                    and viewport["width"] * viewport["height"] <= 16_000_000
+                ):
                     request["viewport"] = viewport
                 else:
-                    request["unreproducedReason"] = "The original viewport is outside supported inspection bounds."
+                    request["unreproducedReason"] = (
+                        "The original viewport is outside supported inspection bounds."
+                    )
         report = inspect_artifact(html, request, self.settings, self.cancelled)
         self.check()
         if report["artifactHash"] != built["artifactHash"]:
             raise ValueError("Inspection does not match the requested artifact.")
-        identity = hashlib.sha256(json.dumps({"stage": self.scope["path"], "index": self.scope["tool_index"],
-                                             "build": built, "request": request}, sort_keys=True).encode()).hexdigest()
-        evidence = {**report, **built, "id": identity, "target": target,
-                    "selectionId": reference, "role": self.scope["role"], "stage": self.scope["path"],
-                    "resolutionMethod": "agent-selector" if reference and args.get("selector") else "frozen-selector",
-                    "confidence": "heuristic" if reference else "browser-observation"}
-        retained = [(key, value) for key, value in self.workspace["visualEvidence"].items()
-                    if value["stage"] == self.scope["path"]]
+        identity = hashlib.sha256(
+            json.dumps(
+                {
+                    "stage": self.scope["path"],
+                    "index": self.scope["tool_index"],
+                    "build": built,
+                    "request": request,
+                },
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        evidence = {
+            **report,
+            **built,
+            "id": identity,
+            "target": target,
+            "selectionId": reference,
+            "role": self.scope["role"],
+            "stage": self.scope["path"],
+            "resolutionMethod": "agent-selector"
+            if reference and args.get("selector")
+            else "frozen-selector",
+            "confidence": "heuristic" if reference else "browser-observation",
+        }
+        retained = [
+            (key, value)
+            for key, value in self.workspace["visualEvidence"].items()
+            if value["stage"] == self.scope["path"]
+        ]
         self.workspace["visualEvidence"] = dict(retained[-5:])
         self.workspace["visualEvidence"][identity] = evidence
         self.workspace["visualReceipts"] = {
-            key: stage for key, stage in self.workspace["visualReceipts"].items()
+            key: stage
+            for key, stage in self.workspace["visualReceipts"].items()
             if key in self.workspace["visualEvidence"]
         }
         return without_pixels(evidence)
@@ -751,8 +884,7 @@ class Runtime:
             if not args["check_defects"] or not failing.issubset(args["check_defects"]):
                 raise ValueError(
                     "Validation is failing. Fix the application, or list every failing check "
-                    "you can show is itself wrong in check_defects: "
-                    + ", ".join(sorted(failing))
+                    "you can show is itself wrong in check_defects: " + ", ".join(sorted(failing))
                 )
         current["candidate"] = {
             "summary": args["summary"],
@@ -807,7 +939,8 @@ class Runtime:
             # Read results and source content stay out of the public tool transcript.
             public = (
                 {"revision": self.workspace["revision"]}
-                if name.startswith("read_") or name == "inspect_preview" else output
+                if name.startswith("read_") or name == "inspect_preview"
+                else output
             )
             self.emit(
                 "tool_end", {"id": step, "name": name, "agent": scope["role"], "output": public}
@@ -886,4 +1019,3 @@ class Runtime:
                 return False
 
         return Scope()
-

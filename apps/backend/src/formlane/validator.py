@@ -422,18 +422,31 @@ async def _run_browser(html: str, checks: list[dict], settings, cancelled, repor
 async def _observe_selection(frame, target: dict, selector: str) -> dict:
     locator = frame.locator(selector)
     count = await locator.count()
-    result = {"nodeId": target.get("nodeId"), "status": "missing" if count == 0 else "ambiguous" if count > 1 else "resolved", "matches": count}
-    observation = {"nodeId": target.get("nodeId"), "text": None, "attributes": {}, "differences": [], "exposed": False}
+    result = {
+        "nodeId": target.get("nodeId"),
+        "status": "missing" if count == 0 else "ambiguous" if count > 1 else "resolved",
+        "matches": count,
+    }
+    observation = {
+        "nodeId": target.get("nodeId"),
+        "text": None,
+        "attributes": {},
+        "differences": [],
+        "exposed": False,
+    }
     if count != 1:
         return {"resolution": result, "observation": observation}
     tag = await locator.evaluate("element => element.localName")
-    exposed = await locator.is_visible() and await asyncio.wait_for(locator.evaluate("""element => new Promise(resolve => {
+    exposed = await locator.is_visible() and await asyncio.wait_for(
+        locator.evaluate("""element => new Promise(resolve => {
         const observer = new IntersectionObserver(entries => {
             const rect = entries[0].intersectionRect;
             observer.disconnect(); resolve(rect.width > 0 && rect.height > 0);
         });
         observer.observe(element);
-    })"""), timeout=3)
+    })"""),
+        timeout=3,
+    )
     observation["exposed"] = exposed
     if (target.get("tagName") and tag.lower() != target["tagName"].lower()) or not exposed:
         result["status"] = "state-not-reproduced"
@@ -450,14 +463,19 @@ async def _observe_selection(frame, target: dict, selector: str) -> dict:
         while (text.length < 2000 && visited++ < 4000 && (next = walker.nextNode())) text += next.textContent.slice(0, 2000 - text.length);
         return text.replace(/\\s+/g, ' ').trim().slice(0, 2000);
     }""")
-    if target.get("text") is not None and observation["text"] != re.sub(r"\s+", " ", target["text"]).strip():
+    if (
+        target.get("text") is not None
+        and observation["text"] != re.sub(r"\s+", " ", target["text"]).strip()
+    ):
         observation["differences"].append("text")
     for name, expected in target.get("attributes", {}).items():
         actual = await locator.get_attribute(name)
         observation["attributes"][name] = actual
         if actual != expected:
             observation["differences"].append(name)
-    observation["hasCapturedState"] = target.get("text") is not None or bool(target.get("attributes"))
+    observation["hasCapturedState"] = target.get("text") is not None or bool(
+        target.get("attributes")
+    )
     return {"resolution": result, "observation": observation}
 
 
@@ -479,7 +497,9 @@ async def _inspect_browser(html: str, request: dict, settings) -> dict:
                         failure = f"Action {performed + 1} ({action['kind']} {action['selector']}): {str(error)[:300]}"
                         break
                 if request.get("scroll"):
-                    await session.frame.evaluate("position => scrollTo(position.x, position.y)", request["scroll"])
+                    await session.frame.evaluate(
+                        "position => scrollTo(position.x, position.y)", request["scroll"]
+                    )
                 await asyncio.sleep(0.2)
                 selector = request["selector"]
                 locator = session.frame.locator(selector)
@@ -491,10 +511,17 @@ async def _inspect_browser(html: str, request: dict, settings) -> dict:
                 focus_resolution = None
                 replacement_resolution = None
                 if request.get("replacementSelector"):
-                    replacement = await _observe_selection(session.frame, {}, request["replacementSelector"])
-                    replacement_resolution = {**replacement["resolution"], "selector": request["replacementSelector"]}
+                    replacement = await _observe_selection(
+                        session.frame, {}, request["replacementSelector"]
+                    )
+                    replacement_resolution = {
+                        **replacement["resolution"],
+                        "selector": request["replacementSelector"],
+                    }
                 if request.get("selectionContext"):
-                    selected = await _observe_selection(session.frame, request["selectionContext"], selector)
+                    selected = await _observe_selection(
+                        session.frame, request["selectionContext"], selector
+                    )
                     if status == "resolved":
                         status = selected["resolution"]["status"]
                     observations.append(selected["observation"])
@@ -507,15 +534,26 @@ async def _inspect_browser(html: str, request: dict, settings) -> dict:
                     selected = await _observe_selection(session.frame, focus, focus["selector"])
                     focus_resolution = selected["resolution"]
                     observations.append(selected["observation"])
-                outcomes = resolutions + ([focus_resolution] if focus_resolution else []) + ([replacement_resolution] if replacement_resolution else [])
+                outcomes = (
+                    resolutions
+                    + ([focus_resolution] if focus_resolution else [])
+                    + ([replacement_resolution] if replacement_resolution else [])
+                )
                 if status == "resolved":
-                    status = next((item["status"] for item in outcomes if item["status"] != "resolved"), "resolved")
+                    status = next(
+                        (item["status"] for item in outcomes if item["status"] != "resolved"),
+                        "resolved",
+                    )
                 scene_status = "unestablished"
                 if status != "resolved":
                     scene_status = "state-not-reproduced"
                 elif observations and all(item.get("hasCapturedState") for item in observations):
                     different = any(item["differences"] for item in observations)
-                    scene_status = ("changed" if request["target"] == "current" else "state-not-reproduced") if different else "observed-context-matches"
+                    scene_status = (
+                        ("changed" if request["target"] == "current" else "state-not-reproduced")
+                        if different
+                        else "observed-context-matches"
+                    )
                 try:
                     tree = await locator.aria_snapshot(timeout=3000) if count == 1 else ""
                 except Exception as error:
@@ -529,16 +567,27 @@ async def _inspect_browser(html: str, request: dict, settings) -> dict:
                 )
                 return {
                     "artifactHash": artifact_hash(html),
-                    "resolution": {"status": status, "matches": count,
-                                   "reason": request.get("unreproducedReason") or failure},
+                    "resolution": {
+                        "status": status,
+                        "matches": count,
+                        "reason": request.get("unreproducedReason") or failure,
+                    },
                     "selectionResolutions": resolutions,
                     "focusResolution": focus_resolution,
                     "replacementResolution": replacement_resolution,
-                    "scene": {"status": scene_status, "observations": observations,
-                              "originalSceneVerified": False, "scope": "captured-observable-context-only",
-                              "limitation": "Unique targets and matching bounded text/state do not establish arbitrary application memory. Current-build differences may be intended edits; establish the original observable scene against baseline separately."},
-                    "image": {"provenance": "server-reconstructed", "mimeType": "image/png",
-                              "base64": base64.b64encode(pixels).decode("ascii"), **viewport},
+                    "scene": {
+                        "status": scene_status,
+                        "observations": observations,
+                        "originalSceneVerified": False,
+                        "scope": "captured-observable-context-only",
+                        "limitation": "Unique targets and matching bounded text/state do not establish arbitrary application memory. Current-build differences may be intended edits; establish the original observable scene against baseline separately.",
+                    },
+                    "image": {
+                        "provenance": "server-reconstructed",
+                        "mimeType": "image/png",
+                        "base64": base64.b64encode(pixels).decode("ascii"),
+                        **viewport,
+                    },
                     "actionsPerformed": performed,
                     "actionFailure": failure,
                     "accessibilityTree": tree[:INSPECT_TREE_CHARACTERS],
@@ -558,14 +607,31 @@ def _selection_context(value: dict, *, located: bool = False) -> dict:
         raise ValueError("Selection context and attributes must be objects.")
     result = {
         "tagName": _string(value.get("tagName"), "Selection tag", 1, 64),
-        "text": _string(value["text"], "Selection text", 0, 2000) if value.get("text") is not None else None,
-        "attributes": {name: _string(item, "Selection state", 0, 500)
-                       for name, item in value.get("attributes", {}).items()
-                       if name in ("aria-expanded", "aria-selected", "aria-checked", "aria-pressed", "aria-label", "title", "alt", "disabled", "checked")},
+        "text": _string(value["text"], "Selection text", 0, 2000)
+        if value.get("text") is not None
+        else None,
+        "attributes": {
+            name: _string(item, "Selection state", 0, 500)
+            for name, item in value.get("attributes", {}).items()
+            if name
+            in (
+                "aria-expanded",
+                "aria-selected",
+                "aria-checked",
+                "aria-pressed",
+                "aria-label",
+                "title",
+                "alt",
+                "disabled",
+                "checked",
+            )
+        },
     }
     if located:
-        result.update(nodeId=_string(value.get("nodeId"), "Selection node", 1, 128),
-                      selector=_string(value.get("selector"), "Selection selector", 1, 1000))
+        result.update(
+            nodeId=_string(value.get("nodeId"), "Selection node", 1, 128),
+            selector=_string(value.get("selector"), "Selection selector", 1, 1000),
+        )
     return result
 
 
@@ -576,7 +642,11 @@ def validate_inspection(request: dict) -> dict:
     if context is not None:
         context = _selection_context(context)
     targets = request.get("selectionTargets") or []
-    if not isinstance(targets, list) or len(targets) > 32 or any(not isinstance(item, dict) for item in targets):
+    if (
+        not isinstance(targets, list)
+        or len(targets) > 32
+        or any(not isinstance(item, dict) for item in targets)
+    ):
         raise ValueError("At most 32 selection targets are supported.")
     targets = [_selection_context(item, located=True) for item in targets]
     focus = request.get("selectionFocus")
@@ -588,19 +658,27 @@ def validate_inspection(request: dict) -> dict:
     scroll = request.get("scroll")
     if scroll is not None:
         if not isinstance(scroll, dict) or any(
-            type(scroll.get(key)) not in (int, float) or not -10_000_000 <= scroll[key] <= 10_000_000
+            type(scroll.get(key)) not in (int, float)
+            or not -10_000_000 <= scroll[key] <= 10_000_000
             for key in ("x", "y")
         ):
             raise ValueError("Invalid scene scroll position.")
         scroll = {key: scroll[key] for key in ("x", "y")}
     viewport = request.get("viewport")
     if viewport is not None:
-        if not isinstance(viewport, dict) or any(
-            type(viewport.get(key)) not in (int, float)
-            or not 1 <= viewport[key] <= 16384 or int(viewport[key]) != viewport[key]
-            for key in ("width", "height")
-        ) or viewport["width"] * viewport["height"] > 16_000_000:
-            raise ValueError("Inspection viewport must fit 16384 pixels per edge and 16 million pixels.")
+        if (
+            not isinstance(viewport, dict)
+            or any(
+                type(viewport.get(key)) not in (int, float)
+                or not 1 <= viewport[key] <= 16384
+                or int(viewport[key]) != viewport[key]
+                for key in ("width", "height")
+            )
+            or viewport["width"] * viewport["height"] > 16_000_000
+        ):
+            raise ValueError(
+                "Inspection viewport must fit 16384 pixels per edge and 16 million pixels."
+            )
         viewport = {key: int(viewport[key]) for key in ("width", "height")}
     return {
         "target": target,
@@ -608,10 +686,14 @@ def validate_inspection(request: dict) -> dict:
         "selectionTargets": targets,
         "scroll": scroll,
         "selectionContext": context,
-        "replacementSelector": _string(request["replacementSelector"], "Replacement selector", 1, 1000)
-        if request.get("replacementSelector") else None,
+        "replacementSelector": _string(
+            request["replacementSelector"], "Replacement selector", 1, 1000
+        )
+        if request.get("replacementSelector")
+        else None,
         "unreproducedReason": _string(request["unreproducedReason"], "Reproduction limit", 1, 500)
-        if request.get("unreproducedReason") else None,
+        if request.get("unreproducedReason")
+        else None,
         "viewport": viewport,
         "clock": _clock(request.get("clock")),
         "actions": _actions(request.get("actions") or []),

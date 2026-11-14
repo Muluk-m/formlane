@@ -36,10 +36,23 @@ def summary(selection: dict | None) -> dict | None:
         "selectionId": selection["selectionId"],
         "versionId": selection["versionId"],
         "kind": selection["evidence"]["kind"],
-        "targets": [{"tagName": item["tagName"], "text": item["text"][:200],
-                     "instance": item.get("instance")} for item in targets[:4]],
-        "focus": ({"nodeId": focus(selection)["nodeId"], "tagName": focus(selection)["tagName"],
-                   "text": focus(selection)["text"][:200]} if focus(selection) else None),
+        "targets": [
+            {
+                "tagName": item["tagName"],
+                "text": item["text"][:200],
+                "instance": item.get("instance"),
+            }
+            for item in targets[:4]
+        ],
+        "focus": (
+            {
+                "nodeId": focus(selection)["nodeId"],
+                "tagName": focus(selection)["tagName"],
+                "text": focus(selection)["text"][:200],
+            }
+            if focus(selection)
+            else None
+        ),
         "hasImage": bool(selection.get("image")),
         "sourceHash": selection["sourceHash"],
     }

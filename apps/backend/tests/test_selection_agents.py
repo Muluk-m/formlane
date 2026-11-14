@@ -2,37 +2,54 @@
 
 import base64
 import copy
-import json
 import io
+import json
 from types import SimpleNamespace
 
-import pytest
 from crewai.llms.providers.openai.completion import OpenAICompletion
 from openai.types.chat import ChatCompletionChunk
 from PIL import Image
+from test_agents import Checkpoints
 
 from formlane.delivery._crewai import ObservedOpenAI
 from formlane.delivery.stages import Delivery
 from formlane.delivery.tools import tools_for_stage
 from formlane.delivery.workspace import Runtime
 from formlane.project import artifact_hash, create_source, source_hash
-from test_agents import Checkpoints
 
 _pixels = io.BytesIO()
 Image.new("RGB", (1, 1), "red").save(_pixels, format="PNG")
-IMAGE = {"provenance": "client-captured", "mimeType": "image/png", "base64": base64.b64encode(_pixels.getvalue()).decode(), "width": 1, "height": 1}
+IMAGE = {
+    "provenance": "client-captured",
+    "mimeType": "image/png",
+    "base64": base64.b64encode(_pixels.getvalue()).decode(),
+    "width": 1,
+    "height": 1,
+}
 
 
 def selection(source):
     return {
-        "selectionId": "selection-1", "projectId": "project", "versionId": "baseline",
-        "sourceHash": source_hash(source), "canonicalArtifactHash": artifact_hash("baseline"),
-        "evidence": {"kind": "element", "element": {
-            "nodeId": "node-1", "sourceId": None, "tagName": "button", "text": "Save",
-            "selector": "#save", "attributes": {}, "styles": {},
-            "viewport": {"width": 1280, "height": 720}, "scroll": {"x": 0, "y": 0},
-            "instance": {"label": "Second card", "context": "Ada"},
-        }},
+        "selectionId": "selection-1",
+        "projectId": "project",
+        "versionId": "baseline",
+        "sourceHash": source_hash(source),
+        "canonicalArtifactHash": artifact_hash("baseline"),
+        "evidence": {
+            "kind": "element",
+            "element": {
+                "nodeId": "node-1",
+                "sourceId": None,
+                "tagName": "button",
+                "text": "Save",
+                "selector": "#save",
+                "attributes": {},
+                "styles": {},
+                "viewport": {"width": 1280, "height": 720},
+                "scroll": {"x": 0, "y": 0},
+                "instance": {"label": "Second card", "context": "Ada"},
+            },
+        },
         "sourceResolutions": [{"nodeId": "node-1", "status": "unmapped", "reason": "dynamic"}],
         "image": copy.deepcopy(IMAGE),
     }
@@ -42,12 +59,34 @@ def make_runtime():
     source = create_source("vanilla")
     source["files"]["index.html"] += '<button id="save">Save</button>'
     attached = selection(source)
-    context = {"runId": "run", "projectId": "project", "idea": "old idea",
-               "request": "Change only Ada's button", "previousSource": source,
-               "previousChecks": None, "selection": attached}
+    context = {
+        "runId": "run",
+        "projectId": "project",
+        "idea": "old idea",
+        "request": "Change only Ada's button",
+        "previousSource": source,
+        "previousChecks": [
+            {
+                "name": "Saved control label",
+                "actions": [],
+                "assertion": {"kind": "text", "selector": "#save", "expected": "Save"},
+            },
+            {
+                "name": "Unique saved control",
+                "actions": [],
+                "assertion": {"kind": "count", "selector": "#save", "expected": "1"},
+            },
+        ],
+        "selection": attached,
+    }
     events = []
-    rt = Runtime(SimpleNamespace(), context, Checkpoints(),
-                 lambda kind, data: events.append((kind, data)), lambda: False)
+    rt = Runtime(
+        SimpleNamespace(),
+        context,
+        Checkpoints(),
+        lambda kind, data: events.append((kind, data)),
+        lambda: False,
+    )
     return rt, attached, events
 
 
@@ -71,23 +110,66 @@ def test_native_provider_receives_selection_pixels_and_replay_preserves_original
 
     def transport(**kwargs):
         observed.append(copy.deepcopy(kwargs["messages"]))
-        yield ChatCompletionChunk(id="one", created=0, model="model", object="chat.completion.chunk",
-            choices=[{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": "route", "type": "function",
-                "function": {"name": "choose_route", "arguments": json.dumps({"route": "plan", "reason": "Behavior change"})}}]},
-                "finish_reason": "tool_calls"}])
+        yield ChatCompletionChunk(
+            id="one",
+            created=0,
+            model="model",
+            object="chat.completion.chunk",
+            choices=[
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "route",
+                                "type": "function",
+                                "function": {
+                                    "name": "choose_route",
+                                    "arguments": json.dumps(
+                                        {"route": "plan", "reason": "Behavior change"}
+                                    ),
+                                },
+                            }
+                        ]
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+        )
 
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=transport)))
     monkeypatch.setattr(OpenAICompletion, "_get_sync_client", lambda _: client)
-    model = ObservedOpenAI(model="model", api_key="controlled", custom_openai=True, stream=True,
-                           max_retries=0, additional_params={"parallel_tool_calls": False}).bind(rt)
+    model = ObservedOpenAI(
+        model="model",
+        api_key="controlled",
+        base_url="http://127.0.0.1:1/v1",
+        custom_openai=True,
+        stream=True,
+        max_retries=0,
+        additional_params={"parallel_tool_calls": False},
+    ).bind(rt)
     delivery = Delivery(rt, lambda effort: model)
     original = copy.deepcopy(rt.workspace)
     assert delivery.route() == "plan"
-    images = [part for message in observed[0] if isinstance(message.get("content"), list)
-              for part in message["content"] if part["type"] == "image_url"]
-    assert images == [{"type": "image_url", "image_url": {"url": "data:image/png;base64," + IMAGE["base64"], "detail": "high"}}]
-    assert all(IMAGE["base64"] not in message["content"] for message in observed[0]
-               if isinstance(message.get("content"), str))
+    images = [
+        part
+        for message in observed[0]
+        if isinstance(message.get("content"), list)
+        for part in message["content"]
+        if part["type"] == "image_url"
+    ]
+    assert images == [
+        {
+            "type": "image_url",
+            "image_url": {"url": "data:image/png;base64," + IMAGE["base64"], "detail": "high"},
+        }
+    ]
+    assert all(
+        IMAGE["base64"] not in message["content"]
+        for message in observed[0]
+        if isinstance(message.get("content"), str)
+    )
     attachment["image"]["base64"] = "changed"
     rt.workspace = original
     assert delivery.route() == "plan"
@@ -104,7 +186,10 @@ def test_stale_selection_reference_cannot_be_rebound_to_current():
 def test_baseline_and_client_images_cannot_satisfy_current_visual_approval():
     rt, _, _ = make_runtime()
     with rt.scoped("review-0", "david"):
-        value = rt.invoke(rt.record_review, {"accepted": True, "findings": "Looks right", "visual_evidence_ids": ["selection-1"]})
+        value = rt.invoke(
+            rt.record_review,
+            {"accepted": True, "findings": "Looks right", "visual_evidence_ids": ["selection-1"]},
+        )
     assert "error" in value
     assert "visual" in value["error"]
 
@@ -120,9 +205,13 @@ def test_public_harness_rejects_client_only_review_and_recovers_frozen_selection
     assert recovered["failure"] is None and recovered["result"]
     assert recovered["result"]["html"] == INPUTS["html"]
     assert observed["context"]["selection"] == attached
-    rejected = [event["data"]["output"] for event in recovered["events"]
-                if event["type"] == "tool_end" and event["data"].get("name") == "record_review"
-                and "error" in event["data"]["output"]]
+    rejected = [
+        event["data"]["output"]
+        for event in recovered["events"]
+        if event["type"] == "tool_end"
+        and event["data"].get("name") == "record_review"
+        and "error" in event["data"]["output"]
+    ]
     assert len(rejected) == 2
     assert all("visual" in item["error"] for item in rejected)
     assert any(request["native_image_count"] >= 3 for request in observed["provider_requests"])
@@ -137,8 +226,19 @@ def test_public_harness_rejects_stale_current_screenshot_before_visual_approval(
 
     observed = observe_scenario("quick_edit", monkeypatch, stale_inspection=True)
     assert observed["attempts"][-1]["result"]
-    errors = [json.loads(item["content"]).get("error", "")
-              for request in observed["provider_requests"] for item in request["tool_results"]]
+    errors = [
+        json.loads(item["content"]).get("error", "")
+        for request in observed["provider_requests"]
+        for item in request["tool_results"]
+    ]
     assert any("does not match the requested artifact" in error for error in errors)
-    assert len([item for item in observed["external_outcomes"]
-                if item["kind"] == "browser" and item["payload"].get("mode") == "inspect"]) == 3
+    assert (
+        len(
+            [
+                item
+                for item in observed["external_outcomes"]
+                if item["kind"] == "browser" and item["payload"].get("mode") == "inspect"
+            ]
+        )
+        == 3
+    )

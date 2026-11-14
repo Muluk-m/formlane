@@ -5,10 +5,10 @@ DBOS tables each use disposable, independently named schemas. Only provider
 transport is synthetic; the native CrewAI stage executor and tool execution are real.
 """
 
-import copy
 import base64
-import io
+import copy
 import hashlib
+import io
 import json
 import multiprocessing
 import time
@@ -19,13 +19,13 @@ from uuid import uuid4
 
 import pytest
 from dbos import DBOS, DBOSClient
-from PIL import Image
-from test_api import auth
-from test_compiler import settings as compiler_settings
-from test_selection_api import selection_api  # noqa: F401 - shared public API fixture
 from dbos import error as dbos_error
+from PIL import Image
 from sqlalchemy import event, text
 from sqlalchemy.exc import DBAPIError
+from test_api import auth
+from test_compiler import settings as compiler_settings
+from test_selection_api import selection_api as selection_api
 from test_storage import start
 
 from formlane.durable_execution import (
@@ -125,28 +125,56 @@ def _native_child(settings_data, job, connection, mode):
                 index = runtime.scope["llm_index"] - 1
                 if context.get("selection"):
                     messages = args[0]
-                    images = [part for message in messages if isinstance(message.get("content"), list)
-                              for part in message["content"] if part["type"] == "image_url"]
+                    images = [
+                        part
+                        for message in messages
+                        if isinstance(message.get("content"), list)
+                        for part in message["content"]
+                        if part["type"] == "image_url"
+                    ]
                     original = context["selection"]["image"]
-                    assert images[0]["image_url"]["url"] == f"data:{original['mimeType']};base64,{original['base64']}"
+                    assert (
+                        images[0]["image_url"]["url"]
+                        == f"data:{original['mimeType']};base64,{original['base64']}"
+                    )
                     _record(store, "selection-image")
                     if index > 0:
                         assert len(images) == 2
                         current_url = images[1]["image_url"]["url"]
                         assert current_url.startswith("data:image/png;base64,")
-                        _record(store, "current-image-" + hashlib.sha256(current_url.encode()).hexdigest())
+                        _record(
+                            store,
+                            "current-image-" + hashlib.sha256(current_url.encode()).hexdigest(),
+                        )
                 _record(store, f"model-{index}")
                 if index == 0:
                     calls = copy.deepcopy(TOOL_CALL)
                     if context.get("selection"):
-                        calls.insert(0, {"id": "frozen-selection", "type": "function", "function": {
-                            "name": "read_selection", "arguments": "{}"}})
-                        calls.extend([
-                            {"id": "build-current", "type": "function", "function": {
-                                "name": "build_project", "arguments": "{}"}},
-                            {"id": "inspect-current", "type": "function", "function": {
-                                "name": "inspect_preview", "arguments": json.dumps({"target": "current"})}},
-                        ])
+                        calls.insert(
+                            0,
+                            {
+                                "id": "frozen-selection",
+                                "type": "function",
+                                "function": {"name": "read_selection", "arguments": "{}"},
+                            },
+                        )
+                        calls.extend(
+                            [
+                                {
+                                    "id": "build-current",
+                                    "type": "function",
+                                    "function": {"name": "build_project", "arguments": "{}"},
+                                },
+                                {
+                                    "id": "inspect-current",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "inspect_preview",
+                                        "arguments": json.dumps({"target": "current"}),
+                                    },
+                                },
+                            ]
+                        )
                     return calls
                 if mode == "kill-model":
                     _block(connection, "unfinished-model")
@@ -285,11 +313,18 @@ def test_selection_images_and_context_survive_native_process_death(
     selection_api, pg_store, project, owner, durable_database
 ):
     client, route, editor, payload = selection_api
-    durable_database = durable_database.model_copy(update={"compiler_command": compiler_settings().compiler_command})
+    durable_database = durable_database.model_copy(
+        update={"compiler_command": compiler_settings().compiler_command}
+    )
     pixels = io.BytesIO()
     Image.new("RGB", (3, 2), "blue").save(pixels, format="PNG")
-    payload["selection"]["image"] = {"provenance": "client-captured", "mimeType": "image/png",
-        "base64": base64.b64encode(pixels.getvalue()).decode(), "width": 3, "height": 2}
+    payload["selection"]["image"] = {
+        "provenance": "client-captured",
+        "mimeType": "image/png",
+        "base64": base64.b64encode(pixels.getvalue()).decode(),
+        "width": 3,
+        "height": 2,
+    }
     submitted = client.post(route + "/chat", json=payload, headers=auth(owner))
     assert submitted.status_code == 202
     job = pg_store.claim_run("selection-durable")
@@ -316,6 +351,7 @@ def test_selection_images_and_context_survive_native_process_death(
     image_effects = [count for name, count in counts.items() if name.startswith("current-image-")]
     assert image_effects == [2]
     assert pg_store.harness_context(job["id"], replacement["lease_token"])["selection"] == original
+    pg_store.cancel_run(project["id"], owner, job["id"])
     public = client.get(route + f"/runs/{job['id']}/events", headers=auth(owner)).text
     assert original["image"]["base64"] not in public
     assert original["evidence"]["element"]["text"] not in public
@@ -553,7 +589,9 @@ def test_changed_replay_source_rejects_history_before_reusing_operations(
     assert incompatible.value.status == 409
 
 
-def test_committed_result_recovers_with_unchanged_manifest(pg_store, project, owner, durable_database):
+def test_committed_result_recovers_with_unchanged_manifest(
+    pg_store, project, owner, durable_database
+):
     job = start(pg_store, project, owner)
     with _producer(durable_database, job, "finish") as (_, receive):
         original = _receive(receive)

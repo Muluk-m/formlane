@@ -83,7 +83,6 @@ class InspectionViewport(NoArgs):
         return self
 
 
-
 class Clock(NoArgs):
     now: str = Field(min_length=10, max_length=40)
     timezone: str | None = None
@@ -115,7 +114,9 @@ class StructuralChange(NoArgs):
     @model_validator(mode="after")
     def supported_change(self):
         if not self.request_quote.strip() or not self.justification.strip():
-            raise ValueError("Explain the requested structural change using the original comment and inspected source.")
+            raise ValueError(
+                "Explain the requested structural change using the original comment and inspected source."
+            )
         if any(not is_project_path(path) for path in self.source_paths):
             raise ValueError("Use safe relative source paths.")
         if (self.disposition == "replaced") != bool(self.replacement_selector):

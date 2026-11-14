@@ -20,9 +20,7 @@ def installed_package(tmp_path, monkeypatch):
     return target
 
 
-def test_manifest_is_portable_and_ignores_credentials_and_generated_caches(
-    tmp_path, monkeypatch
-):
+def test_manifest_is_portable_and_ignores_credentials_and_generated_caches(tmp_path, monkeypatch):
     settings = Settings(
         database_url="postgresql+psycopg://db-user:db-password@localhost/formlane_test",
         openai_api_key="provider-key-never-recorded",
