@@ -1,3 +1,4 @@
+import type { SelectionSubmission } from '@atoms-demo/contracts'
 import type { ProjectSource } from '@atoms-demo/core/project'
 import { useI18n } from '@atoms-demo/i18n/react'
 import { Button } from '@atoms-demo/ui/components/button'
@@ -9,8 +10,11 @@ import {
   SmartPhone01Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
+import { useQuery } from '@tanstack/react-query'
 import { type ReactNode, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProjectBuild } from '../features/projects/workspace'
+import { editorVersionQuery } from '../features/projects/queries'
+import { SelectionPreview } from './SelectionPreview'
 import { formatBytes } from '../lib/format'
 import { highlightSource, sourceLanguage } from '../lib/highlight'
 
@@ -35,6 +39,12 @@ export function Stage({
   candidateNotice,
   onRestore,
   restoreDisabled,
+  projectId,
+  versionId,
+  selection: visualSelection,
+  onSelection,
+  onSelectionInvalidated,
+  onPrepareSelection,
 }: {
   html: string
   source: ProjectSource | null
@@ -56,11 +66,18 @@ export function Stage({
   candidateNotice?: ReactNode
   onRestore?: () => void
   restoreDisabled?: boolean
+  projectId: string
+  versionId: string | null
+  selection: SelectionSubmission | null
+  onSelection: (selection: SelectionSubmission | null) => void
+  onSelectionInvalidated: () => void
+  onPrepareSelection: (prepare: (() => Promise<SelectionSubmission>) | null) => void
 }) {
   const { t, locale } = useI18n()
   const [selection, setSelection] = useState<string | null>(null)
   const [copyError, setCopyError] = useState(false)
   const [previewRevision, setPreviewRevision] = useState(0)
+  const editor = useQuery({ ...editorVersionQuery(projectId, versionId ?? ''), enabled: Boolean(versionId) })
   const paths = useMemo(
     () => [...new Set([...Object.keys(source?.files ?? {}), ...Object.keys(drafts)])].sort(),
     [source, drafts],
@@ -194,8 +211,26 @@ export function Stage({
       <div className="min-h-0 min-w-0 flex-1 bg-surface-sunken p-2 sm:p-3">
         <TabsContent value="preview" keepMounted className="h-full min-h-0 data-[hidden]:hidden">
           <div className="flex h-full min-w-0 items-stretch justify-center">
-            {html ? (
-              <PreviewFrame key={`${previewRevision}:${html}`} html={html} device={device} />
+            {versionId && editor.isPending ? (
+              <p role="status" className="p-6 text-sm text-muted-foreground">{t('atoms.selection.loading')}</p>
+            ) : versionId && editor.data ? (
+              <SelectionPreview
+                key={`${versionId}:${previewRevision}`}
+                artifact={editor.data}
+                device={device}
+                selection={visualSelection}
+                onSelection={onSelection}
+                onInvalidated={onSelectionInvalidated}
+                onPrepare={onPrepareSelection}
+              />
+            ) : html ? (
+              <div className="flex h-full w-full flex-col gap-2">
+                {versionId && editor.isError && <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-destructive">
+                  {t('atoms.selection.unavailable')}
+                  <Button size="sm" variant="outline" onClick={() => void editor.refetch()}>{t('atoms.selection.retry')}</Button>
+                </div>}
+                <PreviewFrame key={`${previewRevision}:${html}`} html={html} device={device} />
+              </div>
             ) : (
               <div className="grid h-full w-full place-items-center rounded-xl border border-dashed bg-card p-6 text-center text-muted-foreground sm:p-8">
                 <p className="max-w-sm">{t('atoms.emptyPreview')}</p>
