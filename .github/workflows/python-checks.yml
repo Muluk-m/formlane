@@ -48,6 +48,7 @@ jobs:
       DATABASE_URL: postgresql+psycopg://postgres:${{ github.run_id }}@127.0.0.1:5432/formlane_test
       TEST_DATABASE_URL: postgresql+psycopg://postgres:${{ github.run_id }}@127.0.0.1:5432/formlane_test
       BROWSER_EXECUTABLE_PATH: /opt/google/chrome/chrome
+      FORMLANE_CHROME_VERSION: "156.0.8078.79"
       COMPILER_COMMAND: '["node", "${{ github.workspace }}/apps/compiler/dist/index.js"]'
       OTEL_SDK_DISABLED: "true"
       CREWAI_TELEMETRY_ENABLED: "false"
@@ -70,6 +71,14 @@ jobs:
       - run: pnpm --filter @formlane/compiler build
       - run: uv sync --frozen --project apps/backend
       - run: uv run --project apps/backend ruff check apps/backend apps/compiler/tests apps/web/tests
+      - name: Install qualified runtime Chrome
+        run: |
+          archive="$RUNNER_TEMP/formlane-chrome.deb"
+          curl --fail --show-error --silent --location \
+            "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${FORMLANE_CHROME_VERSION}-1_amd64.deb" \
+            --output "$archive"
+          sudo dpkg --install "$archive"
+          test "$("$BROWSER_EXECUTABLE_PATH" --version | awk '{print $3}')" = "$FORMLANE_CHROME_VERSION"
       - name: Prepare runner Chrome files
         run: |
           # Materialize cold image pages before the existing bounded browser launch.
