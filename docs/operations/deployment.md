@@ -2,9 +2,9 @@
 
 ## Current rollout status
 
-**Python/PostgreSQL with DBOS and execution compatibility `flow-v2` is the production authority.** Backend release `acceptance-recovery-4ff635eaa0b1` runs tested source `4ff635eaa0b151cab45e51f1a02fc8fd2c6c727e`, merged by [PR #43](https://github.com/Muluk-m/formlane/pull/43) as `80a1b569e513d12d471811de305416669926cd5f`. Both frontend origins report build `202611132054`, commit `4ff635eaa0b1`. See the [iterative acceptance activation](#iterative-acceptance-activation-2026-11-13) for current evidence and the earlier sections for historical releases.
+**Python/PostgreSQL with DBOS and execution compatibility `flow-v3` is the production authority.** Backend release `selection-49fb32b55169` and both frontend origins run merge commit `49fb32b55169fa9cb33c974923ac1bd9b7f0899f` from [PR #53](https://github.com/Muluk-m/formlane/pull/53). Frontend build identity is `202611141438` / `49fb32b55169`. The [visual selection activation](#production-activation-2026-11-14) records the schema transition, backup and production evidence; earlier sections describe historical releases.
 
-The current release passed exact-candidate CI and five real-provider scenarios on isolated port 8096 before activation at 2026-11-13 12:53:51 UTC. Production was drained to zero queued/running Runs, fully backed up and switched atomically with a persistent rollback command. Pages was deployed separately after backend activation. The sections below distinguish each release's evidence.
+The merged release passed backend and JavaScript CI before activation on 2026-11-14. Production was write-fenced, drained to zero queued/running Runs and fully backed up before migration to `0005_selection_evidence`. API, worker and compiler switched together; Pages followed, and writes reopened only after both frontend origins matched the release.
 
 | Resource                    | Current identity / boundary                                                                                                                     |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -14,7 +14,7 @@ The current release passed exact-candidate CI and five real-provider scenarios o
 | Reserved GCP address        | `formlane-api`, region `us-central1`                                                                                                            |
 | GCP identity                | `maqiqian@roibest.com`, project `roibest-internal-apps`                                                                                         |
 | Existing VM                 | `formlane-agent`, zone `us-central1-c`                                                                                                          |
-| Backend release             | `/opt/formlane/python-backend/releases/acceptance-recovery-4ff635eaa0b1` (`4ff635e`), selected by `current`                                     |
+| Backend release             | `/opt/formlane/python-backend/releases/selection-49fb32b55169` (`49fb32b55169`), selected by `current`                                          |
 | systemd services            | `formlane-python-api`, `formlane-python-worker`, non-root user `formlane`                                                                       |
 | Current service environment | Private `/etc/formlane/backend.env`; production database `formlane`                                                                             |
 | Databases                   | Production `formlane`; other-session staging `formlane_workflow_stage`; issue #32 acceptance `formlane_issue32_stage`; isolated `formlane_test` |
@@ -28,7 +28,7 @@ The [API](../../apps/backend/deploy/formlane-python-api.service) and [worker](..
 
 Port 8094 and `formlane-workflow-stage-api` / `formlane-workflow-stage-worker` belong to another session: their environment/worktree drop-in selects `followups-cce3c4a`, despite the older base ExecStart. Do not modify those services, drop-ins, environment or database for issue #32. Its acceptance uses `formlane_issue32_stage`, private mode-0600 `/etc/formlane/backend-issue32-stage.env`, and dedicated `formlane-issue32-stage-api` / `formlane-issue32-stage-worker` on loopback 8096. Provisioning and explicit migrations are complete; do not repeat them.
 
-Production's configured `COMPILER_COMMAND` remains the executable at `/opt/formlane/python-backend/releases/flow-v1-20261113b/apps/compiler/dist/index.js`. Preserve that exact command and the `durable-recovery-20261112` release/dependency graph it resolves through. Compiler relocation is outside this release. Current production API/worker ExecStart and WorkingDirectory use `/opt/formlane/python-backend/current`, and private `PYTHONPATH` follows `current/apps/backend/src`; no production unit drop-ins were observed. Existing `BUILD_COMMIT`/`BUILD_VERSION` are stale and cannot prove active source. Use `RELEASE_COMMIT`, the imported module path and process working directory.
+Production's `COMPILER_COMMAND` now selects `/opt/formlane/python-backend/releases/selection-49fb32b55169/apps/compiler/dist/index.js`, packaged with its own frozen pnpm dependency graph. Non-root vanilla and React TS probes proved canonical/editor parity before activation. Production API/worker ExecStart and WorkingDirectory use `/opt/formlane/python-backend/current`; private `PYTHONPATH`, `BUILD_COMMIT` and compiler configuration select the same release. Retain the previous release and its older compiler dependencies for recovery.
 
 ### Final cutover evidence
 
@@ -338,7 +338,7 @@ All branches were rewritten to replace the former company author/committer ident
 
 ## Visual selection release (`flow-v3`)
 
-[PR #53](https://github.com/Muluk-m/formlane/pull/53) implements [issue #46](https://github.com/Muluk-m/formlane/issues/46) and [ADR-0016](../adr/0016-version-bound-visual-selection.md). Its integration and staging work does not activate production. The current production identities above remain a separate release record.
+[PR #53](https://github.com/Muluk-m/formlane/pull/53) implements [issue #46](https://github.com/Muluk-m/formlane/issues/46) and [ADR-0016](../adr/0016-version-bound-visual-selection.md). It merged as `49fb32b55169fa9cb33c974923ac1bd9b7f0899f` and was activated in production after merged-commit CI passed; the staging and production records below distinguish their evidence.
 
 The candidate requires Alembic `0005_selection_evidence`, matching API/worker code and its own compiler supporting separate canonical/editor artifacts. Private selection evidence is stored on Runs and bounded summaries on Messages; existing rows remain nullable. Execution eligibility advances to `flow-v3`, while workflow/operation names and the `flow-v1/candidate/` reader namespace remain frozen. Older histories are readable but cannot execute or Resume under the new acceptance contract. Never edit saved manifests to bypass that boundary.
 
@@ -346,7 +346,7 @@ Every newly saved Version requires Alex validation, David validation and David's
 
 Isolated verification uses `/opt/formlane/python-backend/releases/issue46-selection-20261114` and dedicated `formlane_issue46_test` / `formlane_issue46_stage` databases. Real-provider staging is assigned loopback 8098 with separate issue46 services; it must not replace production or the other session's 8094 services. Keep the imported package and compiler command pinned to the exact tested release. Evidence belongs in private `/Users/qiqian/Backups/formlane/issue46-acceptance-20261114-bVgiVU`, outside source checkouts; owner capabilities and image bytes must not enter committed records.
 
-A future authorized activation must drain work, retain the complete PostgreSQL/DBOS backup and previous release, explicitly migrate with API/worker stopped, and activate compatible backend/compiler/frontend artifacts together. The earlier executable-only `flow-v2` rollback procedure does not apply to this schema transition: older readiness checks require `0004_version_acceptance_checks`. Database restoration or downgrade is a separate coordinated recovery decision that must account for new writes and selection evidence. Never restore a staging database into production.
+Activation must drain work, retain the complete PostgreSQL/DBOS backup and previous release, explicitly migrate with API/worker stopped, and activate compatible backend/compiler/frontend artifacts together. The earlier executable-only `flow-v2` rollback procedure does not apply to this schema transition: older readiness checks require `0004_version_acceptance_checks`. Database restoration or downgrade is a separate coordinated recovery decision that must account for new writes and selection evidence. Never restore a staging database into production.
 
 ### Isolated acceptance (2026-11-14)
 
@@ -378,3 +378,24 @@ The 60-file acceptance manifest has SHA-256 `4d8f649643f0451b7ea7cde11ed8e8f988b
 Subsequent CI on runner Chrome `157.0.8103.50` failed [structural review](https://github.com/Muluk-m/formlane/actions/runs/43562487208), [scene reconstruction and random-state](https://github.com/Muluk-m/formlane/actions/runs/43563610758), then [outline removal pixels](https://github.com/Muluk-m/formlane/actions/runs/43564390053). On the isolated VM, a 40-context native diagnostic passed 40/40 on runtime Chrome `156.0.8078.79`; the same diagnostic on `157.0.8103.50` returned a different seeded value once. That observation retained every expected native click event, unchanged document identity and no script error. CI now pins the exact runtime Google Chrome package while retaining every regression; this is browser qualification, not a claim that the application runtime was fixed or that every earlier failure has one cause.
 
 The separate diagnostic archive is `/Users/qiqian/Backups/formlane/issue46-browser-20261114-C4j3ql`, mode 0700 with files mode 0600. Its `SHA256SUMS` hash is `67971eff6df77570609d8cd4ef58da347cf40810185f3e204f1e91bb52a3a53f`; the original 60-file real-provider acceptance manifest remains unchanged.
+
+### Production activation (2026-11-14)
+
+Merge commit `49fb32b55169fa9cb33c974923ac1bd9b7f0899f` passed [backend CI 43566431078](https://github.com/Muluk-m/formlane/actions/runs/43566431078), including native browser/workspace and DBOS recovery gates, and [JavaScript CI 43566431227](https://github.com/Muluk-m/formlane/actions/runs/43566431227). The immutable source archive SHA-256 is `5ac4c7495d6f222f7d652027cca54a29cd66118aef16c22f46447d03c6cbdd75`.
+
+Writes were fenced at 06:37:08 UTC. With zero queued/running Runs, API and worker stopped and a complete PostgreSQL/DBOS backup was taken at `/var/lib/formlane/backups/pr53-selection-49fb32b55169/formlane.dump`, SHA-256 `89ff1bf51854a3cfe8674799210f37089af0f173c091bc90a61b728a8fe289d3`. `pg_restore --list` passed. The private directory also retains the previous environment, original Caddy configuration, activation helper and `record.json`. Previous release `acceptance-recovery-4ff635eaa0b1` remains available.
+
+Explicit Alembic and DBOS migration completed before the atomic release switch. The six business-table counts were unchanged: 26 projects, 514 messages, 44 versions, 73 runs, 8,459 events and 1,536 checkpoints. API/worker became healthy at 06:37:25 UTC. [Pages deployment 43567276191](https://github.com/Muluk-m/formlane/actions/runs/43567276191) passed both live-version checks. Writes reopened at 06:40:30 UTC after both origins returned commit `49fb32b55169`. The Python version probe initially received HTTP 403; curl on the same VM returned HTTP 200 and the correct identities, so the retained helper uses curl with the same mandatory identity assertions.
+
+The existing production project `e2a09f22-8b5c-41db-be89-baffc57121c5` retained its accepted version and opened the new editor without regeneration. Fresh production smoke evidence is retained privately at `/Users/qiqian/Backups/formlane/pr53-production-20261114-Ltz2Mc`; owner capabilities and captures must remain outside source control.
+
+| Production scenario       | Run and accepted Version               | Wall seconds | First file seconds | Committed model calls |
+| ------------------------- | -------------------------------------- | -----------: | -----------------: | --------------------: |
+| Fresh counter build       | `920c7c0a-cc64-42bd-93c2-33c89604448a` |      141.968 |             47.539 |                    19 |
+| Selected heading revision | `03ca3608-a332-4fa7-a1bf-d84b1445a4ad` |      102.966 |               none |                    15 |
+
+Both runs saved seven acceptance checks and passed Alex validation, David validation and explicit approval for the same accepted artifact, including two native current-build visual evidence IDs. Historical SSE suffixes matched exactly after cursors 60 and 43. The selected run persisted the original project/version attachment and used quick edit; there was no source-repair stage. Model counts include committed operations, not all provider transport attempts. The follow-up had no file-stream event; its source edit committed through a tool.
+
+Independent comparison proved that only the selected `h1` text changed in `index.html`; document title, JavaScript, CSS and every other source file were byte-identical. Browser reload retained v2. Desktop and the measured 388px mobile preview both passed 0 → 1 → 0 interaction checks, with visible title and controls. The review's separate native mobile evidence was 375×812. David explicitly marked the original baseline scene as not reproduced; this run does not claim a before/after pixel comparison. Current-build visual acceptance and the independent exact source comparison both passed.
+
+Publication [9rgjdv7s3v](https://formlane.nainma.online/p/9rgjdv7s3v) remained frozen on v1 while Current advanced to v2. Anonymous public HTML exactly matched v1, and its increment/reset controls worked after reload. The three captured desktop/mobile/selection images, HTTP/SSE records, acceptance proofs, activation receipt and helper/source archives are sealed by the 22-file `SHA256SUMS` manifest with SHA-256 `20a1e681c6d4cff494c83e3f87d4f2cbf0e31b9eec0411ed485d5e09cdd5152a`. Archive permissions are 0700/0600. Issue46 staging services were already stopped and disabled at final inventory; the other session's workflow staging services remained running.
