@@ -50,6 +50,14 @@ export interface SelectionScroll {
   y: number
 }
 
+/** Live CSS viewport boxes, independent of the immutable selection evidence. */
+export interface SelectionGeometry {
+  nodeId: string
+  rects: SelectionRect[]
+  viewport: SelectionViewport
+  scroll: SelectionScroll
+}
+
 export interface SelectionAncestor {
   nodeId: string
   sourceId: string | null
@@ -156,6 +164,7 @@ export type SelectionResult = {
 export type SelectionEvent =
   | SelectionEnvelope<'ready', { enabled: boolean; documentId: string }>
   | SelectionEnvelope<'selected', SelectionElementEvidence>
+  | SelectionEnvelope<'geometry', SelectionGeometry | null>
   | SelectionEnvelope<'cleared', null>
   | SelectionEnvelope<'invalidated', { nodeId: string }>
   | SelectionEnvelope<'error', { code: string; message: string }>

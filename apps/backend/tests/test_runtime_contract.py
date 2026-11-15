@@ -7,6 +7,7 @@ substitute an in-memory journal for that recovery evidence.
 
 import json
 from concurrent.futures import CancelledError
+from contextvars import ContextVar
 from threading import Event, get_ident
 from types import SimpleNamespace
 
@@ -209,14 +210,16 @@ def test_native_provider_retry_discards_partial_arguments_before_reusing_call_in
     assert journal.calls == [("flow-v1/build/llm-0", 0), ("flow-v1/build/llm-0", 1)]
 
 
-def test_native_batch_executes_nonterminal_tools_sequentially_on_provider_thread(monkeypatch):
+def test_native_batch_executes_nonterminal_tools_sequentially_with_context(monkeypatch):
     timeline = []
     tool_threads = []
-    provider_threads = []
+    scope = ContextVar("native_batch_scope", default=None)
+    provider_scopes = []
+    tool_scopes = []
     requests = []
 
     def transport(**kwargs):
-        provider_threads.append(get_ident())
+        provider_scopes.append(scope.get())
         requests.append(kwargs)
         if len(requests) == 1:
             # Deliberately violate the provider flag. Neither tool is terminal or
@@ -234,18 +237,26 @@ def test_native_batch_executes_nonterminal_tools_sequentially_on_provider_thread
 
     def write_file(path, content):
         tool_threads.append(get_ident())
+        tool_scopes.append(scope.get())
         timeline.append(("start", content))
         timeline.append(("finish", content))
         return f"Saved {content}"
 
     llm = native_model(monkeypatch, transport)
-    assert native_crew(llm, write_file, terminal=False).kickoff().raw == "Both saved"
+    token = scope.set("batch-scope")
+    try:
+        assert native_crew(llm, write_file, terminal=False).kickoff().raw == "Both saved"
+    finally:
+        scope.reset(token)
     assert requests[0]["parallel_tool_calls"] is False
     assert timeline == [
         ("start", "first"), ("finish", "first"),
         ("start", "second"), ("finish", "second"),
     ]
-    assert tool_threads == [provider_threads[0], provider_threads[0]]
+    # Flow nodes may use different pool threads; the tool batch stays serial.
+    assert tool_threads == [tool_threads[0], tool_threads[0]]
+    assert provider_scopes == ["batch-scope", "batch-scope"]
+    assert tool_scopes == ["batch-scope", "batch-scope"]
     assert [message["content"] for message in requests[1]["messages"] if message["role"] == "tool"] == [
         "Saved first", "Saved second"
     ]

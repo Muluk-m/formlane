@@ -86,6 +86,7 @@ def test_edit_keeps_live_scene_and_attachment_replacement_keeps_comment(workspac
     frame.locator("#scene-input").fill("Unsaved scene")
     count = frame.locator("#scene-count").inner_text()
     page.get_by_test_id("selection-edit").click()
+    expect(page.get_by_test_id("selection-edit")).to_have_attribute("aria-pressed", "true")
     frame.locator("#scene-action span").click()
     expect(frame.locator("#scene-input")).to_have_value("Unsaved scene")
     expect(frame.locator("#scene-count")).to_have_text(count)
@@ -99,6 +100,7 @@ def test_edit_keeps_live_scene_and_attachment_replacement_keeps_comment(workspac
     expect(page.get_by_test_id("selection-attachment")).to_have_count(0)
     expect(composer).to_have_value("Make only this action easier to find")
     page.get_by_test_id("selection-edit").click()
+    expect(page.get_by_test_id("selection-edit")).to_have_attribute("aria-pressed", "false")
     frame.locator("#scene-action").click()
     expect(frame.locator("#scene-count")).not_to_have_text(count)
     expect(frame.locator("#scene-input")).to_have_value("Unsaved scene")
@@ -107,7 +109,7 @@ def test_edit_keeps_live_scene_and_attachment_replacement_keeps_comment(workspac
 def test_layers_choose_the_same_instance_and_keep_hidden_rows_explicit(workspace):
     page = workspace
     page.get_by_test_id("selection-edit").click()
-    page.get_by_role("button", name="Layers", exact=True).click()
+    page.locator('button[aria-label="Layers"]').click()
     page.get_by_role("button", name="Expand Selection scene", exact=True).click()
     page.get_by_role("button", name="Expand Cards", exact=True).click()
     second = page.get_by_role("treeitem", name="Second card", exact=True)
@@ -398,7 +400,7 @@ def test_native_capture_verifies_surface_and_uploads_only_selected_pixels(
     page = workspace
     frame = page.frame_locator('[data-testid="preview-frame"] iframe')
     page.get_by_test_id("selection-edit").click()
-    page.get_by_role("button", name="Layers", exact=True).click()
+    page.locator('button[aria-label="Layers"]').click()
     page.get_by_role("button", name="Expand Selection scene", exact=True).click()
     layers = page.get_by_role("tree", name="Layers", exact=True)
     expect(layers).to_be_visible()
@@ -465,3 +467,61 @@ def test_native_capture_verifies_surface_and_uploads_only_selected_pixels(
         page.locator('[data-testid="preview-frame"] iframe').bounding_box()
         == preview_bounds
     )
+
+
+@pytest.mark.parametrize("width", [1440, 390])
+def test_inline_properties_bind_source_and_preserve_rejected_draft(workspace, width):
+    page = workspace
+    if width == 390:
+        page.set_viewport_size({"width": width, "height": 844})
+        page.get_by_test_id("workspace-preview").click()
+    requests = []
+
+    def reject(route):
+        requests.append(route.request.post_data_json)
+        route.fulfill(
+            status=409,
+            content_type="application/json",
+            body='{"error":"baseline changed"}',
+        )
+
+    page.route("**/api/projects/*/chat", reject)
+    page.get_by_test_id("selection-edit").click()
+    frame = page.frame_locator('[data-testid="preview-frame"] iframe')
+    target = frame.locator("#scene-action span")
+    original_size = target.evaluate("node => getComputedStyle(node).fontSize")
+    target.click()
+    editor = page.get_by_test_id("selection-floating-editor")
+    expect(editor).to_be_visible()
+    toolbar_bottom = page.get_by_test_id("selection-edit").evaluate(
+        "node => node.parentElement.parentElement.getBoundingClientRect().bottom"
+    )
+    bounds = page.get_by_test_id("preview-frame").bounding_box()
+    assert 0 <= bounds["y"] - toolbar_bottom <= 16
+    editor_bounds = editor.bounding_box()
+    assert editor_bounds["x"] >= bounds["x"]
+    assert editor_bounds["x"] + editor_bounds["width"] <= bounds["x"] + bounds["width"]
+    size = editor.get_by_role("combobox", name="Font size", exact=True)
+    size.fill("invalid-size")
+    size.press("Tab")
+    expect(page.get_by_test_id("selection-apply")).to_be_disabled()
+    size.fill("36px")
+    size.press("Tab")
+    page.get_by_test_id("selection-inline-comment").fill(
+        "Keep this exact action and behavior"
+    )
+    expect(page.get_by_test_id("selection-apply")).to_be_enabled()
+    assert target.evaluate("node => getComputedStyle(node).fontSize") == original_size
+    page.get_by_test_id("selection-apply").click()
+    expect(page.get_by_test_id("selection-inline-comment")).to_have_value(
+        "Keep this exact action and behavior"
+    )
+    expect(size).to_have_value("36px")
+    expect(page.get_by_test_id("selection-apply")).to_be_disabled()
+    assert len(requests) == 1
+    sent = requests[0]
+    assert sent["expectedVersionId"] == sent["selection"]["versionId"]
+    assert sent["selection"]["evidence"]["element"]["text"] == "Save scene"
+    assert '"font-size":"36px"' in sent["content"]
+    assert "Keep this exact action and behavior" in sent["content"]
+    assert target.evaluate("node => getComputedStyle(node).fontSize") == original_size

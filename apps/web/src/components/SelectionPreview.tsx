@@ -2,20 +2,29 @@ import type { EditorArtifact, SelectionSubmission } from '@atoms-demo/contracts'
 import type {
   SelectionChildrenPage,
   SelectionEvidence,
+  SelectionGeometry,
   SelectionRect,
 } from '@atoms-demo/core/selection'
 import { useI18n } from '@atoms-demo/i18n/react'
 import { Button } from '@atoms-demo/ui/components/button'
 import { FieldSet } from '@atoms-demo/ui/components/field'
-import { ArrowDown01Icon, CursorRectangleSelection01Icon } from '@hugeicons/core-free-icons'
+import {
+  ArrowDown01Icon,
+  Camera01Icon,
+  CursorRectangleSelection01Icon,
+  Layers01Icon,
+  Settings01Icon,
+} from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   createPreviewSelectionBridge,
   injectPreviewSelectionRuntime,
   type PreviewSelectionBridge,
 } from '../features/preview-selection'
 import { captureSelectionImage, mappedEvidence } from '../features/projects/selection'
+import { SelectionEditor } from './SelectionEditor'
 
 export type SelectionPreviewProps = {
   artifact: EditorArtifact
@@ -24,6 +33,11 @@ export type SelectionPreviewProps = {
   onSelection: (selection: SelectionSubmission | null) => void
   onInvalidated: () => void
   onPrepare: (prepare: (() => Promise<SelectionSubmission>) | null) => void
+  toolbar: HTMLDivElement | null
+  onEdit: (content: string) => Promise<void>
+  editDisabled: boolean
+  comment: string
+  setComment: (value: string) => void
 }
 
 export function SelectionPreview({
@@ -33,6 +47,11 @@ export function SelectionPreview({
   onSelection,
   onInvalidated,
   onPrepare,
+  toolbar,
+  onEdit,
+  editDisabled,
+  comment,
+  setComment,
 }: SelectionPreviewProps) {
   const { t } = useI18n()
   const frame = useRef<HTMLIFrameElement>(null)
@@ -46,6 +65,9 @@ export function SelectionPreview({
   const [editing, setEditing] = useState(false)
   const [layers, setLayers] = useState(false)
   const [includeHidden, setIncludeHidden] = useState(false)
+  const [geometry, setGeometry] = useState<SelectionGeometry | null>(null)
+  const [canvas, setCanvas] = useState<HTMLDivElement | null>(null)
+  const [inspectorOpen, setInspectorOpen] = useState(false)
   const [layersRevision, setLayersRevision] = useState(0)
   const [regionMode, setRegionMode] = useState(false)
   const [rectangle, setRectangle] = useState<SelectionRect | null>(null)
@@ -80,6 +102,7 @@ export function SelectionPreview({
   const clear = useCallback(() => {
     onSelection(null)
     setRectangle(null)
+    setGeometry(null)
   }, [onSelection])
   useEffect(() => {
     const iframe = frame.current
@@ -109,7 +132,8 @@ export function SelectionPreview({
         } else if (event.type === 'selected') {
           setRectangle(null)
           emit(event.payload)
-        } else if (event.type === 'cleared') clear()
+        } else if (event.type === 'geometry') setGeometry(event.payload)
+        else if (event.type === 'cleared') clear()
         else if (event.type === 'invalidated') {
           const current = latestSelection.current?.evidence
           const nodes =
@@ -268,6 +292,7 @@ export function SelectionPreview({
       const enabled = !editing
       await bridge.current?.enable(enabled)
       setEditing(enabled)
+      if (enabled) setInspectorOpen((canvas?.clientWidth ?? 0) >= 640)
       if (regionMode) cancelRegion()
     } catch {
       setError('error')
@@ -346,281 +371,318 @@ export function SelectionPreview({
   function selectNode(nodeId: string) {
     void bridge.current?.select(nodeId).catch(() => setError('error'))
   }
-  return (
-    <div className="flex h-full min-h-0 w-full flex-col gap-2">
-      {/* Selection details must not resize the viewport that defines region coordinates. */}
-      <div className="h-28 shrink-0 space-y-2 overflow-y-auto">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="icon-sm"
-            variant={editing ? 'default' : 'outline'}
-            disabled={!ready || capturing}
-            aria-pressed={editing}
-            aria-label={t(editing ? 'atoms.selection.done' : 'atoms.selection.edit')}
-            title={t(editing ? 'atoms.selection.done' : 'atoms.selection.edit')}
-            onClick={() => void toggleEdit()}
-            data-testid="selection-edit"
-          >
-            <HugeiconsIcon icon={CursorRectangleSelection01Icon} size={18} strokeWidth={1.5} />
-          </Button>
-          {editing && (
-            <>
-              <Button
-                size="sm"
-                variant="outline"
-                aria-pressed={layers}
-                onClick={() => setLayers(!layers)}
-              >
-                {t('atoms.selection.layers')}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                aria-pressed={regionMode}
-                disabled={capturing}
-                onClick={() => {
-                  if (regionMode) cancelRegion()
-                  else {
-                    rectangleBeforeDrawing.current = rectangle
-                    setRegionMode(true)
-                    setRectangle({ x: 20, y: 20, width: 160, height: 100 })
-                  }
-                }}
-                data-testid="selection-region"
-              >
-                {t('atoms.selection.region')}
-              </Button>
-              <span className="text-xs text-muted-foreground">{t('atoms.selection.hint')}</span>
-            </>
-          )}
-          {evidence && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={capturing}
-              onClick={() => void capture()}
-              data-testid="selection-capture"
-              title={t('atoms.selection.captureHint')}
-            >
-              {t(capturing ? 'atoms.selection.capturing' : 'atoms.selection.capture')}
-            </Button>
-          )}
-        </div>
-        {error && (
-          <p role="alert" className="text-xs text-destructive">
-            {t(`atoms.selection.${error}`)}
-          </p>
-        )}
-        {editing && selected && (
-          <nav
-            aria-label={t('atoms.selection.breadcrumbs')}
-            className="flex flex-wrap items-center gap-1"
-          >
-            {selected.ancestors.map((ancestor) => (
-              <Button
-                key={ancestor.nodeId}
-                variant="ghost"
-                size="sm"
-                onClick={() => selectNode(ancestor.nodeId)}
-              >
-                {ancestor.label || ancestor.tagName}
-              </Button>
-            ))}
-            <Button
-              size="sm"
-              variant="outline"
-              data-testid="selection-parent"
-              onClick={() => void bridge.current?.parent().catch(() => setError('error'))}
-            >
-              {t('atoms.selection.parent')}
-            </Button>
-          </nav>
-        )}
-        {previewFailed && (
-          <p role="alert" className="text-xs text-destructive">
-            {t('atoms.previewError')}
-          </p>
-        )}
-        {evidence?.kind === 'region' && (
-          <FieldSet className="flex-row flex-wrap gap-1" aria-label={t('atoms.selection.region')}>
-            <Button
-              size="sm"
-              variant={!evidence.focus ? 'secondary' : 'ghost'}
-              onClick={() => void chooseFocus(null)}
-            >
-              {t('atoms.selection.noFocus')}
-            </Button>
-            {evidence.elements.map((element) => (
-              <Button
-                key={element.nodeId}
-                size="sm"
-                variant={element.nodeId === evidence.focus?.nodeId ? 'secondary' : 'ghost'}
-                onClick={() => void chooseFocus(element.nodeId)}
-              >
-                {t('atoms.selection.focus', { label: element.instance.label || element.tagName })}
-              </Button>
-            ))}
-            {evidence.truncated && (
-              <p className="text-xs text-muted-foreground">{t('atoms.selection.truncated')}</p>
-            )}
-          </FieldSet>
-        )}
-        {regionMode && (
-          <p className="text-xs text-muted-foreground">{t('atoms.selection.regionHint')}</p>
-        )}
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-2 md:flex-row">
-        {editing && layers && bridge.current && (
-          <aside className="max-h-48 w-full shrink-0 overflow-auto rounded-lg border bg-background p-2 md:max-h-none md:w-52">
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-pressed={includeHidden}
-              onClick={() => setIncludeHidden(!includeHidden)}
-            >
-              {t('atoms.selection.hidden')}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setLayersRevision((value) => value + 1)}
-            >
-              {t('atoms.selection.refresh')}
-            </Button>
-            <div
-              role="tree"
-              aria-label={t('atoms.selection.layers')}
-              onKeyDown={(event) => {
-                if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
-                const rows = [
-                  ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-layer-node]'),
-                ]
-                const active = document.activeElement
-                const index = active instanceof HTMLButtonElement ? rows.indexOf(active) : -1
-                const next =
-                  event.key === 'Home'
-                    ? 0
-                    : event.key === 'End'
-                      ? rows.length - 1
-                      : Math.max(
-                          0,
-                          Math.min(rows.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)),
-                        )
-                event.preventDefault()
-                rows[next]?.focus()
-              }}
-            >
-              <LayerBranch
-                key={`${layersRevision}:${includeHidden}`}
-                connection={bridge.current}
-                parent={null}
-                includeHidden={includeHidden}
-                selectedId={selected?.nodeId ?? null}
-                onSelect={selectNode}
-                onError={() => setError('error')}
-              />
-            </div>
-          </aside>
-        )}
-        <div className="flex min-h-0 min-w-0 flex-1 justify-center overflow-hidden">
-          <div className={`device ${device} relative`} data-testid="preview-frame">
-            <iframe
-              ref={frame}
-              title={t('atoms.previewTitle')}
-              sandbox="allow-scripts allow-forms allow-popups"
-            />
-            {editing && !capturing && rectangle && (
-              <div
-                data-testid="selection-rectangle"
-                className="pointer-events-none absolute border-2 border-ring bg-info/10"
-                style={{
-                  left: rectangle.x,
-                  top: rectangle.y,
-                  width: rectangle.width,
-                  height: rectangle.height,
-                }}
-              />
-            )}
-            {regionMode && !capturing && (
-              <Button
-                variant="ghost"
-                aria-label={t('atoms.selection.region')}
-                data-testid="selection-region-surface"
-                className="absolute inset-0 h-full w-full cursor-crosshair rounded-none border-0 bg-transparent p-0 shadow-none hover:bg-transparent focus-visible:ring-2 focus-visible:ring-ring"
-                ref={(node) => node?.focus()}
-                onPointerDown={(event) => {
-                  if (event.button !== 0 || !event.isPrimary) return
-                  event.preventDefault()
-                  const bounds = event.currentTarget.getBoundingClientRect()
-                  drag.current = { x: event.clientX - bounds.left, y: event.clientY - bounds.top }
-                  event.currentTarget.setPointerCapture(event.pointerId)
-                  setRectangle({ ...drag.current, width: 0, height: 0 })
-                }}
-                onPointerMove={(event) => {
-                  if (!drag.current) return
-                  const bounds = event.currentTarget.getBoundingClientRect()
-                  const x = Math.max(0, Math.min(bounds.width, event.clientX - bounds.left))
-                  const y = Math.max(0, Math.min(bounds.height, event.clientY - bounds.top))
-                  setRectangle({
-                    x: Math.min(x, drag.current.x),
-                    y: Math.min(y, drag.current.y),
-                    width: Math.abs(x - drag.current.x),
-                    height: Math.abs(y - drag.current.y),
-                  })
-                }}
-                onPointerUp={() => {
-                  if (!drag.current) return
-                  drag.current = null
-                  if (rectangle) void chooseRegion(rectangle)
-                }}
-                onPointerCancel={cancelRegion}
-                onKeyDown={(event) => {
-                  if (event.key === 'Escape') {
-                    cancelRegion()
-                    return
-                  }
-                  if (['Enter', ' '].includes(event.key) && rectangle) {
-                    event.preventDefault()
-                    void chooseRegion(rectangle)
-                    return
-                  }
-                  if (
-                    !rectangle ||
-                    !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
+  const ancestors = selected && (
+    <nav
+      aria-label={t('atoms.selection.breadcrumbs')}
+      className="flex flex-wrap items-center gap-1"
+    >
+      {selected.ancestors.map((ancestor) => (
+        <Button
+          key={ancestor.nodeId}
+          variant="ghost"
+          size="sm"
+          onClick={() => selectNode(ancestor.nodeId)}
+        >
+          {ancestor.tagName}
+        </Button>
+      ))}
+      <Button
+        size="sm"
+        variant="outline"
+        data-testid="selection-parent"
+        onClick={() => void bridge.current?.parent().catch(() => setError('error'))}
+      >
+        {t('atoms.selection.parent')}
+      </Button>
+    </nav>
+  )
+  const tools = evidence?.kind === 'region' && (
+    <FieldSet className="flex-row flex-wrap gap-1" aria-label={t('atoms.selection.region')}>
+      <Button
+        size="sm"
+        variant={!evidence.focus ? 'secondary' : 'ghost'}
+        onClick={() => void chooseFocus(null)}
+      >
+        {t('atoms.selection.noFocus')}
+      </Button>
+      {evidence.elements.map((element) => (
+        <Button
+          key={element.nodeId}
+          size="sm"
+          className="max-w-full"
+          variant={element.nodeId === evidence.focus?.nodeId ? 'secondary' : 'ghost'}
+          onClick={() => void chooseFocus(element.nodeId)}
+        >
+          <span className="truncate">
+            {t('atoms.selection.focus', { label: element.instance.label || element.tagName })}
+          </span>
+        </Button>
+      ))}
+      {evidence.truncated && (
+        <p className="text-xs text-muted-foreground">{t('atoms.selection.truncated')}</p>
+      )}
+    </FieldSet>
+  )
+  const layerTree = bridge.current && (
+    <>
+      <Button
+        size="sm"
+        variant="ghost"
+        aria-pressed={includeHidden}
+        onClick={() => setIncludeHidden(!includeHidden)}
+      >
+        {t('atoms.selection.hidden')}
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => setLayersRevision((value) => value + 1)}>
+        {t('atoms.selection.refresh')}
+      </Button>
+      <div
+        role="tree"
+        aria-label={t('atoms.selection.layers')}
+        onKeyDown={(event) => {
+          if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+          const rows = [
+            ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-layer-node]'),
+          ]
+          const active = document.activeElement
+          const index = active instanceof HTMLButtonElement ? rows.indexOf(active) : -1
+          const next =
+            event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? rows.length - 1
+                : Math.max(
+                    0,
+                    Math.min(rows.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)),
                   )
-                    return
-                  event.preventDefault()
-                  const horizontal = event.key === 'ArrowLeft' || event.key === 'ArrowRight'
-                  const change = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -10 : 10
-                  const field = event.shiftKey
-                    ? horizontal
-                      ? 'width'
-                      : 'height'
-                    : horizontal
-                      ? 'x'
-                      : 'y'
-                  const bounds = event.currentTarget.getBoundingClientRect()
-                  const maximum =
-                    field === 'x'
-                      ? bounds.width - rectangle.width
-                      : field === 'y'
-                        ? bounds.height - rectangle.height
-                        : field === 'width'
-                          ? bounds.width - rectangle.x
-                          : bounds.height - rectangle.y
-                  setRectangle({
-                    ...rectangle,
-                    [field]: Math.max(
-                      event.shiftKey ? 1 : 0,
-                      Math.min(maximum, rectangle[field] + change),
-                    ),
-                  })
-                }}
-              />
+          event.preventDefault()
+          rows[next]?.focus()
+        }}
+      >
+        <LayerBranch
+          key={`${layersRevision}:${includeHidden}`}
+          connection={bridge.current}
+          parent={null}
+          includeHidden={includeHidden}
+          selectedId={selected?.nodeId ?? null}
+          onSelect={selectNode}
+          onError={() => setError('error')}
+        />
+      </div>
+    </>
+  )
+  return (
+    <div className="@container relative flex h-full min-h-0 w-full gap-2">
+      {toolbar &&
+        createPortal(
+          <>
+            <Button
+              size="icon-sm"
+              variant={editing ? 'default' : 'outline'}
+              disabled={!ready || capturing}
+              aria-pressed={editing}
+              aria-label={t(editing ? 'atoms.selection.done' : 'atoms.selection.edit')}
+              title={t(editing ? 'atoms.selection.done' : 'atoms.selection.edit')}
+              onClick={() => void toggleEdit()}
+              data-testid="selection-edit"
+            >
+              <HugeiconsIcon icon={CursorRectangleSelection01Icon} size={18} strokeWidth={1.5} />
+            </Button>
+            {editing && (
+              <>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={t('atoms.selection.layers')}
+                  title={t('atoms.selection.layers')}
+                  aria-pressed={inspectorOpen && layers}
+                  onClick={() => {
+                    setLayers(true)
+                    setInspectorOpen(!inspectorOpen || !layers)
+                  }}
+                >
+                  <HugeiconsIcon icon={Layers01Icon} size={18} strokeWidth={1.5} />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={t('atoms.selection.editor.properties')}
+                  title={t('atoms.selection.editor.properties')}
+                  aria-pressed={inspectorOpen && !layers}
+                  onClick={() => {
+                    setLayers(false)
+                    setInspectorOpen(!inspectorOpen || layers)
+                  }}
+                >
+                  <HugeiconsIcon icon={Settings01Icon} size={18} strokeWidth={1.5} />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={t('atoms.selection.region')}
+                  title={t('atoms.selection.region')}
+                  aria-pressed={regionMode}
+                  disabled={capturing}
+                  data-testid="selection-region"
+                  onClick={() => {
+                    if (regionMode) cancelRegion()
+                    else {
+                      rectangleBeforeDrawing.current = rectangle
+                      setInspectorOpen(true)
+                      setRegionMode(true)
+                      setRectangle({ x: 20, y: 20, width: 160, height: 100 })
+                    }
+                  }}
+                >
+                  <HugeiconsIcon
+                    icon={CursorRectangleSelection01Icon}
+                    size={18}
+                    strokeWidth={1.5}
+                  />
+                </Button>
+              </>
             )}
-          </div>
+            {evidence && (
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                disabled={capturing}
+                onClick={() => void capture()}
+                data-testid="selection-capture"
+                aria-label={t(capturing ? 'atoms.selection.capturing' : 'atoms.selection.capture')}
+                title={t('atoms.selection.captureHint')}
+              >
+                <HugeiconsIcon icon={Camera01Icon} size={18} strokeWidth={1.5} />
+              </Button>
+            )}
+          </>,
+          toolbar,
+        )}
+      {(error || previewFailed) && (
+        <p
+          role="alert"
+          className="absolute bottom-2 left-2 z-40 max-w-full rounded-lg border bg-background p-2 text-xs text-destructive"
+        >
+          {error ? t(`atoms.selection.${error}`) : t('atoms.previewError')}
+        </p>
+      )}
+      <div className="flex min-h-0 min-w-0 flex-1 justify-center overflow-hidden">
+        <div ref={setCanvas} className={`device ${device} relative`} data-testid="preview-frame">
+          <iframe
+            ref={frame}
+            title={t('atoms.previewTitle')}
+            sandbox="allow-scripts allow-forms allow-popups"
+          />
+          {editing && !capturing && rectangle && (
+            <div
+              data-testid="selection-rectangle"
+              className="pointer-events-none absolute border-2 border-ring bg-info/10"
+              style={{
+                left: rectangle.x,
+                top: rectangle.y,
+                width: rectangle.width,
+                height: rectangle.height,
+              }}
+            />
+          )}
+          {regionMode && !capturing && (
+            <Button
+              variant="ghost"
+              aria-label={t('atoms.selection.region')}
+              data-testid="selection-region-surface"
+              className="absolute inset-0 h-full w-full cursor-crosshair rounded-none border-0 bg-transparent p-0 shadow-none hover:bg-transparent focus-visible:ring-2 focus-visible:ring-ring"
+              ref={(node) => node?.focus()}
+              onPointerDown={(event) => {
+                if (event.button !== 0 || !event.isPrimary) return
+                event.preventDefault()
+                const bounds = event.currentTarget.getBoundingClientRect()
+                drag.current = { x: event.clientX - bounds.left, y: event.clientY - bounds.top }
+                event.currentTarget.setPointerCapture(event.pointerId)
+                setRectangle({ ...drag.current, width: 0, height: 0 })
+              }}
+              onPointerMove={(event) => {
+                if (!drag.current) return
+                const bounds = event.currentTarget.getBoundingClientRect()
+                const x = Math.max(0, Math.min(bounds.width, event.clientX - bounds.left))
+                const y = Math.max(0, Math.min(bounds.height, event.clientY - bounds.top))
+                setRectangle({
+                  x: Math.min(x, drag.current.x),
+                  y: Math.min(y, drag.current.y),
+                  width: Math.abs(x - drag.current.x),
+                  height: Math.abs(y - drag.current.y),
+                })
+              }}
+              onPointerUp={() => {
+                if (!drag.current) return
+                drag.current = null
+                if (rectangle) void chooseRegion(rectangle)
+              }}
+              onPointerCancel={cancelRegion}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  cancelRegion()
+                  return
+                }
+                if (['Enter', ' '].includes(event.key) && rectangle) {
+                  event.preventDefault()
+                  void chooseRegion(rectangle)
+                  return
+                }
+                if (
+                  !rectangle ||
+                  !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
+                )
+                  return
+                event.preventDefault()
+                const horizontal = event.key === 'ArrowLeft' || event.key === 'ArrowRight'
+                const change = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -10 : 10
+                const field = event.shiftKey
+                  ? horizontal
+                    ? 'width'
+                    : 'height'
+                  : horizontal
+                    ? 'x'
+                    : 'y'
+                const bounds = event.currentTarget.getBoundingClientRect()
+                const maximum =
+                  field === 'x'
+                    ? bounds.width - rectangle.width
+                    : field === 'y'
+                      ? bounds.height - rectangle.height
+                      : field === 'width'
+                        ? bounds.width - rectangle.x
+                        : bounds.height - rectangle.y
+                setRectangle({
+                  ...rectangle,
+                  [field]: Math.max(
+                    event.shiftKey ? 1 : 0,
+                    Math.min(maximum, rectangle[field] + change),
+                  ),
+                })
+              }}
+            />
+          )}
         </div>
       </div>
+      <SelectionEditor
+        element={selected ?? null}
+        geometry={geometry}
+        canvas={canvas}
+        editing={editing}
+        capturing={capturing || regionMode}
+        disabled={editDisabled}
+        panelOpen={inspectorOpen}
+        onPanelOpen={setInspectorOpen}
+        layers={layers}
+        onLayers={setLayers}
+        layerTree={layerTree}
+        tools={tools}
+        ancestors={ancestors}
+        comment={comment}
+        onComment={setComment}
+        onClear={clear}
+        onSubmit={onEdit}
+      />
     </div>
   )
 }

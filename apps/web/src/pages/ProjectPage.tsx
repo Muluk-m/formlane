@@ -1154,6 +1154,15 @@ export function ProjectPage() {
             onSelection={changeSelection}
             onSelectionInvalidated={invalidateSelection}
             onPrepareSelection={registerSelection}
+            onSelectionEdit={begin}
+            selectionEditDisabled={
+              busy ||
+              running ||
+              connection === 'error' ||
+              selectionStale ||
+              noncurrentView ||
+              uncertainDelivery
+            }
             html={displayHtml}
             source={displaySource}
             drafts={observingWorkspace ? workspace.drafts : {}}
