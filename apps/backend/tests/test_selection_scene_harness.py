@@ -246,9 +246,10 @@ def test_scene_and_structural_changes_require_explicit_independent_assessment(mo
         assert turn < len(steps), (
             "Unexpected provider call after the controlled verdict",
             [
-                data["output"]["error"]
+                {"tool": data.get("name"), "output": data.get("output")}
                 for kind, data in events
-                if kind == "tool_end" and "error" in data.get("output", {})
+                if kind == "tool_end"
+                and (data.get("name") == "validate_preview" or "error" in data.get("output", {}))
             ],
         )
         calls = []
