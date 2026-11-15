@@ -327,6 +327,7 @@ def test_geometry_tracks_nested_scroll_zoom_resize_and_fragments(preview):
     assert after["rects"][0]["y"] < before["rects"][0]["y"]
     assert_geometry(after)
     preview.locator("iframe").evaluate("node => node.style.width = '375px'")
+    frame.wait_for_function("innerWidth === 375")
     resized = command(preview, "capture")["element"]
     assert resized["viewport"]["width"] == 375
     assert_geometry(resized)
