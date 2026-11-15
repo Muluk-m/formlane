@@ -45,6 +45,8 @@ export function Stage({
   onSelection,
   onSelectionInvalidated,
   onPrepareSelection,
+  onSelectionEdit,
+  selectionEditDisabled,
 }: {
   html: string
   source: ProjectSource | null
@@ -72,11 +74,15 @@ export function Stage({
   onSelection: (selection: SelectionSubmission | null) => void
   onSelectionInvalidated: () => void
   onPrepareSelection: (prepare: (() => Promise<SelectionSubmission>) | null) => void
+  onSelectionEdit: (content: string) => Promise<void>
+  selectionEditDisabled: boolean
 }) {
   const { t, locale } = useI18n()
   const [selection, setSelection] = useState<string | null>(null)
   const [copyError, setCopyError] = useState(false)
   const [previewRevision, setPreviewRevision] = useState(0)
+  const [selectionToolbar, setSelectionToolbar] = useState<HTMLDivElement | null>(null)
+  const [selectionComment, setSelectionComment] = useState('')
   const editor = useQuery({
     ...editorVersionQuery(projectId, versionId ?? ''),
     enabled: Boolean(versionId),
@@ -142,6 +148,10 @@ export function Stage({
           <span className="min-w-0 flex-1 truncate rounded-md bg-surface-sunken px-3 py-1 text-xs text-muted-foreground">
             {t('atoms.previewAddress')}
           </span>
+          <div
+            ref={setSelectionToolbar}
+            className="flex shrink-0 items-center gap-1 empty:hidden"
+          />
           <div className="flex shrink-0 items-center gap-1">
             <Button
               size="icon-sm"
@@ -227,6 +237,11 @@ export function Stage({
                 onSelection={onSelection}
                 onInvalidated={onSelectionInvalidated}
                 onPrepare={onPrepareSelection}
+                toolbar={selectionToolbar}
+                onEdit={onSelectionEdit}
+                editDisabled={selectionEditDisabled}
+                comment={selectionComment}
+                setComment={setSelectionComment}
               />
             ) : html ? (
               <div className="flex h-full w-full flex-col gap-2">

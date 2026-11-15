@@ -302,24 +302,173 @@ def test_geometry_tracks_nested_scroll_zoom_resize_and_fragments(preview):
         preview,
         """
       <style>#scroller{height:200px;overflow:auto;width:220px}article{height:1000px}
-      #target{display:inline;font-size:24px}body{zoom:1.25}</style>
+      #target{display:inline;font-size:24px}body{zoom:1.25;height:2000px}</style>
       <div id="scroller"><article><span id="target">A long multiline target with several fragments</span></article></div>
     """,
     )
+
+    def assert_geometry(element):
+        expected = {
+            key: element[key] for key in ("nodeId", "rects", "viewport", "scroll")
+        }
+        preview.wait_for_function(
+            "expected => JSON.stringify(events.filter(event => event.type === 'geometry').at(-1)?.payload) === JSON.stringify(expected)",
+            arg=expected,
+        )
+
     command(preview, "enable", True)
     frame.locator("#target").click(position={"x": 10, "y": 10})
     before = command(preview, "capture")["element"]
     assert len(before["rects"]) > 1
+    assert_geometry(before)
     frame.locator("#scroller").evaluate("node => node.scrollTop = 30")
     after = command(preview, "capture")["element"]
     assert after["nodeId"] == before["nodeId"]
     assert after["rects"][0]["y"] < before["rects"][0]["y"]
+    assert_geometry(after)
     preview.locator("iframe").evaluate("node => node.style.width = '375px'")
-    assert command(preview, "capture")["element"]["viewport"]["width"] == 375
+    resized = command(preview, "capture")["element"]
+    assert resized["viewport"]["width"] == 375
+    assert_geometry(resized)
     actual = frame.locator("#target").evaluate(
         "node => Array.from(node.getClientRects(), r => ({x:r.x,y:r.y,width:r.width,height:r.height}))"
     )
     assert command(preview, "capture")["element"]["rects"] == actual
+    frame.locator("#target").evaluate("node => node.style.fontSize = '30px'")
+    resized_text = command(preview, "capture")["element"]
+    assert resized_text["rects"] != actual
+    assert_geometry(resized_text)
+    frame.evaluate("window.scrollTo(0, 40)")
+    scrolled = command(preview, "capture")["element"]
+    assert scrolled["scroll"]["y"] > 0
+    assert_geometry(scrolled)
+    assert (
+        preview.evaluate("events.filter(event => event.type === 'selected').length")
+        == 1
+    )
+    count = preview.evaluate("events.filter(event => event.type === 'geometry').length")
+    frame.evaluate("""() => new Promise(resolve => requestAnimationFrame(() =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve))))""")
+    assert (
+        preview.evaluate("events.filter(event => event.type === 'geometry').length")
+        == count
+    )
+
+
+@pytest.mark.parametrize("action", ["clear", "disable", "remove"])
+def test_geometry_clears_on_selection_lifecycle_and_resumes_on_enable(preview, action):
+    frame = mount(preview, '<button id="target">Selected target</button>')
+    row = command(preview, "children", None)["children"][0]
+    command(preview, "enable", True)
+    selection = command(preview, "select", row["nodeId"])["element"]
+    preview.wait_for_function(
+        "nodeId => events.filter(event => event.type === 'geometry').at(-1)?.payload?.nodeId === nodeId",
+        arg=selection["nodeId"],
+    )
+    command(preview, "enable", False)
+    assert (
+        preview.evaluate(
+            "events.filter(event => event.type === 'geometry').at(-1).payload"
+        )
+        is None
+    )
+    command(preview, "enable", True)
+    assert (
+        preview.evaluate(
+            "events.filter(event => event.type === 'geometry').at(-1).payload.nodeId"
+        )
+        == selection["nodeId"]
+    )
+    assert (
+        preview.evaluate("events.filter(event => event.type === 'selected').length")
+        == 1
+    )
+    if action == "remove":
+        frame.locator("#target").evaluate("node => node.remove()")
+    elif action == "disable":
+        command(preview, "enable", False)
+    else:
+        command(preview, "clear")
+    preview.wait_for_function(
+        "events.filter(event => event.type === 'geometry').at(-1)?.payload === null"
+    )
+    if action == "remove":
+        assert preview.evaluate(
+            "nodeId => events.some(event => event.type === 'invalidated' && event.payload.nodeId === nodeId)",
+            selection["nodeId"],
+        )
+
+
+def test_selection_captures_computed_typography_without_mutating_target(preview):
+    frame = mount(
+        preview,
+        """
+      <style>button{font-family:serif;font-size:23px;font-weight:600;font-style:italic;
+        line-height:30px;letter-spacing:2px;text-align:right;text-transform:uppercase;
+        text-decoration-line:underline;color:rgb(10,20,30);background-color:rgb(40,50,60)}</style>
+      <button>Typographic target</button>
+    """,
+    )
+    names = [
+        "font-family",
+        "font-size",
+        "font-weight",
+        "font-style",
+        "line-height",
+        "letter-spacing",
+        "text-align",
+        "text-transform",
+        "text-decoration-line",
+        "color",
+        "background-color",
+        "display",
+        "visibility",
+        "position",
+        "border-radius",
+        "padding",
+        "gap",
+        "opacity",
+    ]
+    before = frame.locator("button").evaluate("node => node.outerHTML")
+    expected = frame.locator("button").evaluate(
+        "(node, names) => Object.fromEntries(names.map(name => [name, getComputedStyle(node).getPropertyValue(name)]))",
+        names,
+    )
+    command(preview, "enable", True)
+    frame.locator("button").click()
+    assert command(preview, "capture")["element"]["styles"] == expected
+    assert frame.locator("button").evaluate("node => node.outerHTML") == before
+
+
+@pytest.mark.parametrize(
+    "invalid", ["negative-box", "too-many-boxes", "extra-field", "missing-node"]
+)
+def test_geometry_rejects_malformed_payloads(preview, invalid):
+    frame = mount(preview, "<button>Target</button>")
+    payload = {
+        "nodeId": "n1",
+        "rects": [{"x": 0, "y": 0, "width": 10, "height": 10}],
+        "viewport": {"width": 800, "height": 600},
+        "scroll": {"x": 0, "y": 0},
+    }
+    if invalid == "negative-box":
+        payload["rects"][0]["width"] = -1
+    elif invalid == "too-many-boxes":
+        payload["rects"] *= 33
+    elif invalid == "extra-field":
+        payload["text"] = "Unexpected metadata"
+    else:
+        del payload["nodeId"]
+    before = preview.evaluate("events.length")
+    frame.evaluate(
+        """({sessionId, payload}) => parent.postMessage({
+          protocol:'formlane-selection', protocolVersion:1, sessionId,
+          requestId:null, type:'geometry', payload
+        }, 'https://selection.test')""",
+        {"sessionId": preview.evaluate("config.sessionId"), "payload": payload},
+    )
+    command(preview, "capture")
+    assert preview.evaluate("events.length") == before
 
 
 def test_region_deduplicates_ancestors_retains_overlap_and_bounds_evidence(preview):
@@ -472,7 +621,8 @@ def test_edit_crosshair_restores_application_cursors(preview):
     command(preview, "enable", True)
     preview.evaluate("() => bridge.dispose()")
     frame.wait_for_function(
-        f"expected => JSON.stringify(({cursors})()) === JSON.stringify(expected)", arg=baseline
+        f"expected => JSON.stringify(({cursors})()) === JSON.stringify(expected)",
+        arg=baseline,
     )
 
 

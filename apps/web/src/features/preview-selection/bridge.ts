@@ -50,8 +50,12 @@ const styles = z.enum([
   'font-family',
   'font-size',
   'font-weight',
+  'font-style',
   'line-height',
+  'letter-spacing',
   'text-align',
+  'text-transform',
+  'text-decoration-line',
   'border-radius',
   'padding',
   'gap',
@@ -127,6 +131,14 @@ const resultSchemas = {
 const eventSchemas = {
   ready: z.strictObject({ enabled: z.boolean(), documentId: z.string().min(1).max(128) }),
   selected,
+  geometry: z
+    .strictObject({
+      nodeId,
+      rects: z.array(rectangle).max(SELECTION_LIMITS.rects),
+      viewport,
+      scroll,
+    })
+    .nullable(),
   cleared: z.null(),
   invalidated: z.strictObject({ nodeId }),
   error: z.strictObject({ code: z.string().max(200), message: z.string().max(1000) }),
@@ -136,7 +148,7 @@ const envelope = z.strictObject({
   protocolVersion: z.literal(SELECTION_PROTOCOL_VERSION),
   sessionId: z.string().min(1).max(200),
   requestId: z.string().min(1).max(200).nullable(),
-  type: z.enum(['ready', 'result', 'selected', 'cleared', 'invalidated', 'error']),
+  type: z.enum(['ready', 'result', 'selected', 'geometry', 'cleared', 'invalidated', 'error']),
   payload: z.unknown(),
 })
 const resultPayload = z.strictObject({

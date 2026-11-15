@@ -4,6 +4,7 @@ import type {
   SelectionElementContext,
   SelectionElementEvidence,
   SelectionEvidence,
+  SelectionGeometry,
   SelectionRect,
 } from '@atoms-demo/core/selection'
 import {
@@ -42,6 +43,7 @@ function installRuntime(
   let overlay: HTMLDivElement | null = null
   let drawing: ShadowRoot | null = null
   let lastDrawing = ''
+  let lastGeometry = 'null'
   let topLayerChanged = true
   const identities = new WeakMap<Element, string>()
   const nodes = new Map<string, WeakRef<Element>>()
@@ -103,8 +105,12 @@ function installRuntime(
     'font-family',
     'font-size',
     'font-weight',
+    'font-style',
     'line-height',
+    'letter-spacing',
     'text-align',
+    'text-transform',
+    'text-decoration-line',
     'border-radius',
     'padding',
     'gap',
@@ -252,6 +258,21 @@ function installRuntime(
       ? bounded(element.getAttribute(sourceAttribute), limits.attributeCharacters)
       : null
   }
+  function geometry(element: Element): SelectionGeometry {
+    return {
+      nodeId: id(element),
+      rects: Array.from(element.getClientRects()).slice(0, limits.rects).map(rect),
+      viewport: { width: innerWidth, height: innerHeight },
+      scroll: { x: scrollX, y: scrollY },
+    }
+  }
+  function publishGeometry(value: SelectionGeometry | null, force = false) {
+    const signature = JSON.stringify(value)
+    if (force || signature !== lastGeometry) {
+      lastGeometry = signature
+      send('geometry', value)
+    }
+  }
   function context(element: Element): SelectionElementContext {
     const ancestry: SelectionElementContext['ancestors'] = []
     let ancestor = parentElement(element)
@@ -282,7 +303,7 @@ function installRuntime(
       selector += `[role="${CSS.escape(element.getAttribute('role') ?? '')}"]`
     }
     const result: SelectionElementContext = {
-      nodeId: id(element),
+      ...geometry(element),
       sourceId: sourceId(element),
       tagName: tag(element),
       role: element.getAttribute('role')?.slice(0, limits.attributeCharacters) ?? null,
@@ -291,9 +312,6 @@ function installRuntime(
       styles: style,
       selector: bounded(selector, limits.selectorCharacters),
       ancestors: ancestry,
-      rects: Array.from(element.getClientRects()).slice(0, limits.rects).map(rect),
-      viewport: { width: innerWidth, height: innerHeight },
-      scroll: { x: scrollX, y: scrollY },
       instance: {
         label: label(element),
         context: bounded(ancestry.map((item) => item.label).join(' / '), limits.instanceCharacters),
@@ -315,6 +333,8 @@ function installRuntime(
     selected = element
     const value = evidence(element)
     send('selected', value)
+    const { nodeId, rects, viewport, scroll } = value.element
+    publishGeometry(enabled ? { nodeId, rects, viewport, scroll } : null, true)
     schedule()
     return value
   }
@@ -322,6 +342,7 @@ function installRuntime(
     selected = null
     hovered = null
     send('cleared', null)
+    publishGeometry(null, true)
     schedule()
     return null
   }
@@ -336,12 +357,17 @@ function installRuntime(
           nodes.delete(nodeId)
           if (element) identities.delete(element)
           send('invalidated', { nodeId })
-          if (element === selected) selected = null
+          if (element === selected) {
+            selected = null
+            publishGeometry(null, true)
+          }
           if (element === hovered) hovered = null
         }
       }
     }
     for (const element of opaqueHosts) if (!element.isConnected) opaqueHosts.delete(element)
+    const selectedGeometry = enabled && selected?.isConnected ? geometry(selected) : null
+    publishGeometry(selectedGeometry)
     if (!enabled || (!selected && !hovered && opaqueHosts.size === 0)) {
       overlay?.remove()
       overlay = null
@@ -396,11 +422,23 @@ function installRuntime(
     const fragments: { box: SelectionRect; active: boolean }[] = []
     for (const element of new Set([selected, hovered])) {
       if (!element?.isConnected) continue
-      for (const box of Array.from(element.getClientRects()).slice(0, limits.rects)) {
-        fragments.push({ box: rect(box), active: element === selected })
+      const boxes =
+        element === selected && selectedGeometry ? selectedGeometry.rects : geometry(element).rects
+      for (const box of boxes) {
+        fragments.push({ box, active: element === selected })
       }
     }
-    const signature = JSON.stringify([fragments, shields])
+    const badgeBox = selectedGeometry?.rects.find(
+      (box) =>
+        box.width > 0 &&
+        box.height > 0 &&
+        box.x < innerWidth &&
+        box.y < innerHeight &&
+        box.x + box.width > 0 &&
+        box.y + box.height > 0,
+    )
+    const badgeTag = selected && badgeBox ? tag(selected) : null
+    const signature = JSON.stringify([fragments, shields, badgeTag, innerWidth, innerHeight])
     if (signature !== lastDrawing) {
       lastDrawing = signature
       drawing?.replaceChildren()
@@ -420,6 +458,17 @@ function installRuntime(
           `left:${box.x}px;top:${box.y}px;width:${box.width}px;height:${box.height}px;` +
           `border:2px ${active ? 'solid' : 'dashed'} #0284c7;`
         drawing?.append(outline)
+      }
+      if (badgeTag && badgeBox) {
+        const badge = document.createElement('div')
+        badge.textContent = badgeTag
+        badge.style.cssText =
+          'position:fixed;pointer-events:none;box-sizing:border-box;max-width:160px;' +
+          'height:20px;padding:2px 6px;border-radius:4px;background:#0284c7;color:white;' +
+          'font:12px/16px system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' +
+          `left:${Math.max(0, Math.min(badgeBox.x, innerWidth - 160))}px;` +
+          `top:${Math.max(0, Math.min(badgeBox.y - 22, innerHeight - 20))}px;`
+        drawing?.append(badge)
       }
     }
     // Geometry follows animations and transforms without scanning the application tree.
@@ -560,6 +609,7 @@ function installRuntime(
   function dispose() {
     disposed = true
     enabled = false
+    publishGeometry(null)
     observer.disconnect()
     for (const cleanup of cleanups.splice(0)) cleanup()
     cancelAnimationFrame(scheduled)
@@ -787,6 +837,7 @@ function installRuntime(
           hovered = null
           value = { enabled, documentId }
           send('ready', value)
+          publishGeometry(enabled && selected?.isConnected ? geometry(selected) : null, true)
           cancelAnimationFrame(scheduled)
           draw()
           break
